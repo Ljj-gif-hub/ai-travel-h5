@@ -35,6 +35,8 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 
 ![AI行程规划演示](../trval-h5/public/demos/destinations.gif)
 
+📥 [下载原视频 (21.3MB)](../trval-h5/public/demos/destinations.mp4)
+
 ### 百度地图数据获取演示
 
 > 📍 后端通过百度地图开放 API 获取 POI 数据、景点信息、热门目的地等地理数据，支持地点联想搜索、周边景点查询、城市地标/地铁站数据获取。
