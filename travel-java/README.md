@@ -33,9 +33,7 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 
 ### AI 行程规划演示
 
-![AI行程规划演示](../trval-h5/public/demos/destinations.gif)
-
-📥 [下载原视频 (21.3MB)](../trval-h5/public/demos/destinations.mp4)
+<!-- DRAG_AND_DROP: docs/ai-planner-demo.mp4 -->
 
 ### 百度地图数据获取演示
 

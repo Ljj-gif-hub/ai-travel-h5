@@ -28,29 +28,23 @@ AI 智能旅游助手是一款面向移动端用户的智能旅游规划应用�
 
 ## 🎬 功能演示
 
+> 💡 将 mp4 文件拖拽到下方对应位置即可嵌入视频（GitHub 会自动生成播放器）
+
 ### AI 对话与行程规划
 
-![AI对话演示](public/demos/ai-chat.gif)
-
-📥 [下载原视频 (6MB)](public/demos/ai-chat.mp4)
+<!-- DRAG_AND_DROP: public/demos/ai-chat.mp4 -->
 
 ### 社区视频界面和社区图片分享界面展示
 
-![视频图片分享演示](public/demos/community.gif)
-
-📥 [下载原视频 (7.8MB)](public/demos/community.mp4)
+<!-- DRAG_AND_DROP: public/demos/community.mp4 -->
 
 ### 热门目的地选择展示以及 AI 自由选择规划演示
 
-![热门目的地演示](public/demos/destinations.gif)
-
-📥 [下载原视频 (21.3MB)](public/demos/destinations.mp4)
+<!-- DRAG_AND_DROP: public/demos/destinations.mp4 -->
 
 ### 登录与注册
 
-![登录与注册演示](public/demos/login.gif)
-
-📥 [下载原视频 (9.5MB)](public/demos/login.mp4)
+<!-- DRAG_AND_DROP: public/demos/login.mp4 -->
 
 ## 🚀 环境启动步骤
 
