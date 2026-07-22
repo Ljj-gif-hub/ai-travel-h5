@@ -33,7 +33,7 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 
 ### AI 行程规划演示
 
-https://github.com/Ljj-gif-hub/travel-h5/releases/download/v0.0.1/Screen.Recording.2026-07-23.010157.mp4
+![AI行程规划演示](../trval-h5/public/demos/destinations.gif)
 
 ### 百度地图数据获取演示
 

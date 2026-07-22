@@ -30,19 +30,19 @@ AI 智能旅游助手是一款面向移动端用户的智能旅游规划应用�
 
 ### AI 对话与行程规划
 
-https://github.com/Ljj-gif-hub/travel-h5/releases/download/v0.0.1/Recording.2026-07-23.012210.mp4
+![AI对话演示](public/demos/ai-chat.gif)
 
 ### 社区视频界面和社区图片分享界面展示
 
-https://github.com/Ljj-gif-hub/travel-h5/releases/download/v0.0.2/Recording.2026-07-23.011533.mp4
+![视频图片分享演示](public/demos/community.gif)
 
 ### 热门目的地选择展示以及 AI 自由选择规划演示
 
-https://github.com/Ljj-gif-hub/travel-h5/releases/download/v0.0.1/Screen.Recording.2026-07-23.010157.mp4
+![热门目的地演示](public/demos/destinations.gif)
 
 ### 登录与注册
 
-https://github.com/Ljj-gif-hub/travel-h5/releases/download/v0.0.1/Recording.2026-07-23.013522.mp4
+![登录与注册演示](public/demos/login.gif)
 
 ## 🚀 环境启动步骤
 
