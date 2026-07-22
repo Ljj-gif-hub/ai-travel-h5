@@ -1,0 +1,479 @@
+/* ================================================================
+   智能旅游助手 — 全局样式规范
+   主色调：薰衣草紫 → 浅青蓝渐变
+   辅助色：奶油橙、薄荷绿（低饱和马卡龙）
+   通用规范：20rpx大圆角 · 柔和浅阴影 · 磨砂玻璃卡片
+   ================================================================ */
+
+/* ==================== 全局 CSS 变量 ==================== */
+:root {
+  /* 主色调 */
+  --primary: #8B5CF6;
+  --primary-light: #A78BFA;
+  --primary-dark: #7C3AED;
+  --secondary: #6366F1;
+  --accent-orange: #F59E0B;
+  --accent-mint: #34D399;
+  --accent-coral: #FB7185;
+
+  /* 渐变色 */
+  --gradient-primary: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+  --gradient-hero: linear-gradient(135deg, #9333EA 0%, #7C3AED 50%, #6366F1 100%);
+  --gradient-btn: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 50%, #6366F1 100%);
+  --gradient-cyan: linear-gradient(135deg, #4ECDC4 0%, #44B0A0 100%);
+  --gradient-page: linear-gradient(180deg, #faf5ff 0%, #f0f4ff 40%, #f1f5f9 100%);
+
+  /* 背景 */
+  --bg-page: #f7f8fc;
+  --bg-card: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.75);
+
+  /* 文字 */
+  --text-primary: #1E293B;
+  --text-secondary: #64748B;
+  --text-hint: #94A3B8;
+  --text-white: #FFFFFF;
+
+  /* 边框 */
+  --border-light: #F1F5F9;
+  --border-card: rgba(139, 92, 246, 0.08);
+
+  /* 圆角系统 */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-pill: 28px;
+
+  /* 阴影系统 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-purple: 0 8px 24px rgba(139, 92, 246, 0.18);
+  --shadow-purple-lg: 0 12px 32px rgba(139, 92, 246, 0.25);
+
+  /* Tab Bar */
+  --tabbar-height: 56px;
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --transition-speed: 300ms;
+}
+
+/* ==================== 全局重置 ==================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-page);
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#app {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100vh;
+  background: var(--bg-page);
+  overflow-x: hidden;
+}
+
+/* ==================== 全局容器防溢出 ==================== */
+.home-container,
+.chat-page-container,
+.profile-page,
+.page-container {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* ==================== 通用卡片容器 ==================== */
+.card-macaron {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-card);
+}
+
+/* ==================== 通用磨砂玻璃卡片 ==================== */
+.card-glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: var(--radius-xl);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* ==================== Vant 组件全局覆盖 ==================== */
+.van-tabbar {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  z-index: 9999 !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
+}
+
+.van-toast {
+  text-align: center;
+  /* 【修复】确保 Toast 始终在最高层级可见 */
+  z-index: 99999 !important;
+  pointer-events: none;
+}
+
+/* 【兜底】确保 Vant Toast 文字/背景在任何 CSS 加载异常时仍可见 */
+.van-toast,
+.van-toast.van-toast--text,
+.van-toast.van-toast--html {
+  color: #fff !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+}
+.van-toast .van-toast__text {
+  color: #fff !important;
+}
+
+/* 【兜底】确保 Vant Dialog 弹窗内容可见 */
+.van-dialog {
+  background: #fff !important;
+  color: #323233 !important;
+}
+.van-dialog__message {
+  color: #646566 !important;
+}
+
+/* ==================== 滚动条隐藏 ==================== */
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; -ms-overflow-style: none; }
+
+/*
+ * ==================== 全局路由过渡动画 ====================
+ * 三类过渡：fade（Tab切换）/ slide-left（前进）/ slide-right（后退）
+ */
+
+/* --- fade 淡入淡出 --- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;          /* GPU加速：淡入淡出不触发重排 */
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+}
+
+/* --- slide-left：新页从右侧滑入 --- */
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+  will-change: transform, opacity; /* GPU加速：滑动不触发重排 */
+}
+.slide-left-enter-from {
+  transform: translateX(100%);
+}
+.slide-left-leave-to {
+  transform: translateX(-30%);
+  opacity: 0.6;
+}
+.slide-left-enter-to,
+.slide-left-leave-from {
+  transform: translateX(0);
+}
+
+/* --- slide-right：页面从左侧滑入（后退） --- */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+  will-change: transform, opacity; /* GPU加速 */
+}
+.slide-right-enter-from {
+  transform: translateX(-30%);
+  opacity: 0.6;
+}
+.slide-right-leave-to {
+  transform: translateX(100%);
+}
+.slide-right-enter-to,
+.slide-right-leave-from {
+  transform: translateX(0);
+}
+
+/*
+ * ==================== 全局局部元素动画 ====================
+ */
+
+/* 骨架屏 / 空状态淡入 */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* 卡片滑入动画 */
+@keyframes slideUpCard {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up-card {
+  animation: slideUpCard 0.4s ease-out forwards;
+}
+
+/* 按钮点击微缩反馈 */
+.btn-tap-scale {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-tap-scale:active {
+  transform: scale(0.96);
+}
+
+/* 输入框焦点光环 */
+.input-focus-ring {
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.input-focus-ring:focus {
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+/* Tab 内容淡入 */
+.tab-fade-enter-active {
+  transition: opacity 0.25s ease;
+}
+.tab-fade-enter-from {
+  opacity: 0;
+}
+.tab-fade-enter-to {
+  opacity: 1;
+}
+
+/* 横向滚动容器 */
+.h-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  contain: layout style;         /* 性能优化：限制重排范围 */
+  -webkit-overflow-scrolling: touch;
+}
+.h-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * ================================================================
+ * 全局共用动效系统（5页面统一规范）
+ * 风格：低饱和度 · 慢节奏 · 柔和缓动 · 移动端低功耗纯CSS
+ * ================================================================
+ */
+
+/* ---------- 云朵漂浮粒子 ---------- */
+@keyframes cloudDrift {
+  0%   { transform: translateX(-20px); opacity: 0.3; }
+  50%  { transform: translateX(60px); opacity: 0.55; }
+  100% { transform: translateX(-20px); opacity: 0.3; }
+}
+@keyframes cloudDriftSlow {
+  0%   { transform: translateX(0); opacity: 0.2; }
+  50%  { transform: translateX(80px); opacity: 0.45; }
+  100% { transform: translateX(0); opacity: 0.2; }
+}
+
+/* ---------- 微光粒子脉冲 ---------- */
+@keyframes particleGlow {
+  0%, 100% { opacity: 0.25; transform: translateY(0) scale(1); }
+  50%      { opacity: 0.55; transform: translateY(-8px) scale(1.3); }
+}
+
+/* ---------- 页面入场分层淡入上浮 ---------- */
+@keyframes entranceUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.entrance-item { opacity: 0; animation: entranceUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.entrance-d1 { animation-delay: 0.05s; }
+.entrance-d2 { animation-delay: 0.12s; }
+.entrance-d3 { animation-delay: 0.20s; }
+.entrance-d4 { animation-delay: 0.28s; }
+.entrance-d5 { animation-delay: 0.36s; }
+
+/* ---------- 圆形图标常驻呼吸 ---------- */
+@keyframes iconBreathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.04); }
+}
+
+/* ---------- 输入框聚焦流光扫光 ---------- */
+@keyframes inputShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* ---------- 头像环渐变旋转 ---------- */
+@keyframes ringRotate {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ---------- 悬浮上下微动 ---------- */
+@keyframes floatUpDown {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* ---------- 脉冲发光 ---------- */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.25); }
+  50%      { box-shadow: 0 0 0 10px rgba(139, 92, 246, 0); }
+}
+
+/* ---------- 渐变流动（顶部标题栏） ---------- */
+@keyframes gradientFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ---------- 轻微右移+侧边光条 ---------- */
+@keyframes slideRightGlow {
+  0%   { transform: translateX(0); box-shadow: 0 2px 8px rgba(139,92,246,0); }
+  100% { transform: translateX(6px); box-shadow: -4px 0 12px rgba(139,92,246,0.12); }
+}
+
+/* ---------- 弹性弹跳 ---------- */
+@keyframes elasticBounce {
+  0%, 100% { transform: scale(1); }
+  30%      { transform: scale(1.25); }
+  60%      { transform: scale(0.9); }
+  80%      { transform: scale(1.06); }
+}
+
+/* ---------- 未读红点呼吸 ---------- */
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+  50%      { opacity: 0.6; box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+
+/* ---------- 时间轴生长 ---------- */
+@keyframes lineGrow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* ---------- 图标左右轻摆 ---------- */
+@keyframes iconSwing {
+  0%, 100% { transform: rotate(0deg); }
+  25%      { transform: rotate(-6deg); }
+  75%      { transform: rotate(6deg); }
+}
+
+/* ---------- 通用hover上浮+阴影放大 ---------- */
+.card-hover-lift {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.35s ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.10);
+}
+.card-hover-lift:active {
+  transform: scale(0.97);
+}
+
+/*
+ * ================================================================
+ * 携程风格图片骨架/兜底系统（纯CSS，全局生效，零JS侵入）
+ * 所有卡片容器内的 <img> 自带 SVG 兜底背景
+ * 图片加载成功 → 覆盖背景正常显示
+ * 图片加载失败 → SVG 占位图透出 + 微光动画
+ * ================================================================
+ */
+
+/* 通用图片容器骨架 — 青山绿水风 SVG 占位 */
+.event-img, .city-img, .banner-img, .dest-img, .attr-img, .note-cover,
+.guide-card-img-wrap, .city-img-wrap .city-img, .dest-img-wrap .dest-img {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 240'%3E%3Cdefs%3E%3ClinearGradient id='shim' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0%25' stop-color='%23e8f4f8'/%3E%3Cstop offset='50%25' stop-color='%23d4ecf2'/%3E%3Cstop offset='100%25' stop-color='%23e8f4f8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect fill='url(%23shim)' width='400' height='240' rx='10'/%3E%3Crect x='145' y='70' width='110' height='90' rx='8' fill='%23c4dce4'/%3E%3Cpath d='M20 50 Q80 25 140 50' stroke='%23c4dce4' fill='none' stroke-width='2'/%3E%3Ccircle cx='340' cy='40' r='20' fill='%23c4dce4'/%3E%3Ctext x='200' y='200' text-anchor='middle' fill='%2394a3b8' font-size='11' font-family='sans-serif'%3E%E5%9B%BE%E7%89%87%E5%8A%A0%E8%BD%BD%E4%B8%AD%3C/text%3E%3C/svg%3E")
+    center / cover no-repeat #e8f4f8;
+}
+
+/* 图片成功加载后淡入上浮 */
+.event-img[src]:not([src=""]), .city-img[src]:not([src=""]),
+.banner-img[src]:not([src=""]), .dest-img[src]:not([src=""]),
+.attr-img[src]:not([src=""]), .note-cover[src]:not([src=""]) {
+  animation: imgFadeIn 0.5s ease-out forwards;
+}
+@keyframes imgFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 图片加载中 — 微光缓慢流动动画 */
+.image-loading {
+  background: linear-gradient(90deg, #e8f4f8 25%, #d4ecf2 50%, #e8f4f8 75%);
+  background-size: 200% 100%;
+  animation: imgShimmer 2s ease-in-out infinite;
+}
+@keyframes imgShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.image-loading .loading-text {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* 图片加载失败占位容器 */
+.image-placeholder {
+  background: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 120px;
+  border-radius: 12px;
+}
+
+/* 圆形头像加载失败兜底 */
+.van-image img[src]:not([src=""]) {
+  background: linear-gradient(135deg, #e8f4f8, #d4ecf2) !important;
+}
+.hero-avatar .van-image img {
+  background: linear-gradient(135deg, #c4b5fd, #a78bfa) !important;
+}
