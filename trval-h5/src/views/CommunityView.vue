@@ -5,6 +5,7 @@ import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
+import { avatarUrl } from '../utils/avatar'
 
 defineOptions({ name: 'CommunityView' })
 
@@ -45,8 +46,16 @@ const page = ref(1)
 const hasMore = ref(true)
 const loadingMore = ref(false)
 const scrollContainer = ref(null)
+const followingIds = ref([])       // 当前用户关注的用户ID列表
 
 const empty = computed(() => !isLoading.value && notes.value.length === 0)
+
+const filterNotesByTab = (list) => {
+  if (activeTab.value === 'following' && followingIds.value.length) {
+    return list.filter(n => followingIds.value.includes(String(n.author?.userId)))
+  }
+  return list
+}
 
 /* ==================== 种子数据（fallback） ==================== */
 // 内联SVG占位图（不依赖外部网络，picsum在国内可能被墙）
@@ -55,70 +64,70 @@ const ph = (hue, label) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns=
 const seedNotes = [
   {
     id: 1,
-    author: { nickname: '旅行者小明', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ming', city: '深圳', isFollowing: false, online: true, userId: 'u1' },
+    author: { nickname: '旅行者小明', avatar: avatarUrl('ming', ''), city: '深圳', isFollowing: false, online: true, userId: 'u1' },
     content: '深圳湾公园骑行真的太舒服了！沿着海岸线一路骑行，海风轻拂，视野开阔。推荐傍晚时分出发，可以看到绝美的海上日落，沿途还有很多拍照打卡点。全程15公里左右，新手也完全能驾驭。',
     images: [ph(200,'🏖️ 深圳湾'), ph(210,'🚴 骑行'), ph(220,'🌅 日落')],
     likeCount: 328, isLiked: false, commentCount: 56, time: '2小时前',
   },
   {
     id: 2,
-    author: { nickname: '吃货小分队', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=foodie', city: '成都', isFollowing: true, online: false, userId: 'u2' },
+    author: { nickname: '吃货小分队', avatar: avatarUrl('foodie', ''), city: '成都', isFollowing: true, online: false, userId: 'u2' },
     content: '成都美食攻略来啦！建设巷从头吃到尾，烤脑花、糖油果子、蛋烘糕、钵钵鸡...每一样都让人欲罢不能。建议空着肚子来，人均50吃到撑。本地人强推巷子深处的老店，游客少味道正！',
     images: [ph(15,'🍜 成都美食')],
     likeCount: 892, isLiked: true, commentCount: 134, time: '5小时前',
   },
   {
     id: 3,
-    author: { nickname: '户外探险家', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=hiker', city: '西安', isFollowing: false, online: true, userId: 'u3' },
+    author: { nickname: '户外探险家', avatar: avatarUrl('hiker', ''), city: '西安', isFollowing: false, online: true, userId: 'u3' },
     content: '华山一日游，长空栈道挑战成功！早上5点出发，索道上北峰，然后一路徒步经过苍龙岭、金锁关，最后挑战长空栈道。虽然腿软但风景绝美，云海翻涌，值得一生铭记的体验。',
     images: [ph(40,'⛰️ 华山'), ph(50,'🧗 栈道'), ph(60,'☁️ 云海'), ph(70,'🗻 北峰')],
     likeCount: 1567, isLiked: false, commentCount: 289, time: '8小时前',
   },
   {
     id: 4,
-    author: { nickname: '文艺摄影师', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=photo', city: '杭州', isFollowing: false, online: false, userId: 'u4' },
+    author: { nickname: '文艺摄影师', avatar: avatarUrl('photo', ''), city: '杭州', isFollowing: false, online: false, userId: 'u4' },
     content: '西湖边的绝美咖啡馆合集。整理了环西湖最值得去的5家独立咖啡馆，每一家都有独特的设计美学和出品。从断桥边的民国老宅到龙井山上的玻璃房，拍照超出片。附上每家的推荐饮品和最佳拍摄机位。',
     images: [ph(160,'☕ 西湖'), ph(170,'📸 咖啡'), ph(180,'🌿 龙井')],
     likeCount: 645, isLiked: false, commentCount: 92, time: '12小时前',
   },
   {
     id: 5,
-    author: { nickname: '背包客阿飞', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=backpack', city: '大理', isFollowing: true, online: true, userId: 'u5' },
+    author: { nickname: '背包客阿飞', avatar: avatarUrl('backpack', ''), city: '大理', isFollowing: true, online: true, userId: 'u5' },
     content: '大理旅居一个月，整理了这份环洱海自驾攻略。路线：古城-喜洲-双廊-挖色-海东。全程130公里，建议分两天慢慢玩。喜洲的稻田、双廊的日落、海东的悬崖公路，每一段都让人不想离开。',
     images: [ph(190,'🌾 大理'), ph(200,'🚗 洱海')],
     likeCount: 2034, isLiked: true, commentCount: 367, time: '1天前',
   },
   {
     id: 6,
-    author: { nickname: '带着娃看世界', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=family', city: '上海', isFollowing: false, online: false, userId: 'u6' },
+    author: { nickname: '带着娃看世界', avatar: avatarUrl('family', ''), city: '上海', isFollowing: false, online: false, userId: 'u6' },
     content: '带4岁娃的上海迪士尼亲子攻略！轻松版游玩路线，避开人潮不用排长队。重点推荐旋转木马、小飞象和冰雪奇缘表演，孩子玩得超开心。附上园区儿童餐推荐和午睡tips。',
     images: [ph(280,'🏰 迪士尼'), ph(290,'🎠 旋转木马'), ph(300,'🎢 小飞象'), ph(310,'👨‍👩‍👧 亲子')],
     likeCount: 1123, isLiked: false, commentCount: 178, time: '1天前',
   },
   {
     id: 7,
-    author: { nickname: '潜水教练大刘', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=diver', city: '三亚', isFollowing: false, online: true, userId: 'u7' },
+    author: { nickname: '潜水教练大刘', avatar: avatarUrl('diver', ''), city: '三亚', isFollowing: false, online: true, userId: 'u7' },
     content: '三亚潜水点全解析！对比了蜈支洲岛、分界洲岛和西岛的水下能见度、珊瑚状态和鱼群密度。新手最推荐分界洲岛，水流平缓海底景观好。附上潜水装备推荐和考证攻略。',
     images: [ph(200,'🤿 三亚潜水')],
     likeCount: 1890, isLiked: false, commentCount: 245, time: '2天前',
   },
   {
     id: 8,
-    author: { nickname: '美食猎人KK', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=hunter', city: '重庆', isFollowing: true, online: true, userId: 'u8' },
+    author: { nickname: '美食猎人KK', avatar: avatarUrl('hunter', ''), city: '重庆', isFollowing: true, online: true, userId: 'u8' },
     content: '重庆本地人私藏的火锅地图！避开网红店，整理了12家藏在居民楼里的老火锅。每家都有特色招牌菜，从人均40到80都有。特别推荐弹子石的巷子火锅和观音桥的防空洞火锅，麻辣鲜香巴适得板！',
     images: [ph(0,'🍲 火锅'), ph(10,'🌶️ 麻辣'), ph(20,'🏘️ 巷子')],
     likeCount: 3102, isLiked: true, commentCount: 498, time: '2天前',
   },
   {
     id: 9,
-    author: { nickname: '骑行在路上', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=cycling', city: '北京', isFollowing: false, online: false, userId: 'u9' },
+    author: { nickname: '骑行在路上', avatar: avatarUrl('cycling', ''), city: '北京', isFollowing: false, online: false, userId: 'u9' },
     content: '京郊最美骑行路线：十三陵水库环湖路线。全程38公里，途经明十三陵、水库大坝和柿子林。秋天柿子树挂满果实景色超美。路线平坦难度低，非常适合新手和亲子骑行。',
     images: [ph(30,'🚴 十三陵'), ph(40,'🍂 秋色')],
     likeCount: 756, isLiked: false, commentCount: 103, time: '3天前',
   },
   {
     id: 10,
-    author: { nickname: '野生摄影师', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=wildphoto', city: '广州', isFollowing: false, online: true, userId: 'u10' },
+    author: { nickname: '野生摄影师', avatar: avatarUrl('wildphoto', ''), city: '广州', isFollowing: false, online: true, userId: 'u10' },
     content: '广州老城区的时光漫步。从恩宁路到永庆坊，走过骑楼老街、趟栊门和青砖墙，感受最地道的西关风情。推荐下午三四点出发，光影穿过骑楼缝隙洒下，随手拍都是人文大片。沿途还有超多老字号糖水铺。',
     images: [ph(50,'📷 老城区'), ph(60,'🏛️ 骑楼'), ph(70,'🍧 糖水')],
     likeCount: 1432, isLiked: false, commentCount: 201, time: '3天前',
@@ -143,7 +152,19 @@ const loadNotes = async (reset = false) => {
     if (res && res.code === 0 && res.data) {
       const list = Array.isArray(res.data) ? res.data : (res.data.records || res.data.list || [])
       // 适配后端返回格式
-      const mapped = list.map(mapNoteItem)
+      let mapped = list.map(mapNoteItem)
+      // 用本地关注列表同步所有笔记的 isFollowing 状态
+      if (followingIds.value.length) {
+        mapped.forEach(n => {
+          if (n.author?.userId && followingIds.value.includes(String(n.author.userId))) {
+            n.author.isFollowing = true
+          }
+        })
+      }
+      // 关注Tab：只显示关注用户的笔记
+      if (activeTab.value === 'following' && followingIds.value.length) {
+        mapped = mapped.filter(n => n.author?.isFollowing)
+      }
       if (reset) {
         notes.value = mapped
       } else {
@@ -153,14 +174,14 @@ const loadNotes = async (reset = false) => {
       page.value += 1
     } else {
       if (reset) {
-        notes.value = [...seedNotes]
+        notes.value = filterNotesByTab([...seedNotes])
       }
       hasMore.value = false
     }
   } catch (e) {
     console.warn('加载社区笔记失败，使用本地种子数据:', e.message)
     if (reset) {
-      notes.value = [...seedNotes]
+      notes.value = filterNotesByTab([...seedNotes])
     }
     hasMore.value = false
   } finally {
@@ -220,7 +241,7 @@ const mapNoteItem = (item) => {
   const isSeedData = !!item.author && typeof item.author === 'object'
 
   const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || '旅行者')
-  const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.id || 'fallback'}`)
+  const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || avatarUrl(String(item.id || 'fallback'), authorNickname))
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
   const authorOnline = isSeedData ? item.author.online : (item.online !== undefined ? item.online : Math.random() > 0.4)
@@ -316,16 +337,29 @@ const handleFollow = async (author) => {
     return
   }
 
-  author.isFollowing = !author.isFollowing
+  const newState = !author.isFollowing
+  // 乐观更新：同步所有该用户的笔记
+  notes.value.forEach(n => {
+    if (n.author?.userId === author.userId) n.author.isFollowing = newState
+  })
 
   try {
-    if (author.isFollowing) {
+    if (newState) {
       await followApi.follow(author.userId)
     } else {
       await followApi.unfollow(author.userId)
     }
+    // 同步关注列表缓存
+    if (newState) {
+      if (!followingIds.value.includes(String(author.userId))) followingIds.value.push(String(author.userId))
+    } else {
+      followingIds.value = followingIds.value.filter(id => id !== String(author.userId))
+    }
   } catch (e) {
-    author.isFollowing = !author.isFollowing
+    // 失败回滚
+    notes.value.forEach(n => {
+      if (n.author?.userId === author.userId) n.author.isFollowing = !newState
+    })
     showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
   }
 }
@@ -403,9 +437,8 @@ const handleScroll = (e) => {
 }
 
 /* ==================== Tab 切换 ==================== */
-const onTabChange = (key) => {
+const onTabChange = async (key) => {
   activeTab.value = key
-  // 切换时从缓存取或重新加载
   if (key === 'following') {
     const token = getToken()
     if (!token) {
@@ -413,6 +446,14 @@ const onTabChange = (key) => {
       activeTab.value = 'all'
       return
     }
+    try {
+      const res = await followApi.getFollowing()
+      if (res.code === 0) followingIds.value = (res.data || []).map(u => String(u.userId || u.id))
+    } catch {}
+    loadNotes(true)
+  } else {
+    followingIds.value = []
+    loadNotes(true)
   }
 }
 
@@ -427,18 +468,21 @@ const goToWrite = () => {
 /* ==================== 生命周期 ==================== */
 let hasLoadedOnce = false
 
-onMounted(() => {
-  loadNotes(true).then(() => {
-    hasLoadedOnce = true
-    // 调试：打印图片数据
-    console.log('📷 Community notes loaded:', notes.value.length, 'items')
-    notes.value.forEach((n, i) => {
-      console.log(`  [${i}] id=${n.id} images=${n.images?.length || 0} urls=`, n.images?.slice(0, 2))
-    })
-  })
+const initFollowingList = async () => {
+  followingIds.value = []  // 先清空，避免切换账号后残留上个人的数据
+  try {
+    const res = await followApi.getFollowing()
+    if (res.code === 0) followingIds.value = (res.data || []).map(u => String(u.userId || u.id))
+  } catch {}
+}
+
+onMounted(async () => {
+  await initFollowingList()
+  loadNotes(true).then(() => { hasLoadedOnce = true })
 })
 
-onActivated(() => {
+onActivated(async () => {
+  await initFollowingList()
   if (hasLoadedOnce) {
     loadNotes(true)
   }
@@ -447,10 +491,7 @@ onActivated(() => {
 
 <template>
   <div class="page-shell" @scroll.passive="handleScroll">
-    <!-- 漂浮粒子 -->
-    <div class="clouds-layer" aria-hidden="true">
-      <span class="cloud-dot c1"></span><span class="cloud-dot c2"></span><span class="cloud-dot c3"></span>
-    </div>
+    <!-- 漂浮粒子 — 已禁用 -->
     <!-- ==================== 1. Hero Banner ==================== -->
     <div class="hero-banner entrance-item entrance-d1">
       <div class="banner-content">

@@ -15,6 +15,7 @@ import EmptyState from '../components/EmptyState.vue'
 import { getHotDestinations } from '../api/destination'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
 import { getToken } from '../utils/auth'
+import { avatarUrl } from '../utils/avatar'
 
 const router = useRouter()
 
@@ -191,7 +192,7 @@ const ph = (hue, label) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns=
 const seedNotes = [
   {
     id: 1,
-    author: { nickname: '带着娃看世界', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=family', city: '上海', isFollowing: false, online: true, userId: 'u6' },
+    author: { nickname: '带着娃看世界', avatar: avatarUrl('family', ''), city: '上海', isFollowing: false, online: true, userId: 'u6' },
     title: '🎠 上海迪士尼亲子二日游全攻略！轻松带娃不踩雷',
     content: '带4岁娃的上海迪士尼亲子攻略！轻松版游玩路线，避开人潮不用排长队。重点推荐旋转木马、小飞象和冰雪奇缘表演，孩子玩得超开心。附上园区儿童餐推荐和午睡tips。',
     images: [getImageUrl('上海'), getImageUrl('迪士尼'), getImageUrl('外滩')],
@@ -200,7 +201,7 @@ const seedNotes = [
   },
   {
     id: 2,
-    author: { nickname: '贵州旅行家小杨', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=guizhou', city: '贵阳', isFollowing: true, online: false, userId: 'u11' },
+    author: { nickname: '贵州旅行家小杨', avatar: avatarUrl('guizhou', ''), city: '贵阳', isFollowing: true, online: false, userId: 'u11' },
     title: '🏞️ 贵州旅游超全攻略｜7天6晚玩转黔东南',
     content: '刚回来！贵州太美了！黄果树瀑布气势磅礴，荔波小七孔水绿如翡翠，西江千户苗寨万家灯火震撼心灵。这份攻略整理了吃住行全攻略，人均不到3000玩转贵州精华景点！',
     images: [getImageUrl('黄果树瀑布'), getImageUrl('荔波'), getImageUrl('千户苗寨')],
@@ -210,7 +211,7 @@ const seedNotes = [
   },
   {
     id: 3,
-    author: { nickname: '历史迷小王', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=history', city: '成都', isFollowing: false, online: true, userId: 'u12' },
+    author: { nickname: '历史迷小王', avatar: avatarUrl('history', ''), city: '成都', isFollowing: false, online: true, userId: 'u12' },
     title: '📜 都江堰景区一日游｜千年水利工程太震撼了',
     content: '都江堰到底值不值得去？答案是：绝对值得！亲眼看到两千多年前李冰父子修建的水利工程至今仍在发挥作用，鱼嘴分水、飞沙堰溢洪、宝瓶口引水，古人的智慧让人叹服。附上门票交通全攻略。',
     images: [getImageUrl('都江堰'), getImageUrl('成都'), getImageUrl('青城山')],
@@ -219,7 +220,7 @@ const seedNotes = [
   },
   {
     id: 4,
-    author: { nickname: '酒店控小鹿', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=hotellover', city: '上海', isFollowing: false, online: false, userId: 'u13' },
+    author: { nickname: '酒店控小鹿', avatar: avatarUrl('hotellover', ''), city: '上海', isFollowing: false, online: false, userId: 'u13' },
     title: '🏨 上海外滩周边高性价比酒店推荐｜睡在风景里',
     content: '整理了上海外滩/南京路周边5家高性价比酒店，从网红民宿到五星级酒店都有实测。关键看江景、交通便利度和性价比。和平饭店的下午茶、华尔道夫的老上海风情，每一家都有独特体验！',
     images: [getImageUrl('上海'), getImageUrl('南京路'), getImageUrl('陆家嘴')],
@@ -228,7 +229,7 @@ const seedNotes = [
   },
   {
     id: 5,
-    author: { nickname: '贵阳本地通', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=guiyang', city: '贵阳', isFollowing: true, online: true, userId: 'u14' },
+    author: { nickname: '贵阳本地通', avatar: avatarUrl('guiyang', ''), city: '贵阳', isFollowing: true, online: true, userId: 'u14' },
     title: '🌄 贵阳周边绝美风景｜本地人私藏的小众打卡地',
     content: '贵阳不止有甲秀楼！花溪十里河滩骑行、青岩古镇品猪蹄、天河潭看溶洞瀑布、黔灵山看野生猕猴…这些本地人常去的地方才是贵阳的正确打开方式。美食推荐：肠旺面、丝娃娃、酸汤鱼，好吃到哭！',
     images: [getImageUrl('贵阳'), getImageUrl('青岩古镇'), getImageUrl('黔灵山')],
@@ -237,7 +238,7 @@ const seedNotes = [
   },
   {
     id: 6,
-    author: { nickname: '背包客阿飞', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=backpack', city: '大理', isFollowing: true, online: true, userId: 'u5' },
+    author: { nickname: '背包客阿飞', avatar: avatarUrl('backpack', ''), city: '大理', isFollowing: true, online: true, userId: 'u5' },
     title: '🌾 大理旅居一个月｜环洱海自驾保姆级攻略',
     content: '大理旅居一个月，整理了这份环洱海自驾攻略。路线：古城-喜洲-双廊-挖色-海东。全程130公里，建议分两天慢慢玩。喜洲的稻田、双廊的日落、海东的悬崖公路，每一段都让人不想离开。',
     images: [getImageUrl('大理'), getImageUrl('喜洲'), getImageUrl('双廊')],
@@ -246,7 +247,7 @@ const seedNotes = [
   },
   {
     id: 7,
-    author: { nickname: '吃货小分队', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=foodie', city: '成都', isFollowing: true, online: false, userId: 'u2' },
+    author: { nickname: '吃货小分队', avatar: avatarUrl('foodie', ''), city: '成都', isFollowing: true, online: false, userId: 'u2' },
     title: '🍲 重庆本地人私藏的火锅地图｜这12家必须吃',
     content: '避开网红店，整理了12家藏在居民楼里的老火锅。每家都有特色招牌菜，从人均40到80都有。特别推荐弹子石的巷子火锅和观音桥的防空洞火锅，麻辣鲜香巴适得板！建议收藏！',
     images: [getImageUrl('重庆'), getImageUrl('洪崖洞'), getImageUrl('解放碑')],
@@ -256,7 +257,7 @@ const seedNotes = [
   },
   {
     id: 8,
-    author: { nickname: '摄影师Mr陈', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=photoc', city: '杭州', isFollowing: false, online: false, userId: 'u15' },
+    author: { nickname: '摄影师Mr陈', avatar: avatarUrl('photoc', ''), city: '杭州', isFollowing: false, online: false, userId: 'u15' },
     title: '📸 杭州西湖边的绝美咖啡馆合集｜拍照超出片',
     content: '整理了环西湖最值得去的5家独立咖啡馆，从断桥边的民国老宅到龙井山上的玻璃房。每一家都有独特的设计美学和出品，附上每家的推荐饮品和最佳拍摄机位，文艺青年必收藏！',
     images: [getImageUrl('杭州'), getImageUrl('西湖'), getImageUrl('龙井')],
@@ -265,7 +266,7 @@ const seedNotes = [
   },
   {
     id: 9,
-    author: { nickname: '户外探险家', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=hiker', city: '西安', isFollowing: false, online: true, userId: 'u3' },
+    author: { nickname: '户外探险家', avatar: avatarUrl('hiker', ''), city: '西安', isFollowing: false, online: true, userId: 'u3' },
     title: '⛰️ 华山一日游挑战长空栈道｜云海翻涌太震撼',
     content: '早上5点出发，索道上北峰，一路徒步经过苍龙岭、金锁关，最后挑战长空栈道。虽然腿软但风景绝美，云海翻涌，值得一生铭记的体验。附登山装备清单和体力分配建议！',
     images: [getImageUrl('华山'), getImageUrl('西安'), getImageUrl('渭南')],
@@ -274,7 +275,7 @@ const seedNotes = [
   },
   {
     id: 10,
-    author: { nickname: '旅行者小明', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ming', city: '深圳', isFollowing: false, online: true, userId: 'u1' },
+    author: { nickname: '旅行者小明', avatar: avatarUrl('ming', ''), city: '深圳', isFollowing: false, online: true, userId: 'u1' },
     title: '🚴 深圳湾公园骑行｜沿海岸线看绝美日落',
     content: '深圳湾公园骑行真的太舒服了！沿着海岸线一路骑行，海风轻拂，视野开阔。推荐傍晚时分出发，可以看到绝美的海上日落，沿途还有很多拍照打卡点。全程15公里左右，新手也完全能驾驭。',
     images: [getImageUrl('深圳'), getImageUrl('深圳湾'), getImageUrl('大梅沙')],
@@ -480,7 +481,7 @@ const stripHtml = (html) => {
 const mapNoteItem = (item) => {
   const isSeedData = !!item.author && typeof item.author === 'object'
   const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || '旅行者')
-  const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.id || 'fallback'}`)
+  const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || avatarUrl(String(item.id || 'fallback'), authorNickname))
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
   const authorOnline = isSeedData ? item.author.online : (item.online !== undefined ? item.online : Math.random() > 0.4)
@@ -571,15 +572,21 @@ const handleFollow = async (author) => {
     showToast({ message: '请先登录', position: 'middle', duration: 1500 })
     return
   }
-  author.isFollowing = !author.isFollowing
+  const newState = !author.isFollowing
+  // 同步所有该用户的笔记
+  notes.value.forEach(n => {
+    if (n.author?.userId === author.userId) n.author.isFollowing = newState
+  })
   try {
-    if (author.isFollowing) {
+    if (newState) {
       await followApi.follow(author.userId)
     } else {
       await followApi.unfollow(author.userId)
     }
   } catch (e) {
-    author.isFollowing = !author.isFollowing
+    notes.value.forEach(n => {
+      if (n.author?.userId === author.userId) n.author.isFollowing = !newState
+    })
     showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
   }
 }
@@ -863,11 +870,7 @@ onUnmounted(() => {
 <template>
   <div class="page-shell">
 
-    <!-- 漂浮云朵粒子（纯氛围，不挡点击） -->
-    <div class="clouds-layer" aria-hidden="true">
-      <span class="cloud-dot c1"></span><span class="cloud-dot c2"></span><span class="cloud-dot c3"></span>
-      <span class="cloud-dot c4"></span><span class="cloud-dot c5"></span><span class="cloud-dot c6"></span>
-    </div>
+    <!-- 漂浮云朵粒子 — 已禁用（GPU消耗过高） -->
 
     <!-- ==================== LAYER 1: Hero Header ==================== -->
     <div class="hero-header entrance-item entrance-d1">
@@ -900,6 +903,65 @@ onUnmounted(() => {
       <div class="search-row">
         <SearchBar v-model="destination" placeholder="搜索目的地、景点或网址" :history="searchHistory" @select="handleSearchSelect" />
       </div>
+    </div>
+
+    <!-- ==================== AI 一键规划行程（紧贴搜索栏） ==================== -->
+    <div class="content-card plan-card">
+      <div class="plan-header">
+        <div class="plan-title-row">
+          <span class="plan-icon">🧭</span>
+          <span class="plan-title">AI 一键规划行程</span>
+        </div>
+        <span class="plan-badge">✨ AI智能推荐</span>
+      </div>
+      <!-- 热门目的地快捷标签 -->
+      <div class="hot-tags">
+        <span
+          v-for="tag in hotTags" :key="'ht-' + tag"
+          class="hot-tag"
+          :class="{ active: destination === tag }"
+          @click="selectHotTag(tag)"
+        >{{ tag }}</span>
+      </div>
+      <!-- 表单：2列网格 -->
+      <div class="plan-form">
+        <div class="plan-field plan-field-full" @click="openCityPicker">
+          <label class="plan-label">📍 目的地</label>
+          <input v-model="destination" type="text" placeholder="选择或输入目的地" class="plan-input" readonly />
+          <van-icon name="arrow" size="14" color="#94A3B8" />
+        </div>
+        <div class="plan-row">
+          <div class="plan-field plan-half">
+            <label class="plan-label">💰 预算(元)</label>
+            <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" placeholder="如3000" class="plan-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
+          </div>
+          <div class="plan-field plan-half">
+            <label class="plan-label">📅 天数</label>
+            <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" placeholder="如5" class="plan-input" @input="handleDaysInput" @blur="handleDaysBlur" />
+          </div>
+        </div>
+        <div class="plan-field">
+          <label class="plan-label">👥 人数</label>
+          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" placeholder="出行人数" class="plan-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
+        </div>
+      </div>
+      <button class="plan-submit btn-tap-scale" @click="startPlanning">
+        <van-icon name="compass-o" size="20" />
+        <span>开始规划</span>
+      </button>
+    </div>
+
+    <!-- ==================== Banner 轮播 ==================== -->
+    <div class="content-card banner-wrap">
+      <Swipe class="banner-swipe" :autoplay="4000" indicator-color="rgba(255,255,255,0.5)" indicator-active-color="#ffffff" :circular="true">
+        <SwipeItem v-for="banner in banners" :key="'bn-' + banner.id" class="banner-slide" @click="handleBannerClick(banner)">
+          <img :src="banner.image" :alt="banner.title" class="banner-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
+          <div class="banner-info">
+            <span class="banner-name">{{ banner.title }}</span>
+            <span class="banner-slogan">{{ banner.subtitle }}</span>
+          </div>
+        </SwipeItem>
+      </Swipe>
     </div>
 
     <!-- ==================== LAYER 2: Service Icon Grid Row 1 (5 cols) ==================== -->
@@ -988,65 +1050,6 @@ onUnmounted(() => {
           <span class="city-cta">{{ citySeedCard.cta }}</span>
         </div>
       </div>
-    </div>
-
-    <!-- ==================== EXISTING: Banner 轮播 ==================== -->
-    <div class="content-card banner-wrap">
-      <Swipe class="banner-swipe" :autoplay="4000" indicator-color="rgba(255,255,255,0.5)" indicator-active-color="#ffffff" :circular="true">
-        <SwipeItem v-for="banner in banners" :key="'bn-' + banner.id" class="banner-slide" @click="handleBannerClick(banner)">
-          <img :src="banner.image" :alt="banner.title" class="banner-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
-          <div class="banner-info">
-            <span class="banner-name">{{ banner.title }}</span>
-            <span class="banner-slogan">{{ banner.subtitle }}</span>
-          </div>
-        </SwipeItem>
-      </Swipe>
-    </div>
-
-    <!-- ==================== EXISTING: AI 一键规划行程 ==================== -->
-    <div class="content-card plan-card">
-      <div class="plan-header">
-        <div class="plan-title-row">
-          <span class="plan-icon">🧭</span>
-          <span class="plan-title">AI 一键规划行程</span>
-        </div>
-        <span class="plan-badge">✨ AI智能推荐</span>
-      </div>
-      <!-- 热门目的地快捷标签 -->
-      <div class="hot-tags">
-        <span
-          v-for="tag in hotTags" :key="'ht-' + tag"
-          class="hot-tag"
-          :class="{ active: destination === tag }"
-          @click="selectHotTag(tag)"
-        >{{ tag }}</span>
-      </div>
-      <!-- 表单：2列网格 -->
-      <div class="plan-form">
-        <div class="plan-field plan-field-full" @click="openCityPicker">
-          <label class="plan-label">📍 目的地</label>
-          <input v-model="destination" type="text" placeholder="选择或输入目的地" class="plan-input" readonly />
-          <van-icon name="arrow" size="14" color="#94A3B8" />
-        </div>
-        <div class="plan-row">
-          <div class="plan-field plan-half">
-            <label class="plan-label">💰 预算(元)</label>
-            <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" placeholder="如3000" class="plan-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
-          </div>
-          <div class="plan-field plan-half">
-            <label class="plan-label">📅 天数</label>
-            <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" placeholder="如5" class="plan-input" @input="handleDaysInput" @blur="handleDaysBlur" />
-          </div>
-        </div>
-        <div class="plan-field">
-          <label class="plan-label">👥 人数</label>
-          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" placeholder="出行人数" class="plan-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
-        </div>
-      </div>
-      <button class="plan-submit btn-tap-scale" @click="startPlanning">
-        <van-icon name="compass-o" size="20" />
-        <span>开始规划</span>
-      </button>
     </div>
 
     <!-- ==================== EXISTING: 快捷入口 6宫格 ==================== -->
@@ -1258,11 +1261,11 @@ onUnmounted(() => {
     <div class="ai-float-bar" @click="goToAIChat">
       <div class="float-bar-inner">
         <div class="float-ai-icon">
-          <van-icon name="service-o" size="20" color="#fff" />
+          <van-icon name="service-o" size="16" color="#fff" />
         </div>
         <span class="float-placeholder">问AI或按住说话</span>
         <div class="float-mic-icon">
-          <van-icon name="audio" size="18" color="#8B5CF6" />
+          <van-icon name="audio" size="14" color="#8B5CF6" />
         </div>
       </div>
     </div>
@@ -1312,7 +1315,7 @@ onUnmounted(() => {
   --text-hint: #94A3B8;
   --card-bg: #ffffff;
   --card-radius: 18px;
-  --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
   --tabbar-height: 56px;
   --safe-area-bottom: 0px;
   --float-bar-height: 52px;
@@ -1393,7 +1396,7 @@ onUnmounted(() => {
 
 .search-row {
   position: relative;
-  z-index: 2;
+  /* z-index 移除：避免创建 stacking context 限制 SearchBar 遮罩/面板的 fixed z-index */
   max-width: 480px;
   margin: 0 auto;
 }
@@ -1758,7 +1761,7 @@ onUnmounted(() => {
   background: transparent;
   border-radius: 0;
   box-shadow: none;
-  padding: 0 20px;
+  padding: 0 10px;
   margin: 0 auto 14px;
   max-width: 480px;
 }
@@ -1766,7 +1769,7 @@ onUnmounted(() => {
 /* ==================== Banner ==================== */
 .banner-wrap {
   overflow: hidden;
-  padding: 6px;
+  padding: 6px 0;
   margin-top: 2px;
 }
 .banner-swipe {
@@ -1807,7 +1810,25 @@ onUnmounted(() => {
 }
 
 /* ==================== AI 规划卡片 ==================== */
-.plan-card { position: relative; }
+/* ==================== AI 一键规划行程卡片（分层边距） ==================== */
+/*
+ * 层级逻辑：
+ *   屏幕 → 20px外边距(.content-card继承) → 白色卡片(.plan-card) → 16px内边距 → 内容
+ *   .plan-card 覆盖 .content-card 的 margin/padding，只对AI规划卡片生效
+ */
+.plan-card {
+  position: relative;
+  /* 外层：左右20px外边距，杜绝贴边 */
+  margin-left: 10px !important;
+  margin-right: 10px !important;
+  margin-top: 16px !important;
+  /* 内层：左右16px内边距，上下20px */
+  padding: 12px 10px !important;
+  /* 卡片外观 */
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.04);
+}
 
 .plan-header {
   display: flex;
@@ -2025,7 +2046,7 @@ onUnmounted(() => {
   width: 100%;
   max-width: 480px;
   margin: 0 auto 14px;
-  padding: 0 20px;
+  padding: 0 10px;
   box-sizing: border-box;
   background: transparent;
 }
@@ -2342,8 +2363,9 @@ onUnmounted(() => {
   bottom: calc(var(--tabbar-height, 56px) + var(--safe-area-bottom, 0px) + 8px);
   left: 50%;
   transform: translateX(-50%);
-  width: calc(100% - 28px);
-  max-width: 452px;
+  width: auto;
+  min-width: 160px;
+  max-width: 220px;
   z-index: 500;
   cursor: pointer;
 }
@@ -2351,13 +2373,13 @@ onUnmounted(() => {
 .float-bar-inner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 8px;
+  padding: 6px 12px;
   background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(139, 92, 246, 0.15);
-  border-radius: 26px;
+  border-radius: 22px;
   box-shadow: 0 4px 24px rgba(139, 92, 246, 0.12), 0 8px 40px rgba(0, 0, 0, 0.06);
   transition: all 0.25s;
 }
@@ -2370,8 +2392,8 @@ onUnmounted(() => {
 }
 
 .float-ai-icon {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2382,14 +2404,14 @@ onUnmounted(() => {
 
 .float-placeholder {
   flex: 1;
-  font-size: 14px;
+  font-size: 12px;
   color: #94A3B8;
   font-weight: 400;
 }
 
 .float-mic-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2471,7 +2493,7 @@ onUnmounted(() => {
 .cloud-dot {
   position: absolute; border-radius: 50%;
   background: rgba(139, 92, 246, 0.08);
-  animation: cloudDrift linear infinite;
+  /* animation 已禁用 — 6个fixed粒子持续translate导致GPU过载 */
 }
 .c1 { width: 60px; height: 60px; top: 12%; left: 5%; animation-duration: 24s; animation-delay: 0s; }
 .c2 { width: 40px; height: 40px; top: 25%; right: 10%; animation-duration: 30s; animation-delay: -6s; background: rgba(99,102,241,0.06); }
@@ -2484,7 +2506,7 @@ onUnmounted(() => {
 
 /* ---------- 圆形图标常驻呼吸 + hover发光 ---------- */
 .service-icon-circle {
-  animation: iconBreathe 3s ease-in-out infinite;
+  /* animation 已禁用 — 5个图标同时呼吸动画导致GPU持续负载 */
   transition: transform 0.35s ease, box-shadow 0.35s ease;
 }
 .service-item:hover .service-icon-circle {
@@ -2573,7 +2595,7 @@ onUnmounted(() => {
     height: 115px;
   }
   .ai-float-bar {
-    width: calc(100% - 20px);
+    max-width: 180px;
   }
 }
 </style>

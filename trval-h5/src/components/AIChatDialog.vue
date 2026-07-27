@@ -802,7 +802,7 @@ initSpeechRecognition()
 }
 .user-msg-row,
 .ai-msg-row {
-  will-change: transform, opacity;
+  /* will-change 已禁用 — 每条消息预分配GPU层导致OOM */
 }
 
 /* ==================== Thinking Animation ==================== */

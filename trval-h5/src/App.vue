@@ -192,10 +192,9 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
 }
 
 /* ==================== 底部 Tab 导航栏（固定，不参与过渡）— 薰衣草毛玻璃风格 ==================== */
-/* 【性能优化】will-change + transform 开启GPU硬件加速 */
+/* 【性能优化】blur降至8px，保留translateZ确保backdrop-filter合成层 */
 .custom-tabbar {
   position: fixed;
-  will-change: transform;
   transform: translateZ(0);
   bottom: 0;
   left: 0;
@@ -203,9 +202,9 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   width: 100%;
   height: var(--tabbar-height);
   padding-bottom: var(--safe-area-bottom);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-around;
@@ -226,20 +225,16 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   transition: color 0.25s ease, transform 0.2s ease;
   cursor: pointer;
   position: relative;
-  will-change: transform;        /* GPU加速：点击缩放动画 */
 }
 
 .tab-item.active {
   color: #8B5CF6;
 }
-/* 选中Tab图标持续微弱放大呼吸 */
+/* 选中Tab图标 — 呼吸动画已禁用，降低GPU消耗 */
 .tab-item.active :deep(.van-icon) {
-  animation: tabIconBreathe 2.8s ease-in-out infinite;
+  /* animation: tabIconBreathe 2.8s ease-in-out infinite; */
 }
-@keyframes tabIconBreathe {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.08); }
-}
+/* @keyframes tabIconBreathe 已禁用 */
 
 .tab-item.active::after {
   content: '';

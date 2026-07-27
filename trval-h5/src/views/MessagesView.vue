@@ -151,10 +151,7 @@ onDeactivated(() => {
 <template>
   <div class="page-shell">
 
-    <!-- 漂浮微光粒子 -->
-    <div class="clouds-layer" aria-hidden="true">
-      <span class="cloud-dot c1"></span><span class="cloud-dot c2"></span><span class="cloud-dot c3"></span>
-    </div>
+    <!-- 漂浮微光粒子 — 已禁用 -->
 
     <!-- ==================== 1. 顶部导航 ==================== -->
     <div class="msg-header entrance-item entrance-d1">

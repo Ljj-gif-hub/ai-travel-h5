@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { ref, onMounted, reactive, onActivated, onDeactivated } from 'vue'
+import { ref, computed, onMounted, reactive, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
 
@@ -109,11 +109,33 @@ const saveProfile = async () => {
 
 const handleWriteNote = () => { if (!isLoggedIn.value) { router.push('/login'); return }; router.push('/write-note') }
 const handleInvite = () => { if (!isLoggedIn.value) { router.push('/login'); return }; showInvitePopup.value = true }
-const copyInviteLink = async () => {
-  const link = window.location.origin + '/register?invite=' + (userInfo.username || 'traveler')
-  try { await navigator.clipboard.writeText(link); showToast('邀请链接已复制') } catch { showToast('复制失败') }
+const inviteOrigin = ref(window.location.origin)
+const inviteLink = computed(() => `${inviteOrigin.value}/register?invite=${userInfo.username || 'traveler'}`)
+const inviteShareOptions = [
+  { name: '微信好友', icon: 'wechat', color: '#07C160' },
+  { name: '朋友圈', icon: 'cluster-o', color: '#07C160' },
+  { name: '复制链接', icon: 'link-o', color: '#8B5CF6' },
+  { name: 'QQ好友', icon: 'chat-o', color: '#12B7F5' },
+  { name: '微博', icon: 'share-o', color: '#E6162D' },
+  { name: '保存二维码', icon: 'qr', color: '#3B82F6' },
+]
+const handleInviteShare = async (opt) => {
+  if (opt.name === '复制链接') {
+    try { await navigator.clipboard.writeText(inviteLink.value); showToast('邀请链接已复制') } catch { showToast('复制失败') }
+  } else if (opt.name === '保存二维码') {
+    showToast('二维码功能开发中')
+  } else if (navigator.share) {
+    try {
+      await navigator.share({ title: '智能旅游助手', text: '加入智能旅游助手，一起探索世界！', url: inviteLink.value })
+    } catch {}
+  } else {
+    try { await navigator.clipboard.writeText(inviteLink.value); showToast(`已复制链接，请打开${opt.name}粘贴分享`) } catch { showToast('分享失败') }
+  }
 }
-const shareInvite = () => { showToast('请复制链接后分享给好友') }
+const copyInviteLink = async () => {
+  try { await navigator.clipboard.writeText(inviteLink.value); showToast('邀请链接已复制') } catch { showToast('复制失败') }
+}
+const shareInvite = () => { showInvitePopup.value = true }
 const handleQuickAction = (item) => {
   if (!isLoggedIn.value) { router.push('/login'); return }
   if (item.action === 'invite') handleInvite(); else if (item.path) router.push(item.path)
@@ -229,10 +251,7 @@ onDeactivated(() => {
 
 <template>
   <div class="profile-page">
-    <!-- 漂浮粒子 -->
-    <div class="clouds-layer" aria-hidden="true">
-      <span class="cloud-dot c1"></span><span class="cloud-dot c2"></span><span class="cloud-dot c3"></span>
-    </div>
+    <!-- 漂浮粒子 — 已禁用 -->
     <div class="profile-wrap">
 
       <!-- ======== 用户信息头图 ======== -->
@@ -381,19 +400,22 @@ onDeactivated(() => {
     <!-- ======== 邀请好友弹窗 ======== -->
     <van-popup v-model:show="showInvitePopup" position="center" :style="{ width: '82%', borderRadius: '22px' }">
       <div class="invite-pop">
+        <van-icon name="cross" size="20" class="invite-close" @click="showInvitePopup = false" />
         <div class="invite-head">
-          <van-icon name="gift-o" size="48" color="#8B5CF6" />
+          <van-icon name="gift-o" size="42" color="#8B5CF6" />
           <h3>邀请好友</h3>
           <p>邀请好友注册，双方获得专属旅行优惠券</p>
         </div>
-        <div class="invite-link-box">
-          <span class="invite-link">{{ window.location.origin }}/register?invite={{ userInfo.username || 'traveler' }}</span>
+        <div class="invite-link-box" @click="copyInviteLink">
+          <span class="invite-link">{{ inviteLink }}</span>
+          <van-icon name="description" size="16" color="#8B5CF6" />
         </div>
-        <div class="invite-btns">
-          <van-button type="default" block class="invite-btn" @click="copyInviteLink">复制链接</van-button>
-          <van-button type="primary" block class="invite-btn invite-btn-primary" @click="shareInvite">分享好友</van-button>
+        <div class="share-grid">
+          <div v-for="opt in inviteShareOptions" :key="opt.name" class="share-option" @click="handleInviteShare(opt)">
+            <div class="share-icon-circle" :style="{ background: opt.color }"><van-icon :name="opt.icon" size="22" color="#fff" /></div>
+            <span class="share-label">{{ opt.name }}</span>
+          </div>
         </div>
-        <van-icon name="cross" size="20" class="invite-close" @click="showInvitePopup = false" />
       </div>
     </van-popup>
   </div>
@@ -541,16 +563,18 @@ onDeactivated(() => {
 .pop-btn { flex: 1; border-radius: 14px !important; }
 .pop-btn-primary { background: linear-gradient(135deg, #8B5CF6, #6366F1) !important; border: none !important; color: #fff !important; }
 
-.invite-pop { padding: 32px 20px; position: relative; }
-.invite-head { text-align: center; margin-bottom: 24px; }
-.invite-head h3 { font-size: 18px; font-weight: 700; color: #1E293B; margin: 14px 0 8px; }
+.invite-pop { padding: 28px 20px 22px; position: relative; background: #fff; border-radius: 22px; }
+.invite-head { text-align: center; margin-bottom: 16px; }
+.invite-head h3 { font-size: 18px; font-weight: 700; color: #1E293B; margin: 10px 0 6px; }
 .invite-head p { font-size: 13px; color: #94A3B8; }
-.invite-link-box { background: #F8FAFC; border-radius: 12px; padding: 16px; margin-bottom: 22px; word-break: break-all; }
-.invite-link { font-size: 13px; color: #64748B; }
-.invite-btns { display: flex; gap: 12px; }
-.invite-btn { flex: 1; border-radius: 12px !important; }
-.invite-btn-primary { background: linear-gradient(135deg, #8B5CF6, #6366F1) !important; border: none !important; }
-.invite-close { position: absolute; top: 16px; right: 16px; cursor: pointer; color: #94A3B8; }
+.invite-link-box { background: #F8FAFC; border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; }
+.invite-link { font-size: 12px; color: #64748B; word-break: break-all; flex:1; min-width:0; }
+.invite-pop .share-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; }
+.invite-pop .share-option { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.invite-pop .share-option:active { transform: scale(0.9); }
+.invite-pop .share-icon-circle { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.invite-pop .share-label { font-size: 11px; color: #64748b; }
+.invite-close { position: absolute; top: 14px; right: 14px; cursor: pointer; color: #94A3B8; }
 
 /*
  * ================================================================

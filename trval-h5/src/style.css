@@ -28,6 +28,10 @@
   --bg-card: #ffffff;
   --bg-glass: rgba(255, 255, 255, 0.75);
 
+  /* 卡片阴影 */
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 6px 24px rgba(0, 0, 0, 0.08);
+
   /* 文字 */
   --text-primary: #1E293B;
   --text-secondary: #64748B;
@@ -72,7 +76,8 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-page);
+  background: linear-gradient(180deg, #F8F7FF 0%, #FBFBFF 30%, #FFFFFF 100%);
+  background-attachment: fixed;
   overflow-x: hidden;
   overflow-y: auto;
   touch-action: pan-y;
@@ -82,8 +87,31 @@ html, body {
   width: 100%;
   max-width: 100vw;
   min-height: 100vh;
-  background: var(--bg-page);
+  background: transparent;
   overflow-x: hidden;
+  position: relative;
+}
+
+/* 顶部淡紫色装饰光圈 */
+#app::before {
+  content: '';
+  position: fixed; top: -120px; right: -80px;
+  width: 360px; height: 360px;
+  background: radial-gradient(circle, rgba(139,92,246,0.08) 0%, rgba(139,92,246,0.03) 50%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 底部淡紫色装饰光圈 */
+#app::after {
+  content: '';
+  position: fixed; bottom: -100px; left: -60px;
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, rgba(99,102,241,0.02) 50%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ==================== 全局容器防溢出 ==================== */
@@ -321,11 +349,12 @@ html, body {
 }
 
 /* ---------- 页面入场分层淡入上浮 ---------- */
+/* 【注意】不设 to 帧且不用 forwards：避免 transform 残留形成 containing block，
+   导致内部 position:fixed 元素（下拉面板、弹窗遮罩）相对该祖先定位而非视口。 */
 @keyframes entranceUp {
   from { opacity: 0; transform: translateY(18px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
-.entrance-item { opacity: 0; animation: entranceUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.entrance-item { opacity: 1; animation: entranceUp 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
 .entrance-d1 { animation-delay: 0.05s; }
 .entrance-d2 { animation-delay: 0.12s; }
 .entrance-d3 { animation-delay: 0.20s; }

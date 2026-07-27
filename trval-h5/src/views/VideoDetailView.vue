@@ -22,9 +22,66 @@ const comments = ref([]);
 const expandedReplies = reactive({});   // { commentId: true/false } 是否已展开回复
 const replyList = reactive({});         // { commentId: [reply, ...] } 缓存已加载的回复
 const replyInputs = reactive({});       // { commentId: 'text' } 回复输入框文字
-const replyTarget = ref(null);          // { id, authorName } 当前正在回复的评论
+const replyTarget = ref(null);          // { id, authorName, rootId } 当前正在回复的评论
 const isPlaying = ref(true);
 const videoRef = ref(null);
+const videoCurrentTime = ref(0);
+const videoDuration = ref(0);
+const videoProgress = ref(0);       // 0~100
+const isFullscreen = ref(false);
+const showControls = ref(true);
+let hideControlsTimer = null;
+
+const onVideoTimeUpdate = () => {
+  if (!videoRef.value) return
+  videoCurrentTime.value = videoRef.value.currentTime
+  videoDuration.value = videoRef.value.duration || 0
+  videoProgress.value = videoDuration.value ? (videoCurrentTime.value / videoDuration.value) * 100 : 0
+};
+
+const onVideoLoadedMetadata = () => {
+  if (videoRef.value) {
+    videoDuration.value = videoRef.value.duration || 0
+    videoRef.value.play()
+    isPlaying.value = true
+  }
+};
+
+const seekVideo = (e) => {
+  const bar = e.currentTarget
+  const rect = bar.getBoundingClientRect()
+  const pct = (e.clientX - rect.left) / rect.width
+  if (videoRef.value && videoDuration.value) {
+    videoRef.value.currentTime = pct * videoDuration.value
+  }
+};
+
+// 全屏按钮的 fixed 坐标
+const fullscreenBtnStyle = computed(() => {
+  if (isFullscreen.value) return { bottom: 'auto', top: '12px', right: '12px' }
+  return { bottom: '86px', right: '12px' }
+})
+
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+  nextTick(() => {
+    if (videoRef.value && isPlaying.value) videoRef.value.play()
+  })
+};
+
+const formatTime = (s) => {
+  if (!s || !isFinite(s)) return '0:00'
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return m + ':' + String(sec).padStart(2, '0')
+};
+
+const resetHideControls = () => {
+  showControls.value = true
+  clearTimeout(hideControlsTimer)
+  hideControlsTimer = setTimeout(() => { showControls.value = false }, 3000)
+};
+
 // ===== 视频滑动（抖音风格跟手拖拽） =====
 const videoDragY = ref(0);          // 当前拖拽偏移量(px)
 const isVideoDragging = ref(false); // 手指按下中
@@ -144,7 +201,24 @@ const updateState = () => {
 
 const loadComments = async () => {
   const id = current.value?.id; if (!id) return;
-  try { const res = await commentApi.getComments(id); if (res.code === 0) comments.value = res.data; } catch {}
+  try {
+    const res = await commentApi.getComments(id);
+    if (res.code === 0) {
+      const list = Array.isArray(res.data) ? res.data : [];
+      comments.value = list;
+      for (const c of list) {
+        if (!c.parentId) {
+          try {
+            const r = await commentApi.getReplies(c.id);
+            if (r.code === 0 && r.data?.length) {
+              c.replyCount = r.data.length;
+              c.topReply = r.data.sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
 };
 
 const goToVideo = async (idx) => {
@@ -275,31 +349,31 @@ const handleSendComment = async () => {
   } catch { showToast('评论失败'); }
 };
 
-const handleSendReply = async (parentId) => {
-  const text = (replyInputs[parentId] || '').trim();
-  if (!text || !getToken()) return;
+const handleSendReply = async () => {
+  if (!replyTarget.value) return
+  const { id, rootId, authorName } = replyTarget.value
+  const text = (replyInputs[rootId] || '').trim()
+  if (!text || !getToken()) return
   try {
-    const res = await commentApi.addComment(current.value.id, text, null, null, parentId);
+    // 回复到顶层父评论下，内容前加 @mention
+    const content = id !== rootId ? `@${authorName} ${text}` : text
+    const res = await commentApi.addComment(current.value.id, content, null, null, rootId)
     if (res.code === 0) {
-      const reply = res.data;
-      // 更新评论的回复计数
-      const parent = comments.value.find(c => c.id === parentId);
+      const reply = res.data
+      const parent = comments.value.find(c => c.id === rootId)
       if (parent) {
-        parent.replyCount = (parent.replyCount || 0) + 1;
-        // 如果没有热评回复，设为第一条回复
-        if (!parent.topReply) parent.topReply = reply;
+        parent.replyCount = (parent.replyCount || 0) + 1
+        if (!parent.topReply) parent.topReply = reply
       }
-      // 如果已展开，直接追加到列表中
-      if (expandedReplies[parentId] && replyList[parentId]) {
-        replyList[parentId].push(reply);
+      if (expandedReplies[rootId] && replyList[rootId]) {
+        replyList[rootId].push(reply)
       }
-      // 回复也计入总评论数
-      commentCount.value++;
-      const note = notes.value[currentIdx.value];
-      if (note) note.comments = (note.comments || 0) + 1;
-      replyInputs[parentId] = '';
-      replyTarget.value = null;
-      showToast('回复成功');
+      commentCount.value++
+      const note = notes.value[currentIdx.value]
+      if (note) note.comments = (note.comments || 0) + 1
+      replyInputs[rootId] = ''
+      replyTarget.value = null
+      showToast('回复成功')
     }
   } catch { showToast('回复失败'); }
 };
@@ -321,9 +395,19 @@ const toggleReplies = async (commentId) => {
 };
 
 const startReply = (comment) => {
-  replyTarget.value = { id: comment.id, authorName: comment.authorName || '用户' };
+  // 找到顶层父评论ID（回复回复时，归属到顶层评论区）
+  const rootId = comment.parentId || comment.id
+  replyTarget.value = {
+    id: comment.id,
+    rootId,
+    authorName: comment.authorName || ('用户' + (comment.userId || ''))
+  }
+  // 确保展开该顶层评论的回复区
+  if (!expandedReplies[rootId] && comment.parentId) {
+    toggleReplies(rootId)
+  }
   nextTick(() => {
-    const input = document.querySelector(`.reply-input-${comment.id}`);
+    const input = document.querySelector(`.reply-input-${rootId}`);
     if (input) input.focus();
   });
 };
@@ -403,7 +487,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 </script>
 
 <template>
-  <div class="video-shell" :class="{ dragging }" v-if="!isLoading">
+  <div class="video-shell" :class="{ dragging, fullscreen: isFullscreen }" v-if="!isLoading">
       <!-- 顶部栏 -->
       <div class="top-bar"><van-icon name="arrow-left" size="24" color="#fff" @click.stop="goBack"/><span class="top-title">{{ current.title || '视频' }}</span><van-icon name="search" size="22" color="#fff" @click.stop/></div>
 
@@ -414,15 +498,30 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
             <video
               v-if="videoUrl" :key="currentIdx" ref="videoRef" :src="videoUrl" class="full-video" loop playsinline
               webkit-playsinline autoplay
-              @loadedmetadata="() => { if(videoRef) videoRef.play(); isPlaying=true }"
+              @loadedmetadata="onVideoLoadedMetadata"
+              @timeupdate="onVideoTimeUpdate"
               @pause="isPlaying=false" @play="isPlaying=true"
             ></video>
             <div v-else :key="'empty-'+currentIdx" class="no-video"><van-icon name="video-o" size="60" color="rgba(255,255,255,0.3)"/><p style="margin-top:12px;color:rgba(255,255,255,0.4);font-size:14px">暂无视频</p></div>
           </Transition>
         </div>
+        <!-- 播放/暂停指示 -->
         <div class="play-indicator" :class="{ hide: isPlaying }"><van-icon name="play-circle-o" size="64" color="rgba(255,255,255,0.7)"/></div>
         <div v-if="heartBurst" class="heart-burst">❤️</div>
         <div class="swipe-hint" v-if="showSwipeHint && currentIdx<notes.length-1 && !drawerVisible"><van-icon name="arrow-up" size="16" color="rgba(255,255,255,0.5)"/><span>上滑下一个</span></div>
+        <!-- 全屏按钮（视频右下角，进度条上方） -->
+        <button type="button" class="fullscreen-btn" :class="{ fullscreen: isFullscreen, hide: !showControls }" :style="fullscreenBtnStyle" @click.stop="toggleFullscreen">
+          <van-icon :name="isFullscreen ? 'shrink' : 'expand-o'" size="16" color="#fff" />
+        </button>
+        <!-- 抖音风底部进度条 -->
+        <div class="video-controls" :class="{ hide: !showControls }">
+          <div class="video-progress-track" @click.stop="seekVideo">
+            <div class="video-progress-fill" :style="{ width: videoProgress + '%' }"></div>
+          </div>
+          <div class="video-bottom-row">
+            <span class="video-time-tt">{{ formatTime(videoCurrentTime) }} / {{ formatTime(videoDuration) }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- 右侧操作（独立于视频区，被抽屉遮挡） -->
@@ -525,36 +624,10 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                   </div>
                 </div>
 
-                <!-- 内联回复输入框 -->
-                <div v-if="replyTarget?.id === c.id" class="reply-input-inline">
-                  <span class="reply-input-hint">回复 {{ replyTarget.authorName }}：</span>
-                  <input
-                    :class="'reply-input-'+c.id"
-                    v-model="replyInputs[c.id]"
-                    :placeholder="'回复 '+replyTarget.authorName"
-                    class="reply-field"
-                    @keyup.enter="handleSendReply(c.id)"
-                  />
-                  <span class="reply-send" @click.stop="handleSendReply(c.id)">发送</span>
-                  <van-icon name="cross" size="14" color="#999" @click.stop="cancelReply"/>
-                </div>
               </div>
 
               <!-- 无回复时的回复入口 -->
-              <div v-else class="reply-zone">
-                <div v-if="replyTarget?.id === c.id" class="reply-input-inline">
-                  <span class="reply-input-hint">回复 {{ replyTarget.authorName }}：</span>
-                  <input
-                    :class="'reply-input-'+c.id"
-                    v-model="replyInputs[c.id]"
-                    :placeholder="'回复 '+replyTarget.authorName"
-                    class="reply-field"
-                    @keyup.enter="handleSendReply(c.id)"
-                  />
-                  <span class="reply-send" @click.stop="handleSendReply(c.id)">发送</span>
-                  <van-icon name="cross" size="14" color="#999" @click.stop="cancelReply"/>
-                </div>
-              </div>
+              <div v-else class="reply-zone"></div>
             </div>
             <!-- 删除按钮 -->
             <van-icon v-if="getToken()" name="delete-o" size="14" color="#ccc" class="cmt-del" @click.stop="handleDeleteComment(c)"/>
@@ -567,8 +640,8 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
         </div>
         <div class="dr-input-row replying" v-else>
           <span class="replying-label">回复 @{{ replyTarget.authorName }}</span>
-          <van-field v-model="replyInputs[replyTarget.id]" placeholder="写下你的回复..." :border="false" class="dr-input"/>
-          <div class="dr-send" @click.stop="handleSendReply(replyTarget.id)"><van-icon name="guide-o" size="18" color="#fff"/></div>
+          <van-field v-model="replyInputs[replyTarget.rootId]" placeholder="写下你的回复..." :border="false" class="dr-input"/>
+          <div class="dr-send" @click.stop="handleSendReply()"><van-icon name="guide-o" size="18" color="#fff"/></div>
           <van-icon name="cross" size="18" color="#999" @click.stop="cancelReply" style="margin-left:8px;cursor:pointer"/>
         </div>
       </div>
@@ -588,6 +661,21 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
   padding-bottom: env(safe-area-inset-bottom, 0px);
   box-sizing: border-box;
 }
+
+/* ====== 横屏全屏模式（原生 orientation API，系统级旋转动画） ====== */
+.video-shell.fullscreen {
+  padding-bottom: 0;
+}
+.video-shell.fullscreen .video-zone {
+  position: fixed; top:0; left:0; width:100%; height:100%;
+  z-index: 20000; flex: none;
+}
+.video-shell.fullscreen .side-layer,
+.video-shell.fullscreen .top-bar,
+.video-shell.fullscreen .comment-drawer,
+.video-shell.fullscreen .swipe-hint { display:none; }
+.video-shell.fullscreen .video-controls { left:12px; right:12px; bottom:12px; }
+.video-shell.fullscreen .fullscreen-btn { bottom:auto; top:12px; right:12px; }
 
 /* ====== 视频区 ====== */
 .video-zone {
@@ -683,6 +771,32 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 .b-desc { color:rgba(255,255,255,.88); font-size:13px; line-height:1.6; margin-bottom:10px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .location-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 12px; border-radius:20px; background:rgba(255,255,255,.12); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.8); font-size:11px; }
 .swipe-hint { position:absolute; bottom:100px;left:50%;transform:translateX(-50%); display:flex;flex-direction:column;align-items:center;gap:2px; color:rgba(255,255,255,.5);font-size:11px;z-index:5; animation:float 2s ease-in-out infinite; }
+
+/* ====== 抖音风底部控制栏 ====== */
+.video-controls { position:absolute; bottom:8px; left:12px; right:12px; z-index:10; transition:opacity 0.3s; }
+.video-controls.hide { opacity:0; pointer-events:none; }
+.video-progress-track { width:100%; height:2px; background:rgba(255,255,255,0.2); border-radius:1px; cursor:pointer; }
+.video-progress-fill { height:100%; background:#fff; border-radius:1px; transition:width 0.15s linear; min-width:0; position:relative; }
+.video-progress-fill::after { content:''; position:absolute; right:-4px; top:-3px; width:8px; height:8px; background:#fff; border-radius:50%; }
+.video-bottom-row { display:flex; align-items:center; margin-top:2px; }
+.video-time-tt { font-size:10px; color:rgba(255,255,255,0.4); font-variant-numeric:tabular-nums; }
+
+/* ====== 全屏按钮 ====== */
+/* 竖屏：fixed 绝对定位，固定在视频画面右下角底边下方 */
+.fullscreen-btn {
+  position:fixed; bottom:86px; right:12px; z-index:10001;
+  width:28px; height:28px; border-radius:6px;
+  background:rgba(0,0,0,0.25); border:none;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:opacity 0.3s;
+  -webkit-tap-highlight-color:transparent;
+  padding:6px; margin:-6px; box-sizing:content-box;
+}
+.fullscreen-btn.hide { opacity:0; pointer-events:none; }
+.fullscreen-btn:active { background:rgba(0,0,0,0.45); }
+/* 横屏全屏：回到右上角 */
+.fullscreen-btn.fullscreen { bottom:auto; top:48px; right:12px; }
+.video-shell.fullscreen .fullscreen-btn { bottom:auto; top:12px; right:12px; }
 @keyframes float { 0%,100%{opacity:.6;transform:translateX(-50%) translateY(0)} 50%{opacity:1;transform:translateX(-50%) translateY(-6px)} }
 
 /* ====== 评论抽屉 ====== */

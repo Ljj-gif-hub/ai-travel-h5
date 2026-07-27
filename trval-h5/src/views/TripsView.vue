@@ -256,9 +256,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false; showMore
 
 <template>
   <div class="trips-page">
-    <div class="clouds-layer" aria-hidden="true">
-      <span class="cloud-dot c1"></span><span class="cloud-dot c2"></span><span class="cloud-dot c3"></span>
-    </div>
+    <!-- 漂浮粒子 — 已禁用 -->
     <van-nav-bar safe-area-inset-top class="nav-bar">
       <template #title><span class="nav-title">{{ hasTrips ? '我的全部行程' : '暂无行程' }}</span></template>
       <template #right>

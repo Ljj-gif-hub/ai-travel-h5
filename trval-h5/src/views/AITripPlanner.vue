@@ -253,7 +253,7 @@ try {
 </template>
 
 <style scoped>
-.planner-page { width: 100%; min-height: 100vh; background: #f5f7fa; display: flex; flex-direction: column; padding-bottom: calc(var(--tabbar-height) + 20px); }
+.planner-page { width: 100%; min-height: 100vh; background: transparent; display: flex; flex-direction: column; padding-bottom: calc(var(--tabbar-height) + 20px); }
 .planner-nav { display: flex; align-items: center; padding: calc(env(safe-area-inset-top) + 8px) 16px 12px; background: #fff; gap: 12px; }
 .nav-back { width: 36px; height: 36px; min-width: 36px; border: none; background: transparent; color: #333; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .nav-back:active { transform: scale(0.9); }

@@ -559,7 +559,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
   to { opacity: 1; transform: translateY(0); }
 }
 /* GPU加速：消息行动画 */
-.user-msg-row, .ai-msg-row { will-change: transform, opacity; }
+/* will-change 已禁用 — 每条消息预分配GPU层导致OOM */
 
 /* ==================== 思考动画 ==================== */
 .thinking { display: flex; align-items: center; gap: 8px; padding: 4px 0; }

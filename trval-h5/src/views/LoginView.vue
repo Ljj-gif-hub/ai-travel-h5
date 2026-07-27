@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 /**
  * LoginView.vue — 智能旅游助手 登录/注册 合并页
  *
@@ -437,7 +437,7 @@ onMounted(() => {
   background: rgba(255,255,255,0.18); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.3);
   color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
 }
 .back-btn:active { transform: scale(0.9); background: rgba(255,255,255,.3); }
 
@@ -454,7 +454,7 @@ onMounted(() => {
 }
 
 /* ──── 品牌 ──── */
-.brand-section { text-align: center; margin-bottom: 24px; opacity: 0; transform: translateY(12px); transition: all .5s ease; }
+.brand-section { text-align: center; margin-bottom: 24px; opacity: 0; transform: translateY(12px); transition: opacity .5s ease, transform .5s ease; }
 .brand-section.in { opacity: 1; transform: translateY(0); }
 .logo-ring {
   width: 64px; height: 64px; border-radius: 50%;
@@ -473,14 +473,14 @@ onMounted(() => {
   background: rgba(255,255,255,0.12); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px); border-radius: 14px; padding: 4px;
   border: 1px solid rgba(255,255,255,.2);
-  opacity: 0; transform: translateY(12px); transition: all .5s ease .1s;
+  opacity: 0; transform: translateY(12px); transition: opacity .5s ease .1s, transform .5s ease .1s;
 }
 .tab-bar.in { opacity: 1; transform: translateY(0); }
 .tab-item {
   flex: 1; padding: 10px 0; border: none; border-radius: 11px;
   font-size: 15px; font-weight: 500; cursor: pointer;
   background: transparent; color: rgba(255,255,255,.6);
-  transition: all .3s ease;
+  transition: background .3s ease, color .3s ease;
 }
 .tab-item.active { background: #fff; color: #7b42f5; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 .tab-item:active { transform: scale(.96); }
@@ -488,12 +488,12 @@ onMounted(() => {
 /* ──── 表单卡片（淡紫磨砂玻璃） ──── */
 .form-card {
   width: 100%; max-width: 420px;
-  background: rgba(123,66,245,0.06); backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(123,66,245,0.06); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 18px; padding: 24px 20px 20px;
   border: 1px solid rgba(123,66,245,0.18);
   box-shadow: 0 8px 32px rgba(123,66,245,0.06), 0 2px 8px rgba(0,0,0,.04);
-  opacity: 0; transform: translateY(12px); transition: all .5s ease .2s;
+  opacity: 0; transform: translateY(12px); transition: opacity .5s ease .2s, transform .5s ease .2s;
 }
 .form-card.in { opacity: 1; transform: translateY(0); }
 .form-body { display: flex; flex-direction: column; gap: 14px; }
@@ -519,7 +519,7 @@ onMounted(() => {
   flex-shrink: 0; width: 36px; height: 36px; border: none; background: transparent;
   color: rgba(0,0,0,.25); cursor: pointer; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  transition: all .2s; margin-left: 2px;
+  transition: opacity .2s, transform .2s; margin-left: 2px;
 }
 .pwd-btn:active { background: rgba(123,66,245,.08); color: #7b42f5; transform: scale(.88); }
 
@@ -527,7 +527,7 @@ onMounted(() => {
 .code-btn {
   flex-shrink: 0; margin-left: 8px; padding: 6px 14px; border: none;
   border-radius: 20px; background: #7b42f5; color: #fff;
-  font-size: 12px; font-weight: 500; cursor: pointer; transition: all .2s;
+  font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity .2s, transform .2s;
   white-space: nowrap;
 }
 .code-btn:active { transform: scale(.94); }
@@ -542,7 +542,7 @@ onMounted(() => {
   width: 100%; height: 52px; border: none; border-radius: 14px;
   color: #fff; font-size: 17px; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  transition: all .25s ease;
+  transition: opacity .25s ease, transform .25s ease;
   margin-top: 4px;
 }
 .submit-btn:active { transform: scale(.96); }
@@ -571,14 +571,14 @@ onMounted(() => {
   width: 44px; height: 44px; border-radius: 50%;
   border: 1px solid rgba(0,0,0,.08); background: rgba(123,66,245,0.04);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: all .25s;
+  transition: opacity .25s, transform .25s;
 }
 .social-btn:active { transform: scale(.9); }
 
 /* ──── 版权 ──── */
 .footer-text {
   text-align: center; font-size: 11px; color: rgba(255,255,255,.55);
-  margin: 28px 0 0; opacity: 0; transition: all .5s ease .3s;
+  margin: 28px 0 0; opacity: 0; transition: opacity .5s ease .3s;
   padding-bottom: env(safe-area-inset-bottom, 12px);
 }
 .footer-text.in { opacity: 1; }

@@ -9,7 +9,7 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 - **多供应商 AI 集成**：支持 DeepSeek / OpenAI / Claude / Gemini / Custom 五类 LLM，启动时自动检测可用供应商
 - **SSE 流式行程生成**：7 阶段进度推送 + 逐天行程生成，支持任务取消
 - **百度地图 API**：POI 搜索、热门目的地、城市景点、周边搜索
-- **用户社交系统**：游记发布/点赞/评论、关注/粉丝、收藏、反馈
+- **用户社交系统**：游记发布/点赞/评论/回复、关注/粉丝、收藏、反馈
 - **电商功能**：优惠券管理、订单系统（机票/酒店/门票）
 - **安全防护**：JWT 认证、Redis 限流、XSS 过滤、安全响应头、路径穿越防护
 
@@ -29,16 +29,16 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 | 地图服务 | 百度地图开放 API v2 | — |
 | 构建工具 | Maven | — |
 
-## 🎬 功能演示
+## 📝 最近更新（2026-07-27）
 
-### AI 行程规划演示
+### 社交功能增强
+- 评论系统支持嵌套回复（`parentId` 二级结构）
+- `GET /api/comments/{commentId}/replies` — 获取评论的子回复列表
+- 关注/取关 API 完善，支持关注列表、粉丝列表、关注/粉丝计数
 
-https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-server/main/docs/ai-planner-demo.mp4
-
-### 百度地图数据获取演示
-
-> 📍 后端通过百度地图开放 API 获取 POI 数据、景点信息、热门目的地等地理数据，支持地点联想搜索、周边景点查询、城市地标/地铁站数据获取。
-
+### 数据隔离
+- 所有用户相关接口通过 JWT `extractUserId()` 提取当前用户 ID
+- 关注列表、粉丝列表、评论、收藏等数据严格按用户隔离
 
 ## 🚀 环境启动步骤
 
@@ -106,8 +106,6 @@ curl http://localhost:3200/api/travel/health
 travel-java/
 ├── src/main/java/org/example/traveljava/
 │   ├── TravelJavaApplication.java     # 启动类
-│   ├── annotation/                    # 自定义注解
-│   │   └── RateLimit.java             # 限流注解
 │   ├── config/                        # 配置类（10个）
 │   │   ├── AIProviderConfig.java      # 多供应商 AI 配置（自动检测）
 │   │   ├── WebClientConfig.java       # WebClient 连接池管理
@@ -125,15 +123,14 @@ travel-java/
 │   │   ├── UserController.java        # 用户管理
 │   │   ├── CityController.java        # 城市数据
 │   │   ├── MapController.java         # 百度地图 API
-│   │   ├── MapScriptController.java   # 地图脚本代理
 │   │   ├── HotelController.java       # 酒店搜索
 │   │   ├── CostController.java        # 费用计算
 │   │   ├── NoteController.java        # 游记 CRUD + 点赞
 │   │   ├── PostController.java        # 社区帖子
-│   │   ├── CommentController.java     # 评论管理
+│   │   ├── CommentController.java     # 评论管理 + 回复
 │   │   ├── OrderController.java       # 订单管理
 │   │   ├── FavoriteController.java    # 收藏管理
-│   │   ├── FollowController.java      # 关注/粉丝
+│   │   ├── FollowController.java      # 关注/粉丝（数据隔离）
 │   │   ├── CouponController.java      # 优惠券
 │   │   ├── FeedbackController.java    # 用户反馈
 │   │   ├── FileUploadController.java  # 文件上传
@@ -142,8 +139,8 @@ travel-java/
 │   │   ├── SavedTravelPlanController.java # 行程保存
 │   │   └── VoiceController.java       # 语音转文字
 │   ├── service/                       # 业务逻辑层（17个）
-│   │   ├── AIService.java             # 核心 AI 服务（1224行）
-│   │   ├── BaiduMapService.java       # 百度地图服务（765行）
+│   │   ├── AIService.java             # 核心 AI 服务
+│   │   ├── BaiduMapService.java       # 百度地图服务
 │   │   ├── UserService.java           # 用户服务
 │   │   ├── CityService.java           # 城市服务
 │   │   ├── CityMaterialService.java   # 城市素材管理
@@ -163,8 +160,6 @@ travel-java/
 │   ├── entity/                        # 数据库实体（16个）
 │   ├── dto/                           # 数据传输对象（19个）
 │   ├── vo/                            # 视图对象（2个）
-│   │   ├── Result.java                # 统一响应封装
-│   │   └── TravelRecommendVO.java     # 推荐请求
 │   ├── interceptor/                   # 拦截器
 │   │   └── RateLimitInterceptor.java  # Redis 滑动窗口限流
 │   └── util/                          # 工具类
@@ -172,13 +167,13 @@ travel-java/
 │       ├── AuthUtils.java             # 认证工具
 │       └── TextCleaner.java           # AI 输出清洗
 ├── src/main/resources/
-│   ├── application.yml                # 应用配置（113行）
+│   ├── application.yml                # 应用配置
 │   ├── application.yml.example        # 配置模板
 │   └── db/migration/
-│       └── V2__trip_map_init.sql      # 数据库初始化（酒店+地标种子数据）
-├── uploads/                           # 上传文件目录（视频已 gitignore）
+│       └── V2__trip_map_init.sql      # 数据库初始化
+├── uploads/                           # 上传文件目录
 ├── pom.xml                            # Maven 配置
-└── .gitignore                         # 忽略配置（含视频文件过滤）
+└── .gitignore                         # 忽略配置
 ```
 
 ## 🔌 API 接口列表
@@ -195,9 +190,6 @@ travel-java/
 | `/api/travel/planner/stream-detail` | POST | 逐天生成 SSE |
 | `/api/travel/planner/stop` | POST | 停止生成 |
 | `/api/travel/trip/generate/stream` | POST | 单端点 SSE 行程生成 |
-| `/api/travel/trip/generate` | POST | 创建生成任务 |
-| `/api/travel/trip/progress/{taskId}` | GET | 订阅任务进度 SSE |
-| `/api/travel/trip/stop/{taskId}` | POST | 取消任务 |
 
 ### 核心 - AI 对话
 
@@ -207,24 +199,28 @@ travel-java/
 | `/api/travel/chat/stream` | POST | 流式 AI 对话 (SSE) |
 | `/api/travel/recommend` | POST | 旅游推荐 |
 
-### 行程 AI
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/trip/ai/generateTrip` | POST | 生成行程 |
-| `/api/trip/ai/optimizeRoute` | POST | 优化路线 |
-| `/api/trip/ai/chat` | POST | 行程对话 |
-| `/api/trip/ai/chat/stream` | POST | 行程对话流式 |
-| `/api/trip/ai/saveToPlan` | POST | 保存为计划 |
-
 ### 用户认证
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/register` | POST | 用户注册（5次/分钟限流） |
-| `/api/auth/login` | POST | 用户登录（10次/分钟限流） |
+| `/api/auth/register` | POST | 用户注册（限流） |
+| `/api/auth/login` | POST | 用户登录（限流） |
 | `/api/user/profile` | GET/PUT | 获取/更新个人信息 |
-| `/api/user/logout` | POST | 退出登录 |
+
+### 社交功能
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/notes/*` | CRUD | 游记发布、查看、点赞 |
+| `/api/notes/{noteId}/comments` | GET/POST | 游记评论 |
+| `/api/comments/{id}/replies` | GET | 评论子回复列表 |
+| `/api/comments/{id}` | DELETE | 删除评论 |
+| `/api/comments/{id}/like` | POST | 点赞评论 |
+| `/api/posts` | GET/POST | 社区帖子 |
+| `/api/user/follow/{id}` | POST | 关注用户 |
+| `/api/user/unfollow/{id}` | POST | 取关用户 |
+| `/api/user/following` | GET | 关注列表（按JWT隔离） |
+| `/api/user/followers` | GET | 粉丝列表（按JWT隔离） |
 
 ### 地图数据
 
@@ -235,53 +231,26 @@ travel-java/
 | `/api/map/hot-destinations` | GET | 热门目的地列表 |
 | `/api/map/city-attractions` | GET | 城市景点列表 |
 | `/api/map/nearby-attractions` | GET | 周边景点搜索 |
-| `/api/map/landmarks` | GET | 城市地标 |
-| `/api/map/metro-stations` | GET | 城市地铁站 |
-
-### 社交功能
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/notes/*` | CRUD | 游记发布、查看、点赞 |
-| `/api/notes/{noteId}/comments` | GET/POST | 游记评论 |
-| `/api/posts` | GET/POST | 社区帖子 |
-| `/api/user/follow/{id}` | POST | 关注用户 |
-| `/api/user/unfollow/{id}` | POST | 取关用户 |
-| `/api/user/following` | GET | 关注列表 |
-| `/api/user/followers` | GET | 粉丝列表 |
-
-### 电商
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/orders` | CRUD | 订单管理 |
-| `/api/favorites` | CRUD | 收藏管理 |
-| `/api/coupons` | GET | 优惠券列表 |
-| `/api/hotel/search` | GET | 酒店搜索 |
-| `/api/cost/breakdown` | POST | 费用明细 |
 
 ### 其他
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/upload` | POST | 文件上传（最大1GB） |
+| `/api/upload` | POST | 文件上传 |
 | `/api/files/{filename}` | GET | 文件访问 |
 | `/api/proxy/image` | GET | 图片代理（域名白名单） |
-| `/api/scene/image` | GET | 场景图片搜索 |
-| `/api/voice/transcribe` | POST | 语音转文字 |
-| `/api/city/*` | GET | 城市数据（国内/海外/搜索） |
 | `/api/feedback` | GET/POST | 用户反馈 |
-| `/api/travel/plan/save` | POST | 保存行程规划 |
-| `/api/travel/plan/saved` | GET | 获取已保存行程 |
+| `/api/voice/transcribe` | POST | 语音转文字 |
 
 ## 🔒 安全机制
 
 - **JWT 认证**：`AuthUtils.requireUserId()` 解析 Bearer Token，`GlobalExceptionHandler` 统一返回 401
+- **用户数据隔离**：所有用户相关接口通过 `jwtUtil.extractUserId(token)` 获取当前用户 ID
 - **Redis 限流**：`@RateLimit` 注解 + `RateLimitInterceptor` 滑动窗口限流，Redis 不可用时优雅降级
-- **安全响应头**：`SecurityHeaderFilter` 注入 CSP、XSS-Protection、HSTS、Referrer-Policy 等
+- **安全响应头**：`SecurityHeaderFilter` 注入 CSP、XSS-Protection、HSTS 等
 - **XSS 防护**：输入参数校验（`@Valid` + Jakarta Bean Validation）
 - **路径穿越防护**：文件访问端点过滤 `..` 路径
-- **图片代理白名单**：仅允许 `api.map.baidu.com`、`picsum.photos`、`trae-api-cn.mchost.guru` 三个域名
+- **图片代理白名单**：仅允许指定域名
 
 ## 🗺️ 后续迭代规划
 
@@ -290,6 +259,8 @@ travel-java/
 - [x] 多 AI 供应商支持（DeepSeek/OpenAI/Claude/Gemini/Custom）
 - [x] Redis 限流（`@RateLimit` 注解 + 优雅降级）
 - [x] 安全响应头过滤器
+- [x] 评论回复功能（`parentId` 二级嵌套）
+- [x] 关注/粉丝数据隔离
 - [ ] 添加接口文档（Swagger/OpenAPI）
 - [ ] 完善日志系统和监控指标
 
