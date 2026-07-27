@@ -5,8 +5,8 @@ import { VantResolver } from '@vant/auto-import-resolver'
 import { VitePWA } from 'vite-plugin-pwa'
 import { resolve } from 'path'
 
-export default defineConfig({
-  base: '/ai-travel-h5/',
+export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/ai-travel-h5/' : '/',
   plugins: [
     vue(),
     Components({
@@ -91,4 +91,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

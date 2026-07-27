@@ -1,4 +1,4 @@
-package org.example.traveljava.controller;
+﻿package org.example.traveljava.controller;
 
 import org.example.traveljava.service.FollowService;
 import org.example.traveljava.util.JwtUtil;
@@ -27,7 +27,8 @@ public class FollowController {
     }
 
     @GetMapping("/user/following")
-    public Result<List<Map<String, Object>>> getFollowing(@RequestHeader("Authorization") String authHeader) {
+    public Result<List<Map<String, Object>>> getFollowing(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        if (authHeader == null) return Result.ok(java.util.Collections.emptyList());
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -43,7 +44,7 @@ public class FollowController {
     }
 
     @GetMapping("/user/followers")
-    public Result<List<Map<String, Object>>> getFollowers(@RequestHeader("Authorization") String authHeader) {
+    public Result<List<Map<String, Object>>> getFollowers(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -59,7 +60,8 @@ public class FollowController {
     }
 
     @PostMapping("/user/follow/{id}")
-    public Result<String> follow(@RequestHeader("Authorization") String authHeader, @PathVariable Long id) {
+    public Result<String> follow(@RequestHeader(value = "Authorization", required = false) String authHeader, @PathVariable Long id) {
+        if (authHeader == null) return Result.fail("请先登录");
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -78,7 +80,8 @@ public class FollowController {
     }
 
     @PostMapping("/user/unfollow/{id}")
-    public Result<String> unfollow(@RequestHeader("Authorization") String authHeader, @PathVariable Long id) {
+    public Result<String> unfollow(@RequestHeader(value = "Authorization", required = false) String authHeader, @PathVariable Long id) {
+        if (authHeader == null) return Result.fail("请先登录");
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -97,7 +100,7 @@ public class FollowController {
     }
 
     @GetMapping("/user/following/count")
-    public Result<Map<String, Object>> getFollowingCount(@RequestHeader("Authorization") String authHeader) {
+    public Result<Map<String, Object>> getFollowingCount(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -114,7 +117,7 @@ public class FollowController {
     }
 
     @GetMapping("/user/followers/count")
-    public Result<Map<String, Object>> getFollowersCount(@RequestHeader("Authorization") String authHeader) {
+    public Result<Map<String, Object>> getFollowersCount(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
