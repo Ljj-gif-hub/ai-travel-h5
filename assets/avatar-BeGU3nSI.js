@@ -1,0 +1,4 @@
+var e=[`#8B5CF6`,`#6366F1`,`#3B82F6`,`#0891B2`,`#059669`,`#D946EF`,`#F43F5E`,`#F97316`,`#EAB308`,`#14B8A6`,`#EC4899`,`#0EA5E9`,`#84CC16`,`#A855F7`,`#06B6D4`];function t(e){let t=0;for(let n=0;n<e.length;n++)t=(t<<5)-t+e.charCodeAt(n)|0;return Math.abs(t)}function n(n,r){let i=`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="${e[t(n)%e.length]}"/>
+  <text x="50" y="50" text-anchor="middle" dy=".13em" font-family="system-ui,-apple-system,sans-serif" font-size="48" font-weight="600" fill="#fff">${(r||n).charAt(0).toUpperCase()}</text>
+</svg>`;return`data:image/svg+xml,`+encodeURIComponent(i)}export{n as t};

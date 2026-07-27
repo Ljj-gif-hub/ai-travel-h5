@@ -1,0 +1,1 @@
+{"name":"智能旅游助手","short_name":"旅游助手","description":"AI 智能旅游规划助手 - 探索世界，从这里出发","start_url":"/","display":"standalone","background_color":"#F8F7FF","theme_color":"#8B5CF6","lang":"en","scope":"/","orientation":"portrait","icons":[{"src":"/favicon.svg","sizes":"48x48 72x72 96x96 128x128 144x144 192x192 256x256 512x512","type":"image/svg+xml","purpose":"any maskable"}]}

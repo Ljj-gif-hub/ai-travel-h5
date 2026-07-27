@@ -1,0 +1,1 @@
+var e=`TOKEN`;function t(){try{return localStorage.getItem(e)}catch{return null}}function n(t){try{return localStorage.setItem(e,t)}catch{return!1}}function r(){try{return localStorage.removeItem(e)}catch{return!1}}export{r as n,n as r,t};
