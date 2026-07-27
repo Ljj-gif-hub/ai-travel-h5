@@ -1,1 +1,124 @@
-spring.application.name=travel-java
+server:
+  port: ${SERVER_PORT:3200}
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  error:
+    include-stacktrace: never
+    include-message: never
+  tomcat:
+    max-http-form-post-size: 2GB
+
+spring:
+  application:
+    name: travel-java
+  http:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 2GB
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/travel_plans;MODE=MySQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:6000ms}
+      repositories:
+        enabled: false
+
+app:
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5177}
+
+# ================================================================
+# AI 多供应商配置（支持所有 OpenAI 兼容协议的 API）
+# 切换供应商：修改 ai.active-provider 的值即可
+# 添加新供应商：在 ai.providers 下新增一组配置
+# ================================================================
+ai:
+  # 设为 auto 或不设 → 启动时自动扫描已配置的 API Key 来激活对应供应商
+  # 显式指定如 deepseek/openai/claude → 强制使用该供应商
+  active-provider: ${AI_PROVIDER:auto}
+  # ---- AI 图片生成（独立于LLM供应商） ----
+  image:
+    endpoint: ${AI_IMAGE_ENDPOINT:https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image}
+    api-key: ${AI_IMAGE_API_KEY:}
+    timeout: ${AI_IMAGE_TIMEOUT:30000}
+  providers:
+    # ---- DeepSeek ----
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      model: ${DEEPSEEK_MODEL:deepseek-chat}
+      max-tokens: 4096
+      temperature: 0.7
+    # ---- OpenAI ----
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      base-url: https://api.openai.com/v1
+      model: ${OPENAI_MODEL:gpt-4o}
+      max-tokens: 4096
+      temperature: 0.7
+    # ---- Claude (Anthropic) ----
+    claude:
+      api-key: ${ANTHROPIC_API_KEY:}
+      base-url: https://api.anthropic.com
+      model: ${CLAUDE_MODEL:claude-sonnet-4-20250514}
+      max-tokens: 4096
+      temperature: 0.7
+      extra-headers:
+        Authorization-Header: x-api-key
+        anthropic-version: "2023-06-01"
+    # ---- Google Gemini ----
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: https://generativelanguage.googleapis.com/v1beta
+      model: ${GEMINI_MODEL:gemini-2.0-flash}
+      chat-path: /models/${GEMINI_MODEL:gemini-2.0-flash}:generateContent
+      max-tokens: 4096
+      temperature: 0.7
+    # ---- 自定义/代理 API（任何兼容 OpenAI 协议的接口） ----
+    custom:
+      api-key: ${CUSTOM_AI_KEY:}
+      base-url: ${CUSTOM_AI_URL:https://apihub.agnes-ai.com/v1}
+      model: ${CUSTOM_AI_MODEL:agnes-2.0-flash}
+      max-tokens: 4096
+      temperature: 0.7
+
+jwt:
+  secret: ${JWT_SECRET:travel-java-dev-secret-key-min-32chars!!}
+  expiration: ${JWT_EXPIRATION:86400000}
+
+# ================================================================
+# 地图多供应商配置（百度地图 + 高德地图 双API接入）
+# 切换供应商：修改 map.provider 的值即可
+#   baidu - 百度地图（默认）
+#   amap  - 高德地图
+#   auto  - 自动检测已配置的 Key 来激活
+# ================================================================
+map:
+  provider: ${MAP_PROVIDER:amap}
+  baidu:
+    ak: ${BAIDU_MAP_AK:}
+  amap:
+    web-key: ${AMAP_WEB_KEY:}                                         # 高德 Web 服务 API Key（通过环境变量注入）
+    js-key: ${AMAP_JS_KEY:}        # 高德 JS API v2.0 Key（前端加载地图用，为空则用 web-key）
