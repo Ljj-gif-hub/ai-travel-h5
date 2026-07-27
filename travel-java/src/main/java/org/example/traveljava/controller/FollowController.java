@@ -1,4 +1,4 @@
-﻿package org.example.traveljava.controller;
+package org.example.traveljava.controller;
 
 import org.example.traveljava.service.FollowService;
 import org.example.traveljava.util.JwtUtil;

@@ -16,7 +16,7 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://localhost:5177,https://ljj-gif-hub.github.io}")
+    @Value("${app.cors.allowed-origins:*}")
     private String allowedOrigins;
 
     @Override
@@ -31,8 +31,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
-        config.setAllowedOriginPatterns(Arrays.asList(allowedOrigins.split(",")));
+        config.setAllowCredentials(false);
+        config.addAllowedOriginPattern("*");
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin"));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setExposedHeaders(Arrays.asList("Content-Disposition"));

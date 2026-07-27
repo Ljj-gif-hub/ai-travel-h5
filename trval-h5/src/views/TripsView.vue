@@ -6,8 +6,7 @@ import { getToken } from '../utils/auth'
 import { planApi } from '../api'
 import { getHotDestinations, getNearbyAttractions } from '../api/destination'
 import EmptyState from '../components/EmptyState.vue'
-import { defineAsyncComponent } from 'vue'
-const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
+import AIChatDialog from '../components/AIChatDialog.vue'
 
 defineOptions({ name: 'TripsView' })
 
