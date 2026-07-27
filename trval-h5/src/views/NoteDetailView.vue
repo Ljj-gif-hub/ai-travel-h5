@@ -301,7 +301,7 @@ onMounted(() => {
       <!-- 图片轮播 -->
       <div v-if="contentImages.length" class="image-swipe-wrap">
         <van-swipe :autoplay="0" indicator-color="transparent" indicator-active-color="transparent" :circular="true" class="image-swipe" @change="onSwipeChange">
-          <van-swipe-item v-for="(img, idx) in contentImages" :key="idx"><img :src="img" class="swipe-image" /></van-swipe-item>
+          <van-swipe-item v-for="(img, idx) in contentImages" :key="idx"><img :src="img" class="swipe-image" loading="lazy" /></van-swipe-item>
         </van-swipe>
         <div class="swipe-dots-row">
           <span v-for="(_, idx) in contentImages" :key="idx" class="swipe-dot" :class="{ active: idx === swipeIndex }"></span>
@@ -328,7 +328,7 @@ onMounted(() => {
               <div class="comment-top"><span class="comment-user">用户{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
               <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
               <van-image v-if="g.parent.image" :src="g.parent.image" fit="cover" width="100%" class="comment-media-img" />
-              <video v-if="g.parent.video" :src="g.parent.video" controls preload="metadata" class="comment-media-video"></video>
+              <video v-if="g.parent.video" :src="g.parent.video" controls preload="none" class="comment-media-video"></video>
               <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">回复</button>
             </div>
             <van-icon v-if="currentUserId === g.parent.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(g.parent)" />
@@ -342,7 +342,7 @@ onMounted(() => {
                   <span v-if="withMention(r).mention" class="comment-mention">{{ withMention(r).mention }}</span>{{ withMention(r).content }}
                 </div>
                 <van-image v-if="r.image" :src="r.image" fit="cover" width="100%" class="comment-media-img" />
-                <video v-if="r.video" :src="r.video" controls preload="metadata" class="comment-media-video"></video>
+                <video v-if="r.video" :src="r.video" controls preload="none" class="comment-media-video"></video>
                 <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">回复</button>
               </div>
               <van-icon v-if="currentUserId === r.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(r)" />
@@ -390,7 +390,7 @@ onMounted(() => {
                 <div class="comment-top"><span class="comment-user">用户{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
                 <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
                 <van-image v-if="g.parent.image" :src="g.parent.image" fit="cover" width="100%" class="comment-media-img" />
-                <video v-if="g.parent.video" :src="g.parent.video" controls preload="metadata" class="comment-media-video"></video>
+                <video v-if="g.parent.video" :src="g.parent.video" controls preload="none" class="comment-media-video"></video>
                 <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">回复</button>
               </div>
               <van-icon v-if="currentUserId === g.parent.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(g.parent)" />
@@ -404,7 +404,7 @@ onMounted(() => {
                     <span v-if="withMention(r).mention" class="comment-mention">{{ withMention(r).mention }}</span>{{ withMention(r).content }}
                   </div>
                   <van-image v-if="r.image" :src="r.image" fit="cover" width="100%" class="comment-media-img" />
-                  <video v-if="r.video" :src="r.video" controls preload="metadata" class="comment-media-video"></video>
+                  <video v-if="r.video" :src="r.video" controls preload="none" class="comment-media-video"></video>
                   <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">回复</button>
                 </div>
                 <van-icon v-if="currentUserId === r.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(r)" />

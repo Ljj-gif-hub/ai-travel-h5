@@ -572,7 +572,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                 <span class="cmt-tm">{{ c.date }}</span>
               </div>
               <div class="cmt-txt">{{ c.content }}</div>
-              <img v-if="c.image" :src="c.image" class="cmt-img"/>
+              <img v-if="c.image" :src="c.image" class="cmt-img" loading="lazy" />
               <video v-if="c.video" :src="c.video" controls class="cmt-vid"/>
 
               <!-- ══════ 底部操作行：点赞 + 回复 ══════ -->

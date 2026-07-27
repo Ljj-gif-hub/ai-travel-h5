@@ -6,7 +6,8 @@ import { getToken } from '../utils/auth'
 import { planApi } from '../api'
 import { getHotDestinations, getNearbyAttractions } from '../api/destination'
 import EmptyState from '../components/EmptyState.vue'
-import AIChatDialog from '../components/AIChatDialog.vue'
+import { defineAsyncComponent } from 'vue'
+const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
 
 defineOptions({ name: 'TripsView' })
 
@@ -252,6 +253,7 @@ const handleMoreAction = (action) => { showMoreMenu.value = false; showToast('Âä
 onMounted(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages() } })
 onActivated(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); startCarousel() } })
 onDeactivated(() => { isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel(); if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null } })
+onUnmounted(() => { stopCarousel() })
 </script>
 
 <template>
@@ -334,7 +336,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false; showMore
           <div class="h-scroll">
             <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goAttraction(attr.name)">
               <div class="guide-card-img-wrap">
-                <img :src="getCityImage(attr.name)" class="guide-card-img" @error="e => e.target.style.display='none'" />
+                <img :src="getCityImage(attr.name)" class="guide-card-img" loading="lazy" @error="e => e.target.style.display='none'" />
                 <div class="guide-card-img-placeholder"><van-icon name="photo-o" size="24" color="rgba(139,92,246,0.3)" /></div>
               </div>
               <div class="guide-card-body"><div class="guide-card-name">{{ attr.name }}</div><div class="guide-card-meta" v-if="attr.rating">‚≠ê {{ Number(attr.rating).toFixed(1) }}</div></div>

@@ -12,7 +12,7 @@
       <div class="page-content">
         <div class="city-card">
           <div class="city-img-wrap">
-            <img :src="getSafeImageUrl(cityImage)" :alt="city" class="city-img" @error="handleImageError('city')" />
+            <img :src="getSafeImageUrl(cityImage)" :alt="city" class="city-img" loading="lazy" @error="handleImageError('city')" />
             <div class="city-img-mask"></div>
             <div class="city-info-overlay">
               <h1 class="city-name">{{ sanitizeText(city) }}</h1>
@@ -101,7 +101,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NavBar, Rate, Loading, Icon } from 'vant'
 import { getHotDestinations, getCityAttractions } from '../api/destination'
@@ -239,6 +239,9 @@ const loadMapSDK = async (provider) => {
   return false
 }
 
+const pendingIntervals = []
+onUnmounted(() => { pendingIntervals.forEach(clearInterval); pendingIntervals.length = 0 })
+
 const loadAmap = () => new Promise(resolve => {
   if (window.AMap) { resolve(true); return }
   const script = document.createElement('script')
@@ -251,6 +254,7 @@ const loadAmap = () => new Promise(resolve => {
       if (window.AMap) { clearInterval(check); resolve(true) }
       else if (retries++ > 30) { clearInterval(check); resolve(false) }
     }, 150)
+    pendingIntervals.push(check)
   }
   script.onerror = () => { clearTimeout(timeout); resolve(false) }
   document.body.appendChild(script)
@@ -268,6 +272,7 @@ const loadBaidu = () => new Promise(resolve => {
     if (window.BMapGL) { clearInterval(check); resolve(true) }
     else if (retries++ > 50) { clearInterval(check); resolve(false) }
   }, 100)
+  pendingIntervals.push(check)
 })
 
 const loadLeafletSDK = () => new Promise(resolve => {

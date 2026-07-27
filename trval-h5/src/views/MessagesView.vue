@@ -9,7 +9,8 @@ import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { planApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
-import AIChatDialog from '../components/AIChatDialog.vue'
+import { defineAsyncComponent } from 'vue'
+const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
 import { getAllSessions, deleteSession, switchToSession } from '../utils/chatSession'
 
 defineOptions({ name: 'MessagesView' })

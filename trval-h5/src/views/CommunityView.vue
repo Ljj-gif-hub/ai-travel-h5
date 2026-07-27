@@ -47,8 +47,19 @@ const hasMore = ref(true)
 const loadingMore = ref(false)
 const scrollContainer = ref(null)
 const followingIds = ref([])       // 当前用户关注的用户ID列表
+const displayCount = ref(10)       // 触底分页：每次多显示10条
+const PAGE_SIZE = 10
 
 const empty = computed(() => !isLoading.value && notes.value.length === 0)
+const hasMoreToShow = computed(() => displayCount.value < notes.value.length)
+
+const loadMore = () => {
+  displayCount.value = Math.min(displayCount.value + PAGE_SIZE, notes.value.length)
+}
+
+const onScrollToBottom = () => {
+  if (hasMoreToShow.value && !loadingMore.value) loadMore()
+}
 
 const filterNotesByTab = (list) => {
   if (activeTab.value === 'following' && followingIds.value.length) {
@@ -167,8 +178,9 @@ const loadNotes = async (reset = false) => {
       }
       if (reset) {
         notes.value = mapped
+        displayCount.value = PAGE_SIZE  // 重置分页
       } else {
-        notes.value = [...notes.value, ...mapped]
+        notes.value = [...notes.value, ...mapped].slice(-50)  // 最多保留50条防OOM
       }
       hasMore.value = list.length >= 10
       page.value += 1
@@ -595,7 +607,7 @@ onActivated(async () => {
       <template v-else>
         <div
           class="note-card"
-          v-for="note in notes"
+          v-for="note in notes.slice(0, displayCount)"
           :key="note.id"
           @click="goToDetail(note)"
         >
@@ -639,7 +651,7 @@ onActivated(async () => {
             <template v-for="(url, idx) in note.images.slice(0, 4)" :key="idx">
               <!-- 视频显示带播放按钮的缩略图 -->
               <div v-if="isVideoUrl(url)" class="card-video-thumb">
-                <video :src="url" class="card-img" preload="metadata" muted></video>
+                <video :src="url" class="card-img" preload="none" muted playsinline></video>
                 <div class="video-play-icon">
                   <van-icon name="play-circle-o" size="32" color="rgba(255,255,255,0.9)" />
                 </div>
@@ -699,12 +711,16 @@ onActivated(async () => {
           </div>
         </div>
 
-        <!-- 加载更多 -->
+        <!-- 触底分页：每次显示10条 -->
+        <div v-if="hasMoreToShow" class="load-more-btn" @click="loadMore">
+          加载更多 ({{ notes.length - displayCount }} 条)
+        </div>
+        <!-- API 加载中 -->
         <div v-if="loadingMore" class="loading-more">
           <van-loading size="20" color="#8B5CF6" />
           <span>加载中...</span>
         </div>
-        <div v-else-if="!hasMore && notes.length > 0" class="no-more">
+        <div v-else-if="!hasMore && !hasMoreToShow && notes.length > 0" class="no-more">
           没有更多了
         </div>
       </template>
@@ -1190,6 +1206,14 @@ onActivated(async () => {
 .action-btn.liked {
   color: #EF4444;
 }
+
+/* ==================== 触底分页加载按钮 ==================== */
+.load-more-btn {
+  text-align: center; padding: 14px 0; margin: 8px 16px;
+  background: rgba(139,92,246,0.05); border-radius: 12px;
+  color: #8B5CF6; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.load-more-btn:active { background: rgba(139,92,246,0.12); }
 
 /* ==================== 加载更多 ==================== */
 .loading-more,

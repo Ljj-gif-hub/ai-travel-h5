@@ -16,7 +16,7 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5177}")
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://localhost:5177,https://ljj-gif-hub.github.io}")
     private String allowedOrigins;
 
     @Override

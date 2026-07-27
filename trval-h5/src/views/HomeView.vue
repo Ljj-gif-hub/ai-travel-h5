@@ -10,7 +10,8 @@ import { showToast, showLoadingToast, Swipe, SwipeItem } from 'vant'
 defineOptions({ name: 'HomeView' })
 import { areaList } from '@vant/area-data'
 import SearchBar from '../components/SearchBar.vue'
-import AIChatDialog from '../components/AIChatDialog.vue'  // 【5Tab架构】AI对话弹窗
+import { defineAsyncComponent } from 'vue'
+const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
 import EmptyState from '../components/EmptyState.vue'
 import { getHotDestinations } from '../api/destination'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
@@ -420,7 +421,7 @@ const loadNotes = async (reset = false) => {
       if (reset) {
         notes.value = mapped
       } else {
-        notes.value = [...notes.value, ...mapped]
+        notes.value = [...notes.value, ...mapped].slice(-50)  // 最多保留50条防OOM
       }
       hasMore.value = list.length >= 10
       page.value += 1
@@ -1124,7 +1125,7 @@ onUnmounted(() => {
                   v-if="note.hasVideo && note.videoUrl"
                   :src="note.videoUrl"
                   class="ctrip-card-main-img"
-                  preload="metadata"
+                  preload="none"
                   muted
                   playsinline
                   @loadedmetadata="(e) => { const v = e.target; v.currentTime = 0.1; }"
@@ -1188,7 +1189,7 @@ onUnmounted(() => {
                   v-if="note.hasVideo && note.videoUrl"
                   :src="note.videoUrl"
                   class="ctrip-card-main-img"
-                  preload="metadata"
+                  preload="none"
                   muted
                   playsinline
                   @loadedmetadata="(e) => { const v = e.target; v.currentTime = 0.1; }"

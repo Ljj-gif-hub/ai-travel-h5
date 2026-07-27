@@ -124,7 +124,7 @@ const submitPost = async () => {
       <!-- 图片区 -->
       <div class="images-grid">
         <div v-for="(img, i) in postForm.images" :key="i" class="img-cell">
-          <img :src="img" class="img-thumb" />
+          <img :src="img" class="img-thumb" loading="lazy" />
           <div class="img-remove" @click="removeImage(i)">
             <van-icon name="cross" size="12" color="#fff" />
           </div>

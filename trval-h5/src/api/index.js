@@ -1,7 +1,7 @@
 import { getToken, removeToken } from '../utils/auth';
 import { clearSession } from '../utils/userAccountStorage';
 
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
 /**
  * 统一请求封装 — 自动携带Token、统一错误处理、标准响应解析

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { getToken } from '../utils/auth'
 
 /**
@@ -221,7 +221,7 @@ if (window.history && 'scrollRestoration' in window.history) {
 }
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes,
   scrollBehavior(to, from, savedPosition) {
     // 浏览器前进/后退优先
