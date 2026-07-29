@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, onMounted, reactive, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
@@ -18,6 +18,10 @@ import {
   setMyData,
   clearSession as clearAccountSession,
 } from '../utils/userAccountStorage'
+import EmptyState from '../components/EmptyState.vue'
+import { defineAsyncComponent } from 'vue'
+const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
+import { getAllSessions, deleteSession, switchToSession } from '../utils/chatSession'
 
 const router = useRouter()
 
@@ -43,7 +47,6 @@ const serviceList = ref([
   { name: '我的订单', icon: 'orders-o', desc: '机票、酒店、门票订单', badge: 0, path: '/orders', color: '#6366F1' },
   { name: '我的收藏', icon: 'star-o', desc: '收藏的景点和攻略', badge: 0, path: '/favorites', color: '#F59E0B' },
   { name: '优惠券', icon: 'coupon-o', desc: '可用优惠券和折扣', badge: 0, path: '/coupons', color: '#34D399' },
-  { name: 'AI对话记录', icon: 'chat-o', desc: 'AI旅行对话历史', badge: 0, path: '/messages', color: '#3B82F6' },
 ])
 
 /* ==================== 快捷操作 ==================== */
@@ -53,6 +56,32 @@ const quickActions = [
   { name: '邀请好友', icon: 'friends-o', color: '#34D399', action: 'invite' },
   { name: '意见反馈', icon: 'smile-comment-o', color: '#F59E0B', path: '/feedback' },
 ]
+
+/* ==================== 消息分类入口（从消息页集成） ==================== */
+const categoryItems = reactive([
+  { key: 'order', label: '订单出行', icon: 'orders-o', color: '#3B82F6', badge: 0 },
+  { key: 'chat', label: '互动消息', icon: 'chat-o', color: '#F59E0B', badge: 2 },
+  { key: 'notify', label: '账户通知', icon: 'bell-o', color: '#F97316', badge: 1 },
+  { key: 'vip', label: '会员服务', icon: 'gem-o', color: '#EAB308', badge: 0 },
+])
+
+const conversations = ref([])
+const loadConversations = () => { conversations.value = getAllSessions() }
+
+const showAIChat = ref(false)
+const activeConv = ref(null)
+const aiInitialMessages = ref([])
+const openConversation = (conv) => { activeConv.value = conv; aiInitialMessages.value = switchToSession(conv.id) || []; showAIChat.value = true }
+const deleteConversation = async (id) => { try { await showConfirmDialog({ title: '删除对话', message: '确定要删除这条对话记录吗？' }); deleteSession(id); loadConversations(); showToast({ message: '已删除', position: 'middle' }) } catch (e) {} }
+const onAIChatClose = () => { showAIChat.value = false; activeConv.value = null; aiInitialMessages.value = []; loadConversations() }
+
+const notifications = ref([])
+const loadNotifications = () => { notifications.value = [{ id:1, type:'order', icon:'orders-o', iconColor:'#3B82F6', title:'行程规划已完成', preview:'您的"北京5日游"行程已生成', time: Date.now()-1800000, unread:true }, { id:2, type:'system', icon:'bell-o', iconColor:'#F97316', title:'系统通知', preview:'新版本已上线，新增AI智能对话功能', time: Date.now()-10800000, unread:true }, { id:3, type:'coupon', icon:'coupon-o', iconColor:'#F59E0B', title:'优惠券到账', preview:'恭喜您获得新人专享优惠券', time: Date.now()-86400000, unread:false }] }
+
+const formatMsgTime = (t) => { if(!t) return ''; const d=new Date(t), n=new Date(), h=Math.floor((n-d)/3600000); if(h<1) return '刚刚'; if(h<24) return h+'小时前'; if(h<48) return '昨天'; if(h<168) return Math.floor(h/24)+'天前'; return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0') }
+const getConvPreview = (c) => { if(!c.messages||!c.messages.length) return '新对话'; const m=[...c.messages].reverse(); const a=m.find(x=>x.type==='ai'&&x.content); if(a) return a.content.slice(0,50)+(a.content.length>50?'...':''); const u=m.find(x=>x.type==='user'&&x.content); return u?u.content.slice(0,50)+(u.content.length>50?'...':''):'新对话' }
+const handleCategoryClick = (cat) => { if(!isLoggedIn.value){router.push('/login');return}; if(cat.key==='order') router.push('/orders'); else showToast({message:'功能开发中',position:'middle'}) }
+const handleContactService = () => { showToast({message:'客服功能开发中',position:'middle'}) }
 
 /* ==================== 工具 ==================== */
 const getBadgeContent = (num) => (num > 9 ? '9+' : String(num))
@@ -237,6 +266,7 @@ onActivated(() => {
   } else if (isLoggedIn.value) {
     // 已登录：轻量刷新角标
     loadBadgeCounts()
+    loadConversations(); loadNotifications();
   } else if (!isLoggedIn.value && wasLoggedIn) {
     resetUserInfo()
   }
@@ -246,6 +276,7 @@ onActivated(() => {
 onDeactivated(() => {
   showEditPopup.value = false
   showInvitePopup.value = false
+  showAIChat.value = false; activeConv.value = null;
 })
 </script>
 
@@ -256,15 +287,8 @@ onDeactivated(() => {
 
       <!-- ======== 用户信息头图 ======== -->
       <div class="hero-card entrance-item entrance-d1">
-        <!-- 背景装饰 -->
-        <div class="hero-decor">
-          <svg viewBox="0 0 400 180" preserveAspectRatio="none" class="hero-decor-svg">
-            <ellipse cx="320" cy="30" rx="140" ry="90" fill="rgba(255,255,255,0.06)" />
-            <ellipse cx="60" cy="150" rx="120" ry="70" fill="rgba(255,255,255,0.04)" />
-            <circle cx="380" cy="160" r="50" fill="rgba(255,255,255,0.03)" />
-            <circle cx="30" cy="20" r="30" fill="rgba(255,255,255,0.05)" />
-          </svg>
-        </div>
+        <img class="hero-bg-img" src="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&q=80" alt="" />
+        <div class="hero-overlay"></div>
 
         <!-- 登录态 -->
         <template v-if="isLoggedIn">
@@ -349,6 +373,49 @@ onDeactivated(() => {
         </div>
       </div>
 
+      <!-- ======== 消息分类入口 ======== -->
+      <div class="section-card">
+        <div class="category-grid">
+          <div v-for="cat in categoryItems" :key="cat.key" class="cat-item" @click="handleCategoryClick(cat)">
+            <div class="cat-icon-wrap">
+              <div class="cat-icon" :style="{ background: `${cat.color}14` }"><van-icon :name="cat.icon" :color="cat.color" size="22" /></div>
+              <van-badge v-if="cat.badge > 0" :content="cat.badge" class="cat-badge" />
+            </div>
+            <span class="cat-label">{{ cat.label }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== AI 对话记录 ======== -->
+      <div class="section-card" v-if="isLoggedIn">
+        <div class="sec-head"><span class="sec-title">AI 对话记录</span></div>
+        <div v-if="conversations.length === 0" class="empty-conv-wrap">
+          <EmptyState icon="chat-o" title="暂无AI对话" desc="前往首页使用AI规划行程" btn-text="去首页看看" btn-type="gradient" @btn-click="() => router.push('/')" />
+        </div>
+        <div v-else class="conv-list">
+          <div v-for="conv in conversations" :key="conv.id" class="conv-card">
+            <div class="conv-accent" />
+            <div class="conv-info" @click="openConversation(conv)">
+              <div class="conv-top-row"><span class="conv-title">{{ conv.title || '未命名对话' }}</span><span class="conv-time">{{ formatMsgTime(conv.updatedAt) }}</span></div>
+              <p class="conv-preview">{{ getConvPreview(conv) }}</p>
+            </div>
+            <div class="conv-actions"><van-icon name="arrow" size="16" color="#CBD5E1" class="conv-arrow" @click="openConversation(conv)" /><van-icon name="delete-o" size="18" color="#EF4444" class="conv-delete" @click.stop="deleteConversation(conv.id)" /></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== 消息通知 ======== -->
+      <div class="section-card" v-if="isLoggedIn">
+        <div class="sec-head"><span class="sec-title">消息通知</span></div>
+        <div v-if="notifications.length === 0" class="empty-notif"><p class="empty-notif-title">暂无更多消息</p><p class="empty-notif-hint">您的订单通知、优惠活动都会在这里显示</p></div>
+        <div v-else class="notif-list">
+          <div v-for="item in notifications" :key="item.id" class="notif-item" :class="{ unread: item.unread }">
+            <div class="notif-icon-wrap"><div class="notif-icon" :style="{ background: `${item.iconColor}14` }"><van-icon :name="item.icon" :color="item.iconColor" size="20" /></div><span v-if="item.unread" class="notif-dot" /></div>
+            <div class="notif-body"><div class="notif-top-row"><span class="notif-title">{{ item.title }}</span><span class="notif-time">{{ formatMsgTime(item.time) }}</span></div><p class="notif-preview">{{ item.preview }}</p></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ======== 我的服务 ======== -->
       <div class="section-card">
         <div class="sec-head"><span class="sec-title">我的服务</span></div>
@@ -378,6 +445,8 @@ onDeactivated(() => {
 
       <div style="height: 8px;" />
     </div>
+
+    <AIChatDialog v-model:visible="showAIChat" :initial-messages="aiInitialMessages" @close="onAIChatClose" />
 
     <!-- ======== 编辑资料弹窗 ======== -->
     <van-popup v-model:show="showEditPopup" position="bottom" :style="{ height: '42%' }" round>
@@ -426,19 +495,26 @@ onDeactivated(() => {
 .profile-page {
   width: 100%; min-height: 100vh;
   background: transparent;
-  padding-bottom: calc(var(--tabbar-height) + var(--safe-area-bottom) + 8px);
+  padding-bottom: calc(10px + 48px + 12px + var(--safe-area-bottom, 0px));
 }
-.profile-wrap { max-width: 480px; margin: 0 auto; padding: 16px 14px 0; }
+.profile-wrap { max-width: 480px; margin: 0 auto; padding: 0 14px; }
 
-/* ==================== Hero 卡片 ==================== */
+/* ==================== Hero 卡片 — 山水大图 + 用户信息 ==================== */
 .hero-card {
   position: relative; overflow: hidden;
-  background: linear-gradient(145deg, #8B5CF6 0%, #7C3AED 35%, #6366F1 70%, #5B8DEF 100%);
-  border-radius: 24px; padding: 24px; margin-bottom: 14px;
-  color: #fff; box-shadow: 0 12px 32px rgba(139,92,246,0.3);
+  border-radius: 0 0 22px 22px; padding: 24px; margin: 0 -14px 14px;
+  color: #fff; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
-.hero-decor { position: absolute; inset: 0; pointer-events: none; }
-.hero-decor-svg { width: 100%; height: 100%; }
+.hero-bg-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(160deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.25) 50%, rgba(0,0,0,0.5) 100%);
+  pointer-events: none; z-index: 1;
+}
+.hero-decor, .hero-decor-svg { display: none; }
 
 /* 用户行 */
 .hero-user { display: flex; gap: 14px; position: relative; z-index: 2; }
@@ -470,9 +546,10 @@ onDeactivated(() => {
 /* 统计 */
 .stats-row {
   display: flex; margin-top: 18px; padding: 14px 8px;
-  background: rgba(255,255,255,0.1); border-radius: 16px;
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  background: rgba(255,255,255,0.15); border-radius: 16px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   position: relative; z-index: 2;
+  border: 0.5px solid rgba(255,255,255,0.2);
 }
 .stat-cell { flex: 1; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; will-change: transform; }
 .stat-icon-wrap {
@@ -497,11 +574,19 @@ onDeactivated(() => {
 
 .guest-hero { margin-bottom: 14px; }
 
-/* ==================== 通用卡片 ==================== */
+/* ==================== 通用卡片 — iOS 透光磨砂玻璃 ==================== */
 .section-card {
-  background: #fff; border-radius: 20px; padding: 20px;
-  margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.04);
-  border: 1px solid rgba(139,92,246,0.06);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-radius: 20px; padding: 20px;
+  margin-bottom: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.65),
+    0 2px 12px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.65);
 }
 .sec-head { margin-bottom: 14px; }
 .sec-title { font-size: 16px; font-weight: 700; color: #1E293B; }
@@ -598,4 +683,37 @@ onDeactivated(() => {
 .svc-item { transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), background 0.3s ease, padding-left 0.3s ease; }
 .svc-item:hover { transform: translateX(4px); padding-left: 8px; background: rgba(139,92,246,0.04); border-radius: 10px; }
 .svc-item:active { transform: scale(0.98); }
+.category-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
+.cat-item { display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; padding:10px 0; transition:transform 0.2s; }
+.cat-item:active { transform:scale(0.94); }
+.cat-icon-wrap { position:relative; }
+.cat-icon { width:50px; height:50px; border-radius:16px; display:flex; align-items:center; justify-content:center; }
+.cat-badge { position:absolute; top:-2px; right:-6px; }
+.cat-label { font-size:12px; color:#475569; font-weight:500; }
+.conv-list { display:flex; flex-direction:column; gap:10px; }
+.conv-card { display:flex; align-items:center; gap:12px; background:linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.65); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:20px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 2px 10px rgba(0,0,0,0.03); border:1px solid rgba(255,255,255,0.6); overflow:hidden; }
+.conv-accent { width:4px; min-width:4px; align-self:stretch; background:linear-gradient(180deg,#A78BFA,#8B5CF6,#6366F1); border-radius:2px 0 0 2px; }
+.conv-info { flex:1; min-width:0; padding:16px 0; cursor:pointer; }
+.conv-top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; }
+.conv-title { font-size:15px; font-weight:600; color:#1E293B; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.conv-time { font-size:11px; color:#94A3B8; flex-shrink:0; }
+.conv-preview { font-size:13px; color:#64748B; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.conv-actions { display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px 12px 16px 0; flex-shrink:0; }
+.conv-arrow { cursor:pointer; padding:4px; border-radius:50%; }
+.conv-delete { cursor:pointer; padding:4px; border-radius:50%; }
+.empty-conv-wrap { margin:8px 0; }
+.empty-notif { display:flex; flex-direction:column; align-items:center; padding:32px 20px 24px; text-align:center; }
+.empty-notif-title { font-size:16px; font-weight:600; color:#475569; margin:0 0 6px; }
+.empty-notif-hint { font-size:12px; color:#94A3B8; margin:0; }
+.notif-list { display:flex; flex-direction:column; gap:10px; }
+.notif-item { display:flex; align-items:flex-start; gap:12px; padding:16px; background:linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.65); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:20px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 2px 10px rgba(0,0,0,0.03); border:1px solid rgba(255,255,255,0.6); cursor:pointer; }
+.notif-item.unread { border-left:3px solid #8B5CF6; }
+.notif-icon-wrap { position:relative; flex-shrink:0; }
+.notif-icon { width:44px; height:44px; border-radius:14px; display:flex; align-items:center; justify-content:center; }
+.notif-dot { position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#EF4444; border-radius:50%; border:2px solid #fff; }
+.notif-body { flex:1; min-width:0; }
+.notif-top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:8px; }
+.notif-title { font-size:15px; font-weight:600; color:#1E293B; }
+.notif-time { font-size:11px; color:#94A3B8; flex-shrink:0; }
+.notif-preview { font-size:13px; color:#64748B; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>

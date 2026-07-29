@@ -2,13 +2,13 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { getToken } from '../utils/auth'
 
 /**
- * 5-Tab 底部导航架构路由
+ * 4-Tab 底部导航架构路由
  * 过渡动画规则：
  * - transition: 'fade'       → 底部 Tab 切换（淡入淡出）
  * - transition: 'slide-left' → 前进导航（新页从右侧滑入）
  */
 const routes = [
-  /* ==================== 5个底部Tab主页面（keep-alive缓存，fade过渡） ==================== */
+  /* ==================== 4个底部Tab主页面（keep-alive缓存，fade过渡） ==================== */
   {
     path: '/',
     name: 'Home',
@@ -16,28 +16,22 @@ const routes = [
     meta: { transition: 'fade', tab: 0 },
   },
   {
-    path: '/messages',
-    name: 'Messages',
-    component: () => import('../views/MessagesView.vue'),
-    meta: { transition: 'fade', tab: 1 },
-  },
-  {
     path: '/community',
     name: 'Community',
     component: () => import('../views/CommunityView.vue'),
-    meta: { transition: 'fade', tab: 2 },
+    meta: { transition: 'fade', tab: 1 },
   },
   {
     path: '/trips',
     name: 'Trips',
     component: () => import('../views/TripsView.vue'),
-    meta: { transition: 'fade', tab: 3 },
+    meta: { transition: 'fade', tab: 2 },
   },
   {
     path: '/profile',
     name: 'Profile',
     component: () => import('../views/Profile.vue'),
-    meta: { transition: 'fade', tab: 4 },
+    meta: { transition: 'fade', tab: 3 },
   },
 
   /* ==================== 行程子页面（slide-left） ==================== */
@@ -194,7 +188,7 @@ const routes = [
   /* ==================== 旧路由兼容重定向 ==================== */
   {
     path: '/chat',
-    redirect: '/messages',
+    redirect: '/profile',
   },
   {
     path: '/Profile',
@@ -212,7 +206,7 @@ const routes = [
  * 保存每个 Tab 页的滚动位置（导航离开前记录，返回时恢复）
  * 由全局 beforeEach 写入，scrollBehavior 读取
  */
-const tabPaths = ['/', '/messages', '/community', '/trips', '/profile']
+const tabPaths = ['/', '/community', '/trips', '/profile']
 const scrollMemory = {}
 
 // 禁用浏览器原生滚动恢复，全部由 Vue Router 接管
@@ -249,7 +243,7 @@ router.beforeEach((to, from) => {
 
 /* ==================== 白名单（未登录可访问） ==================== */
 const whiteList = [
-  '/', '/messages', '/community', '/trips', '/profile',
+  '/', '/community', '/trips', '/profile',
   '/login', '/register', '/about',
   '/planning', '/destinations', '/destination-detail',
   '/notes', '/note-detail', '/video-detail', '/write-note', '/post',

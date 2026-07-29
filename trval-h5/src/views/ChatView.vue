@@ -498,9 +498,9 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 .guide-hint { font-size: 13px; color: #94A3B8; margin: 0 0 24px; }
 .guide-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 340px; }
 .guide-chip {
-  padding: 10px 18px; background: #fff; border: 1px solid #E2E8F0;
+  padding: 10px 18px; background: rgba(255,255,255,0.55); backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%); border: 1px solid rgba(255,255,255,0.4);
   border-radius: 22px; font-size: 13px; color: #475569; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02); transition: all 0.2s;
 }
 .guide-chip:hover { border-color: #c4b5fd; color: #7C3AED; }
 .guide-chip:active { transform: scale(0.96); background: #faf5ff; }

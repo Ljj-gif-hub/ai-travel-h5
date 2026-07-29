@@ -104,9 +104,14 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
     <van-nav-bar title="我的收藏" left-text="返回" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <!-- 分类 Tab -->
-    <van-tabs v-model:active="activeTab" @change="handleTabChange" class="page-tabs" :duration="0.25" swipeable>
-      <van-tab v-for="tab in tabs" :key="tab.key" :title="tab.name" />
-    </van-tabs>
+    <div class="filter-tabs">
+      <div class="filter-slider" :style="{ left: `calc(${tabs.findIndex(t => t.key === activeTab) * 25}% + 4px)`, width: `calc(25% - 8px)` }" />
+      <button
+        v-for="tab in tabs" :key="tab.key"
+        :class="['filter-tab', { active: activeTab === tab.key }]"
+        @click="handleTabChange(tab.key)"
+      >{{ tab.name }}</button>
+    </div>
 
     <div class="page-content">
       <transition name="tab-fade" mode="out-in">
@@ -174,11 +179,35 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 :deep(.nav-bar .van-nav-bar__title) { color: #1E293B; font-weight: 600; font-size: 17px; }
 
 /* ==================== 统一 Tab 栏 ==================== */
-:deep(.page-tabs) { background: #fff; }
-:deep(.page-tabs .van-tabs__nav) { padding: 0 8px; }
-:deep(.page-tabs .van-tab) { font-size: 14px; color: #64748B; }
-:deep(.page-tabs .van-tab--active) { color: #7C3AED; font-weight: 600; }
-:deep(.page-tabs .van-tabs__line) { background: #8B5CF6; height: 3px; border-radius: 2px; }
+/* 分类 Tab — 滑动指示器 */
+.filter-tabs {
+  display: flex;
+  margin: 0 12px 12px;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border-radius: 14px;
+  padding: 4px;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.5);
+}
+.filter-slider {
+  position: absolute; top: 4px; height: calc(100% - 8px);
+  background: #fff;
+  border-radius: 11px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+.filter-tab {
+  flex: 1; padding: 9px 0; border: none; border-radius: 11px;
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  background: transparent; color: #94A3B8;
+  position: relative; z-index: 1;
+  transition: color 0.3s ease;
+}
+.filter-tab.active { color: #7C3AED; font-weight: 600; }
+.filter-tab:active { transform: scale(0.96); }
 
 .page-content { padding: 16px; box-sizing: border-box; }
 

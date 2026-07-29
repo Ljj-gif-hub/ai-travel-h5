@@ -280,6 +280,7 @@ onMounted(() => {
 
         <!-- Tab -->
         <div class="tab-bar" :class="{ in: pageReady }">
+          <div class="tab-slider" :style="{ left: isLogin ? '4px' : 'calc(50% + 2px)', width: 'calc(50% - 6px)' }" />
           <button :class="['tab-item', { active: isLogin }]" @click="switchTab('login')">登录</button>
           <button :class="['tab-item', { active: !isLogin }]" @click="switchTab('register')">注册</button>
         </div>
@@ -288,7 +289,8 @@ onMounted(() => {
         <div class="form-card" :class="{ in: pageReady }">
 
           <!-- 登录 -->
-          <div v-show="isLogin" class="form-body">
+          <Transition name="form-switch">
+          <div v-if="isLogin" class="form-body" key="login">
             <div class="input-group" :class="{ err: loginErrors.username }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.5"/><path d="M3 18 Q3 12 10 12 Q17 12 17 18" stroke-linecap="round"/></svg>
               <input v-model="loginForm.username" type="text" placeholder="用户名" class="form-input" @focus="clearLoginError('username')" @input="clearLoginError('username')"/>
@@ -312,9 +314,11 @@ onMounted(() => {
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.3)" stroke-width="3"/><path d="M12 2 A10 10 0 0 1 22 12" stroke="white" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
             </button>
           </div>
+          </Transition>
 
           <!-- 注册 -->
-          <div v-show="!isLogin" class="form-body">
+          <Transition name="form-switch">
+          <div v-if="!isLogin" class="form-body" key="register">
             <div class="input-group" :class="{ err: registerErrors.username }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.5"/><path d="M3 18 Q3 12 10 12 Q17 12 17 18" stroke-linecap="round"/></svg>
               <input v-model="registerForm.username" type="text" placeholder="用户名" class="form-input" @focus="clearRegisterError('username')" @input="clearRegisterError('username')"/>
@@ -359,6 +363,7 @@ onMounted(() => {
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.3)" stroke-width="3"/><path d="M12 2 A10 10 0 0 1 22 12" stroke="white" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
             </button>
           </div>
+          </Transition>
 
           <!-- 第三方登录 -->
           <div class="third-party">
@@ -467,22 +472,31 @@ onMounted(() => {
 .app-tagline { font-size: 14px; color: rgba(255,255,255,.9); margin: 0 0 6px; text-shadow: 0 1px 8px rgba(0,0,0,.2); }
 .app-slogan { font-size: 11px; color: rgba(255,255,255,.65); margin: 0; }
 
-/* ──── Tab ──── */
+/* ──── Tab — 滑动指示器 ──── */
 .tab-bar {
   display: flex; width: 100%; max-width: 420px; margin-bottom: 24px;
   background: rgba(255,255,255,0.12); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px); border-radius: 14px; padding: 4px;
   border: 1px solid rgba(255,255,255,.2);
+  position: relative;
   opacity: 0; transform: translateY(12px); transition: opacity .5s ease .1s, transform .5s ease .1s;
 }
 .tab-bar.in { opacity: 1; transform: translateY(0); }
+.tab-slider {
+  position: absolute; top: 4px; height: calc(100% - 8px);
+  background: #fff; border-radius: 11px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
 .tab-item {
   flex: 1; padding: 10px 0; border: none; border-radius: 11px;
   font-size: 15px; font-weight: 500; cursor: pointer;
   background: transparent; color: rgba(255,255,255,.6);
-  transition: background .3s ease, color .3s ease;
+  position: relative; z-index: 1;
+  transition: color 0.3s ease;
 }
-.tab-item.active { background: #fff; color: #7b42f5; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.tab-item.active { color: #7b42f5; font-weight: 600; }
 .tab-item:active { transform: scale(.96); }
 
 /* ──── 表单卡片（淡紫磨砂玻璃） ──── */
@@ -490,13 +504,19 @@ onMounted(() => {
   width: 100%; max-width: 420px;
   background: rgba(123,66,245,0.06); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border-radius: 18px; padding: 24px 20px 20px;
+  border-radius: 18px; padding: 24px 20px 20px; position: relative; overflow: hidden;
   border: 1px solid rgba(123,66,245,0.18);
   box-shadow: 0 8px 32px rgba(123,66,245,0.06), 0 2px 8px rgba(0,0,0,.04);
   opacity: 0; transform: translateY(12px); transition: opacity .5s ease .2s, transform .5s ease .2s;
 }
 .form-card.in { opacity: 1; transform: translateY(0); }
 .form-body { display: flex; flex-direction: column; gap: 14px; }
+
+/* 表单切换动画 */
+.form-switch-enter-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.form-switch-leave-active { transition: all 0.2s cubic-bezier(0.4, 0, 1, 1); position: absolute; width: 100%; }
+.form-switch-enter-from { opacity: 0; transform: translateX(40px); }
+.form-switch-leave-to   { opacity: 0; transform: translateX(-30px); }
 
 /* ──── 输入框 ──── */
 .input-group {

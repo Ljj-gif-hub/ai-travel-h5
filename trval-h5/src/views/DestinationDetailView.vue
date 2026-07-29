@@ -416,10 +416,13 @@ onMounted(async () => {
 }
 
 .city-card {
-  background: #ffffff;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
   margin-bottom: 16px;
 }
 
@@ -475,10 +478,13 @@ onMounted(async () => {
 }
 
 .map-section {
-  background: #ffffff;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 20px;
   padding: 16px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.03);
   margin-bottom: 16px;
 }
 
@@ -532,10 +538,13 @@ onMounted(async () => {
 }
 
 .attractions-section {
-  background: #ffffff;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 20px;
   padding: 16px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.03);
 }
 
 .loading-state {

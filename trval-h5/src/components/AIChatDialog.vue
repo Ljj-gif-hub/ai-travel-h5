@@ -357,9 +357,8 @@ const savePlan = async () => {
 
 /* ==================== Dialog Controls ==================== */
 const closeDialog = () => {
-  // 【修复】关闭前保存消息到持久存储，下次打开恢复
   saveCurrentSessionMessages(messages.value)
-  emit('update:visible', false)
+  localVisible.value = false
   emit('close')
   if (abortController) { abortController.abort(); abortController = null }
   stopVoice()
@@ -591,24 +590,22 @@ initSpeechRecognition()
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: linear-gradient(180deg, #faf5ff 0%, #f0f4ff 40%, #f1f5f9 100%);
-  /* 【修复】底部预留Tab栏高度(56px)+safe-area，输入框不被遮挡 */
-  padding-bottom: calc(var(--tabbar-height, 56px) + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(175deg, #ede9f6 0%, #f0ecf9 30%, #f4f1fb 60%, #ede9f6 100%);
 }
 
 /* ==================== Header ==================== */
 .dialog-header {
   flex-shrink: 0;
-  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  background: #fff;
-  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.03);
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border-bottom: 0.5px solid rgba(0,0,0,0.05);
 }
-.header-left, .header-right { display: flex; align-items: center; gap: 4px; }
+.header-left, .header-right { display: flex; align-items: center; gap: 6px; }
 .header-title {
   font-size: 17px;
   font-weight: 700;
@@ -680,13 +677,15 @@ initSpeechRecognition()
 }
 .guide-chip {
   padding: 10px 18px;
-  background: #fff;
-  border: 1px solid #E2E8F0;
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.4);
   border-radius: 22px;
   font-size: 13px;
   color: #475569;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   transition: all 0.2s;
 }
 .guide-chip:hover {

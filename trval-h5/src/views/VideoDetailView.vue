@@ -21,6 +21,7 @@ const comments = ref([]);
 // ===== 回复功能（抖音风格） =====
 const expandedReplies = reactive({});   // { commentId: true/false } 是否已展开回复
 const replyList = reactive({});         // { commentId: [reply, ...] } 缓存已加载的回复
+const replyShowCount = reactive({});    // { commentId: number } 每次展开5条
 const replyInputs = reactive({});       // { commentId: 'text' } 回复输入框文字
 const replyTarget = ref(null);          // { id, authorName, rootId } 当前正在回复的评论
 const isPlaying = ref(true);
@@ -62,12 +63,41 @@ const fullscreenBtnStyle = computed(() => {
   return { bottom: '86px', right: '12px' }
 })
 
-const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value
-  nextTick(() => {
-    if (videoRef.value && isPlaying.value) videoRef.value.play()
-  })
+const toggleFullscreen = async () => {
+  if (isFullscreen.value) {
+    // 退出全屏
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    }
+    isFullscreen.value = false
+  } else {
+    // 进入全屏
+    const el = videoRef.value?.parentElement || videoRef.value
+    if (el?.requestFullscreen) {
+      await el.requestFullscreen()
+    } else if (el?.webkitRequestFullscreen) {
+      await el.webkitRequestFullscreen()
+    }
+    isFullscreen.value = true
+    if (videoRef.value) {
+      videoRef.value.style.objectFit = 'contain'
+      videoRef.value.play()
+    }
+  }
 };
+
+// 监听原生全屏变化
+const onFullscreenChange = () => {
+  if (!document.fullscreenElement && isFullscreen.value) {
+    isFullscreen.value = false
+  }
+}
+document.addEventListener('fullscreenchange', onFullscreenChange)
+document.addEventListener('webkitfullscreenchange', onFullscreenChange)
+onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', onFullscreenChange)
+})
 
 const formatTime = (s) => {
   if (!s || !isFinite(s)) return '0:00'
@@ -382,12 +412,14 @@ const toggleReplies = async (commentId) => {
   if (expandedReplies[commentId]) {
     // 收起
     expandedReplies[commentId] = false;
+    delete replyShowCount[commentId];
   } else {
     // 展开：懒加载回复列表
     try {
       const res = await commentApi.getReplies(commentId);
       if (res.code === 0) {
         replyList[commentId] = res.data || [];
+        replyShowCount[commentId] = 5;
         expandedReplies[commentId] = true;
       }
     } catch { showToast('加载回复失败'); }
@@ -583,47 +615,50 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                 <span class="cmt-action" @click.stop="startReply(c)">回复</span>
               </div>
 
-              <!-- ══════ 回复区域（抖音风格） ══════ -->
+              <!-- ══════ 回复区域 ══════ -->
               <div v-if="c.replyCount > 0" class="reply-zone">
-                <!-- 展开/收起按钮 -->
-                <div class="reply-toggle" @click.stop="toggleReplies(c.id)">
-                  <span class="reply-toggle-line"></span>
-                  <span v-if="!expandedReplies[c.id]">
-                    展开{{ c.replyCount }}条回复
-                    <van-icon name="arrow-down" size="10" />
-                  </span>
-                  <span v-else>收起回复 <van-icon name="arrow-up" size="10" /></span>
-                </div>
+                <!-- 未展开：预览 → 展开按钮在下方 -->
+                <template v-if="!expandedReplies[c.id]">
+                  <div v-if="c.topReply" class="reply-preview">
+                    <span class="reply-preview-author">{{ c.topReply.authorName || ('用户'+c.topReply.userId) }}</span>
+                    <span v-if="c.topReply.content" class="reply-preview-text">：{{ c.topReply.content }}</span>
+                    <img v-if="c.topReply.image" :src="c.topReply.image" class="cmt-img" style="max-width:80px"/>
+                  </div>
+                  <div class="reply-toggle" @click.stop="toggleReplies(c.id)">
+                    <span class="reply-toggle-line"></span>
+                    <span>展开{{ c.replyCount }}条回复 <van-icon name="arrow-down" size="10" /></span>
+                  </div>
+                </template>
 
-                <!-- 热评回复预览（未展开时只显示点赞最多的那条） -->
-                <div v-if="!expandedReplies[c.id] && c.topReply" class="reply-preview">
-                  <span class="reply-preview-author">{{ c.topReply.authorName || ('用户'+c.topReply.userId) }}</span>
-                  <span v-if="c.topReply.content" class="reply-preview-text">：{{ c.topReply.content }}</span>
-                  <img v-if="c.topReply.image" :src="c.topReply.image" class="cmt-img" style="max-width:80px"/>
-                </div>
-
-                <!-- 展开后的回复列表 -->
-                <div v-if="expandedReplies[c.id]" class="reply-list">
-                  <div v-for="r in (replyList[c.id]||[])" :key="r.id" class="reply-item">
-                    <van-image round width="24" height="24" fit="cover" :src="r.authorAvatar||''" class="reply-av"/>
-                    <div class="reply-main">
-                      <div class="reply-head">
-                        <span class="reply-author">{{ r.authorName || ('用户'+r.userId) }}</span>
-                        <span class="reply-tm">{{ r.date }}</span>
-                      </div>
-                      <div class="reply-content">{{ r.content }}</div>
-                      <img v-if="r.image" :src="r.image" class="cmt-img" style="max-width:80px"/>
-                      <div class="reply-actions">
-                        <span class="cmt-action" @click.stop="handleLikeComment(r)">
-                          <van-icon name="good-job-o" size="12" /> {{ r.likes || '' }}
-                        </span>
-                        <span class="cmt-action" @click.stop="startReply(r)">回复</span>
-                        <van-icon v-if="getToken()" name="delete-o" size="12" color="#ccc" @click.stop="handleDeleteComment(r)"/>
+                <!-- 展开后：回复列表 → 收起按钮在下面 -->
+                <template v-else>
+                  <div class="reply-list">
+                    <div v-for="r in (replyList[c.id]||[]).slice(0, replyShowCount[c.id] || 5)" :key="r.id" class="reply-item">
+                      <van-image round width="24" height="24" fit="cover" :src="r.authorAvatar||''" class="reply-av"/>
+                      <div class="reply-main">
+                        <div class="reply-head">
+                          <span class="reply-author">{{ r.authorName || ('用户'+r.userId) }}</span>
+                          <span class="reply-tm">{{ r.date }}</span>
+                        </div>
+                        <div class="reply-content">{{ r.content }}</div>
+                        <img v-if="r.image" :src="r.image" class="cmt-img" style="max-width:80px"/>
+                        <div class="reply-actions">
+                          <span class="cmt-action" @click.stop="handleLikeComment(r)"><van-icon name="good-job-o" size="12" /> {{ r.likes || '' }}</span>
+                          <span class="cmt-action" @click.stop="startReply(r)">回复</span>
+                          <van-icon v-if="getToken()" name="delete-o" size="12" color="#ccc" @click.stop="handleDeleteComment(r)"/>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-
+                  <!-- 加载更多回复 -->
+                  <div v-if="(replyList[c.id]||[]).length > (replyShowCount[c.id] || 5)" class="reply-toggle" @click.stop="replyShowCount[c.id] = (replyShowCount[c.id] || 5) + 5">
+                    <span>加载更多回复 <van-icon name="arrow-down" size="10" /></span>
+                  </div>
+                  <!-- 收起回复 -->
+                  <div class="reply-toggle" @click.stop="toggleReplies(c.id)">
+                    <span>收起回复 <van-icon name="arrow-up" size="10" /></span>
+                  </div>
+                </template>
               </div>
 
               <!-- 无回复时的回复入口 -->
@@ -656,61 +691,45 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
   width: 100%; height: 100dvh;
   background: #000; position: fixed; top:0;left:0; z-index: 10000;
   -webkit-user-select: none; user-select: none;
-  display: flex; flex-direction: column;
   overflow: hidden;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   box-sizing: border-box;
 }
 
-/* ====== 横屏全屏模式（原生 orientation API，系统级旋转动画） ====== */
-.video-shell.fullscreen {
-  padding-bottom: 0;
-}
-.video-shell.fullscreen .video-zone {
-  position: fixed; top:0; left:0; width:100%; height:100%;
-  z-index: 20000; flex: none;
-}
+.video-shell.fullscreen { padding-bottom: 0; }
+.video-shell.fullscreen .video-zone { position: fixed; top:0; left:0; width:100%; height:100%; z-index: 20000; }
 .video-shell.fullscreen .side-layer,
 .video-shell.fullscreen .top-bar,
 .video-shell.fullscreen .comment-drawer,
 .video-shell.fullscreen .swipe-hint { display:none; }
-.video-shell.fullscreen .video-controls { left:12px; right:12px; bottom:12px; }
 .video-shell.fullscreen .fullscreen-btn { bottom:auto; top:12px; right:12px; }
+.video-shell.fullscreen .video-controls { left:12px; right:12px; bottom:12px; }
+/* 原生全屏时视频铺满 */
+.video-shell.fullscreen .full-video { object-fit: contain; }
+.video-shell.fullscreen .video-controls {
+  position: fixed; bottom: 16px; left: 20px; right: 20px; z-index: 20001;
+  opacity: 1;
+  transition: opacity 0.3s;
+}
+.video-shell.fullscreen .fullscreen-btn {
+  position: fixed; top: 20px; right: 20px; z-index: 20001;
+}
 
-/* ====== 视频区 ====== */
+/* ====== 视频区 - 全屏沉浸 ====== */
 .video-zone {
-  width: 100%; position: relative;
+  position: fixed; top:0; left:0; width:100%; height:100%;
   background: #000; overflow: hidden;
-  flex: 1 1 100%;
-  min-height: 0;
-  margin: 0; padding: 0;
-  touch-action: none; /* 禁止浏览器手势，跟手零延迟 */
-  transition: flex 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
 }
-/* 拖拽中禁用过渡，跟手 */
-.video-shell.dragging .video-zone {
-  transition: none !important;
-}
+.video-shell.dragging .video-zone { transition: none !important; }
 .full-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 .no-video { text-align: center; position: absolute; top:50%; left:50%; transform: translate(-50%,-50%); }
 
-/* ====== 视频滑动轨道 ====== */
 .video-track {
-  width: 100%; height: 100%;
-  position: relative;
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: translateZ(0); /* 强制GPU合成层 */
+  width: 100%; height: 100%; position: relative;
+  will-change: transform; backface-visibility: hidden;
+  transform: translateZ(0);
 }
-/* 拖拽中：完全跟手，无过渡 */
-.video-track.dragging {
-  transition: none !important;
-}
-/* 松手回弹/吸附：线性过渡 */
-.video-track.snapping {
-  transition: transform 0.25s linear;
-}
+.video-track.dragging { transition: none !important; }
+.video-track.snapping { transition: transform 0.25s linear; }
 
 .play-indicator { position: absolute; top:50%;left:50%; transform: translate(-50%,-50%); pointer-events: none; transition: opacity .2s; }
 .play-indicator.hide { opacity: 0; }
@@ -718,23 +737,21 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 .heart-burst { position: absolute; top:45%;left:50%; transform: translate(-50%,-50%); font-size: 80px; pointer-events: none; animation: hb .8s ease-out forwards; }
 @keyframes hb { 0%{opacity:1;transform:translate(-50%,-50%) scale(.3)} 50%{opacity:1;transform:translate(-50%,-50%) scale(1.3)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.8)} }
 
-/* 顶部栏（固定高度，在视频上方） */
+/* 顶部栏 - 悬浮在视频上方 */
 .top-bar {
-  flex: 0 0 auto;
+  position: absolute; top:0; left:0; right:0;
   display:flex; align-items:center; justify-content:space-between;
-  padding: max(10px,env(safe-area-inset-top)) 16px 8px;
-  background: #000;
+  padding: max(12px,env(safe-area-inset-top)) 16px 12px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.2) 70%, transparent 100%);
   z-index: 15;
 }
-.top-title { color:#fff; font-size:15px; font-weight:600; }
+.top-title { color:#fff; font-size:15px; font-weight:600; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 
-/* 右侧图层（在视频区内，随视频缩放大小时移动） */
+/* 右侧图层 */
 .side-layer {
   position: absolute; inset: 0; pointer-events: none; z-index: 3;
   transition: opacity 0.25s ease;
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  will-change: transform; backface-visibility: hidden;
   transform: translateZ(0);
 }
 .side-layer > * { pointer-events: auto; }
@@ -799,32 +816,30 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 .video-shell.fullscreen .fullscreen-btn { bottom:auto; top:12px; right:12px; }
 @keyframes float { 0%,100%{opacity:.6;transform:translateX(-50%) translateY(0)} 50%{opacity:1;transform:translateX(-50%) translateY(-6px)} }
 
-/* ====== 评论抽屉 ====== */
-/* ====== 评论抽屉 ====== */
+/* ====== 评论抽屉 — 磨砂玻璃 ====== */
 .comment-drawer {
-  width: 100%;
-  flex: 1 1 0%;
-  min-height: 0;
-  background: #fff;
+  position: absolute; bottom:0; left:0; right:0;
+  max-height: 70%;
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
   display: flex; flex-direction: column;
   overflow: hidden;
-  position: relative;
   z-index: 20;
-  border-radius: 12px 12px 0 0;
-  margin-top: -1px;
+  border-radius: 16px 16px 0 0;
+  border-top: 0.5px solid rgba(255,255,255,0.5);
 }
 .drawer-slide-enter-active { transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
 .drawer-slide-leave-active { transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
 .drawer-slide-enter-from,
 .drawer-slide-leave-to { opacity: 0; transform: translateY(40%); }
 .handle-row { display:flex; justify-content:center; padding:12px 0 4px; cursor:grab; }
-.handle-row:active { cursor:grabbing; }
-.handle-bar { width:36px; height:4px; border-radius:2px; background:#ddd; }
+.handle-bar { width:36px; height:4px; border-radius:2px; background:rgba(0,0,0,0.15); }
 .dr-header { display:flex; justify-content:space-between; align-items:center; padding:8px 16px 12px; }
 .dr-title { color:#111; font-size:16px; font-weight:600; }
 .dr-list { flex:1; overflow-y:auto; padding:0 16px; -webkit-overflow-scrolling:touch; }
-.no-cmt { text-align:center; color:#bbb; padding:40px; font-size:13px; }
-.cmt-row { display:flex; gap:10px; padding:12px 0; border-bottom:1px solid #f0f0f0; align-items:flex-start; }
+.no-cmt { text-align:center; color:#999; padding:40px; font-size:13px; }
+.cmt-row { display:flex; gap:10px; padding:12px 0; border-bottom:0.5px solid rgba(0,0,0,0.05); align-items:flex-start; }
 .cmt-av { flex-shrink:0; background:#eee; }
 .cmt-main { flex:1; min-width:0; }
 .cmt-head { display:flex; justify-content:space-between; color:#999; font-size:11px; margin-bottom:4px; }
@@ -833,7 +848,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 .cmt-img { max-width:120px; border-radius:8px; margin-top:6px; }
 .cmt-vid { width:100%; max-height:150px; border-radius:8px; margin-top:6px; background:#000; }
 .cmt-del { flex-shrink:0; margin-top:2px; cursor:pointer; }
-.dr-input-row { display:flex; align-items:center; gap:8px; padding:8px 12px; margin:8px 12px; background:#f5f5f5; border-radius:22px; border:1px solid #eee; }
+.dr-input-row { display:flex; align-items:center; gap:8px; padding:8px 12px; margin:8px 12px; background:rgba(255,255,255,0.5); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:22px; border:1px solid rgba(255,255,255,0.4); }
 .dr-send { display:flex; align-items:center; justify-content:center; width:34px;height:34px; border-radius:50%; background:linear-gradient(135deg,#fe2c55,#ff4d6a); flex-shrink:0; cursor:pointer; }
 .dr-send:active { transform:scale(.9); }
 .dr-input { flex:1; background:transparent!important; color:#333; padding:4px 0!important; }

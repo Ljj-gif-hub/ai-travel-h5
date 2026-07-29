@@ -164,7 +164,10 @@ onMounted(() => {
 }
 
 .note-card {
-  background: #fff;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);

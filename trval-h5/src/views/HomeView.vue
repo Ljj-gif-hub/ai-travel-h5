@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, Swipe, SwipeItem } from 'vant'
@@ -832,7 +832,10 @@ const addWheelListeners = () => {
 }
 
 const removeWheelListeners = () => { wheelHandlers.value.forEach(({ column, handler }) => column.removeEventListener('wheel', handler)); wheelHandlers.value = [] }
-watch(showCityPicker, (newVal) => { newVal ? addWheelListeners() : removeWheelListeners() })
+watch(showCityPicker, (newVal) => {
+  if (newVal) addWheelListeners()
+  else removeWheelListeners()
+})
 
 /* ==================== 滚动触底加载（和社区页一致） ==================== */
 const handleScroll = () => {
@@ -875,47 +878,61 @@ onUnmounted(() => {
 
     <!-- ==================== LAYER 1: Hero Header ==================== -->
     <div class="hero-header entrance-item entrance-d1">
-      <!-- 背景装饰 -->
-      <div class="hero-bg-decor">
-        <svg class="hero-svg" viewBox="0 0 400 200" preserveAspectRatio="none">
-          <ellipse cx="350" cy="30" rx="120" ry="80" fill="rgba(255,255,255,0.06)" />
-          <ellipse cx="50" cy="140" rx="100" ry="70" fill="rgba(255,255,255,0.04)" />
-          <circle cx="330" cy="160" r="40" fill="rgba(255,255,255,0.03)" />
-        </svg>
+      <!-- 全屏山水背景图 -->
+      <img
+        class="hero-bg-img"
+        src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80"
+        alt=""
+      />
+      <!-- 底部渐变遮罩，保证白色文字可读 -->
+      <div class="hero-overlay"></div>
+
+      <!-- 左下：主文案区 -->
+      <div class="hero-text-area">
+        <h1 class="hero-title">旅迹</h1>
+        <p class="hero-sub-en">TRAVEL TRACE</p>
+        <p class="hero-tagline">奔赴山河，记录专属旅途</p>
       </div>
 
-      <div class="hero-top-row">
-        <div class="brand">
-          <span class="brand-text">智能旅游助手</span>
-        </div>
-        <div class="header-btns">
-          <button class="hdr-btn" @click="handleHeaderBtn('vip')">
-            <van-icon name="vip-card-o" size="15" />
-            <span>会员</span>
-          </button>
-          <button class="hdr-btn" @click="handleHeaderBtn('points')">
-            <van-icon name="gold-coin-o" size="15" />
-            <span>积分</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- SearchBar -->
-      <div class="search-row">
-        <SearchBar v-model="destination" placeholder="搜索目的地、景点或网址" :history="searchHistory" @select="handleSearchSelect" />
+      <!-- 右下：两个磨砂半透按钮 -->
+      <div class="hero-actions-right">
+        <button class="hero-glass-btn-right" @click="handleHeaderBtn('vip')">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+          </svg>
+          <span>会员</span>
+        </button>
+        <button class="hero-glass-btn-right" @click="handleHeaderBtn('points')">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+          <span>积分</span>
+        </button>
       </div>
     </div>
 
-    <!-- ==================== AI 一键规划行程（紧贴搜索栏） ==================== -->
+    <!-- ==================== AI 智能规划 ==================== -->
     <div class="content-card plan-card">
+      <!-- 标题 -->
       <div class="plan-header">
-        <div class="plan-title-row">
-          <span class="plan-icon">🧭</span>
-          <span class="plan-title">AI 一键规划行程</span>
+        <span class="plan-icon-wrap">🧭</span>
+        <div class="plan-header-text">
+          <span class="plan-title">AI 智能规划</span>
+          <span class="plan-subtitle">告诉我你的想法，剩下的交给我</span>
         </div>
-        <span class="plan-badge">✨ AI智能推荐</span>
       </div>
-      <!-- 热门目的地快捷标签 -->
+
+      <!-- 目的地搜索 — 核心输入 -->
+      <div class="plan-search-row">
+        <div class="plan-search-wrap">
+          <SearchBar v-model="destination" placeholder="想去哪里？输入目的地" :history="searchHistory" @select="handleSearchSelect" />
+        </div>
+        <button class="plan-loc-btn" @click="openCityPicker">
+          <van-icon name="location-o" size="18" color="#7C3AED" />
+        </button>
+      </div>
+
+      <!-- 热门目的地快捷选择 -->
       <div class="hot-tags">
         <span
           v-for="tag in hotTags" :key="'ht-' + tag"
@@ -924,37 +941,36 @@ onUnmounted(() => {
           @click="selectHotTag(tag)"
         >{{ tag }}</span>
       </div>
-      <!-- 表单：2列网格 -->
-      <div class="plan-form">
-        <div class="plan-field plan-field-full" @click="openCityPicker">
-          <label class="plan-label">📍 目的地</label>
-          <input v-model="destination" type="text" placeholder="选择或输入目的地" class="plan-input" readonly />
-          <van-icon name="arrow" size="14" color="#94A3B8" />
+
+      <!-- 预算/天数/人数 — 轻量选择器 -->
+      <div class="plan-meta-row">
+        <div class="plan-meta-item" :class="{ filled: budget }">
+          <span class="plan-meta-label">预算</span>
+          <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" placeholder="不限" class="plan-meta-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
+          <span v-if="budget" class="plan-meta-unit">元</span>
         </div>
-        <div class="plan-row">
-          <div class="plan-field plan-half">
-            <label class="plan-label">💰 预算(元)</label>
-            <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" placeholder="如3000" class="plan-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
-          </div>
-          <div class="plan-field plan-half">
-            <label class="plan-label">📅 天数</label>
-            <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" placeholder="如5" class="plan-input" @input="handleDaysInput" @blur="handleDaysBlur" />
-          </div>
+        <div class="plan-meta-item" :class="{ filled: days }">
+          <span class="plan-meta-label">天数</span>
+          <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" placeholder="不限" class="plan-meta-input" @input="handleDaysInput" @blur="handleDaysBlur" />
+          <span v-if="days" class="plan-meta-unit">天</span>
         </div>
-        <div class="plan-field">
-          <label class="plan-label">👥 人数</label>
-          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" placeholder="出行人数" class="plan-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
+        <div class="plan-meta-item" :class="{ filled: people }">
+          <span class="plan-meta-label">人数</span>
+          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" placeholder="不限" class="plan-meta-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
+          <span v-if="people" class="plan-meta-unit">人</span>
         </div>
       </div>
+
+      <!-- 提交按钮 -->
       <button class="plan-submit btn-tap-scale" @click="startPlanning">
-        <van-icon name="compass-o" size="20" />
-        <span>开始规划</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2l9 4.5v3.8c0 5.3-3.5 10.2-9 11.7-5.5-1.5-9-6.4-9-11.7V6.5L12 2z"/></svg>
+        <span>开始智能规划</span>
       </button>
     </div>
 
     <!-- ==================== Banner 轮播 ==================== -->
     <div class="content-card banner-wrap">
-      <Swipe class="banner-swipe" :autoplay="4000" indicator-color="rgba(255,255,255,0.5)" indicator-active-color="#ffffff" :circular="true">
+      <Swipe class="banner-swipe" :autoplay="4000" indicator-color="rgba(255,255,255,0.65)" indicator-active-color="#ffffff" :circular="true">
         <SwipeItem v-for="banner in banners" :key="'bn-' + banner.id" class="banner-slide" @click="handleBannerClick(banner)">
           <img :src="banner.image" :alt="banner.title" class="banner-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
           <div class="banner-info">
@@ -965,79 +981,55 @@ onUnmounted(() => {
       </Swipe>
     </div>
 
-    <!-- ==================== LAYER 2: Service Icon Grid Row 1 (5 cols) ==================== -->
-    <div class="service-grid entrance-item entrance-d2">
-      <div
-        v-for="(item, idx) in serviceRow1"
-        :key="'s1-' + idx"
-        class="service-item"
-        @click="handleServiceClick(item)"
-      >
-        <div class="service-icon-circle" :style="{ background: `${item.color}18` }">
-          <van-icon :name="item.icon" :color="item.color" size="24" />
+    <!-- ==================== 服务入口：双行合并 ==================== -->
+    <div class="section-card">
+      <div class="service-grid">
+        <div v-for="(item, idx) in serviceRow1" :key="'s1-'+idx" class="service-item" @click="handleServiceClick(item)">
+          <div class="service-icon-circle" :style="{ background: `${item.color}15` }">
+            <van-icon :name="item.icon" :color="item.color" size="22" />
+          </div>
+          <span class="service-label">{{ item.name }}</span>
         </div>
-        <span class="service-label">{{ item.name }}</span>
-      </div>
-    </div>
-
-    <!-- ==================== LAYER 2b: Service Icon Grid Row 2 (5 cols) ==================== -->
-    <div class="service-grid-row2">
-      <div
-        v-for="(item, idx) in serviceRow2"
-        :key="'s2-' + idx"
-        class="service-item-sm"
-        @click="handleServiceClick(item)"
-      >
-        <div class="service-icon-circle-sm" :style="{ background: `${item.color}14` }">
-          <van-icon :name="item.icon" :color="item.color" size="20" />
+        <div v-for="(item, idx) in serviceRow2" :key="'s2-'+idx" class="service-item" @click="handleServiceClick(item)">
+          <div class="service-icon-circle" :style="{ background: `${item.color}12` }">
+            <van-icon :name="item.icon" :color="item.color" size="20" />
+          </div>
+          <span class="service-label">{{ item.name }}</span>
         </div>
-        <span class="service-label-sm">{{ item.name }}</span>
       </div>
-    </div>
-
-    <!-- ==================== LAYER 3: More Products Collapsible Bar ==================== -->
-    <div class="more-products-bar" @click="showMoreProducts = true">
-      <div class="more-products-left">
-        <div class="mini-icon-row">
-          <span class="mini-icon" style="background:#ede9fe;color:#8B5CF6;">签</span>
-          <span class="mini-icon" style="background:#dbeafe;color:#3B82F6;">导</span>
-          <span class="mini-icon" style="background:#fef3c7;color:#F59E0B;">W</span>
-          <span class="mini-icon" style="background:#d1fae5;color:#34D399;">保</span>
+      <!-- 更多 -->
+      <div class="more-products-bar" @click="showMoreProducts = true">
+        <div class="more-products-left">
+          <div class="mini-icon-row">
+            <span class="mini-icon" style="background:#ede9fe;color:#8B5CF6;">签</span>
+            <span class="mini-icon" style="background:#dbeafe;color:#3B82F6;">导</span>
+            <span class="mini-icon" style="background:#fef3c7;color:#F59E0B;">W</span>
+            <span class="mini-icon" style="background:#d1fae5;color:#34D399;">保</span>
+          </div>
+          <span class="more-products-text">更多产品和服务</span>
         </div>
-        <span class="more-products-text">+14个更多产品</span>
-      </div>
-      <van-icon name="arrow" size="14" color="#94A3B8" />
-    </div>
-
-    <!-- ==================== LAYER 4: City Quick Tags ==================== -->
-    <div class="city-tags-section">
-      <div class="city-tags">
-        <span
-          v-for="(city, idx) in cityQuickTags"
-          :key="'city-' + idx"
-          class="city-tag-chip"
-          @click="handleCityTagClick(city)"
-        >{{ city }}</span>
+        <van-icon name="arrow" size="14" color="#94A3B8" />
       </div>
     </div>
 
-    <!-- ==================== LAYER 5: Quick Function Tabs ==================== -->
-    <div class="quick-tabs-card">
-      <button
-        v-for="(tab, idx) in quickTabs"
-        :key="'tab-' + idx"
-        class="quick-tab-btn"
-        :class="{ 'quick-tab-primary': tab.name === '行程规划' }"
-        @click="handleQuickTab(tab)"
-      >
-        <van-icon :name="tab.icon" size="16" />
-        <span>{{ tab.name }}</span>
-      </button>
+    <!-- ==================== 热门目的地 ==================== -->
+    <div class="section-card">
+      <div class="sec-head">
+        <span class="sec-title">🔥 热门目的地</span>
+        <span class="sec-more" @click="goToDestinations">查看全部 <van-icon name="arrow" size="12" /></span>
+      </div>
+      <div class="h-scroll">
+        <div v-for="(d, i) in hotDestinations" :key="'hd-'+i" class="dest-card" @click="handleDestination(d)">
+          <img :src="d.image" :alt="d.name" class="dest-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
+          <div class="dest-mask" />
+          <span class="dest-name">{{ d.name }}</span>
+        </div>
+      </div>
     </div>
 
-    <!-- ==================== LAYER 6: Dual-Column Horizontal Scroll Cards ==================== -->
+    <!-- ==================== 双列活动卡片 ==================== -->
     <div class="dual-cards-scroll entrance-item entrance-d3">
-      <div class="event-card float-card" @click="handleEventBannerClick">
+      <div class="event-card" @click="handleEventBannerClick">
         <img :src="eventBanner.image" :alt="eventBanner.title" class="event-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
         <div class="event-overlay">
           <span class="event-badge">{{ eventBanner.label }}</span>
@@ -1053,37 +1045,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- ==================== EXISTING: 快捷入口 6宫格 ==================== -->
-    <div class="content-card">
-      <div class="sec-head">
-        <span class="sec-title">快捷服务</span>
-      </div>
-      <div class="quick-grid">
-        <div v-for="(item, i) in quickEntries" :key="'qe-' + i" class="quick-cell" @click="handleQuickEntry(item)">
-          <div class="quick-cell-icon" :style="{ background: `${item.color}18` }">
-            <van-icon :name="item.icon" :color="item.color" size="24" />
-          </div>
-          <span class="quick-cell-label">{{ item.name }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- ==================== EXISTING: 热门目的地 ==================== -->
-    <div class="content-card">
-      <div class="sec-head">
-        <span class="sec-title">🔥 热门目的地</span>
-        <span class="sec-more" @click="goToDestinations">更多 <van-icon name="arrow" size="12" /></span>
-      </div>
-      <div class="h-scroll">
-        <div v-for="(d, i) in hotDestinations" :key="'hd-' + i" class="dest-card" @click="handleDestination(d)">
-          <img :src="d.image" :alt="d.name" class="dest-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
-          <div class="dest-mask" />
-          <span v-if="d.tag" class="dest-tag">{{ d.tag }}</span>
-          <span class="dest-name">{{ d.name }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- ==================== 携程风格：优质游记（复刻社区功能） ==================== -->
     <div class="ctrip-section">
       <!-- 笔记 Feed -->
@@ -1092,7 +1053,7 @@ onUnmounted(() => {
         <div class="ctrip-feed-column">
           <!-- 自动翻页宣传卡片（矮卡片 → 左列更高） -->
           <div class="ctrip-promotion-card">
-            <Swipe :autoplay="3000" indicator-color="rgba(255,255,255,0.5)" indicator-active-color="#ffffff" :circular="true" style="height:150px;border-radius:12px;overflow:hidden;">
+            <Swipe :autoplay="3000" indicator-color="rgba(255,255,255,0.65)" indicator-active-color="#ffffff" :circular="true" style="height:150px;border-radius:12px;overflow:hidden;">
               <SwipeItem v-for="(slide, i) in promotionSlides" :key="'promo-'+i">
                 <div class="ctrip-promo-slide">
                   <img :src="slide.image" class="ctrip-promo-img" loading="lazy" @error="e => { e.target.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22><rect fill=%22%23e2e8f0%22 width=%22400%22 height=%22300%22/><text fill=%22%2394a3b8%22 font-size=%2220%22 font-family=%22sans-serif%22 x=%22200%22 y=%22150%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>' + encodeURIComponent(slide.title) + '</text></svg>') }" />
@@ -1125,7 +1086,7 @@ onUnmounted(() => {
                   v-if="note.hasVideo && note.videoUrl"
                   :src="note.videoUrl"
                   class="ctrip-card-main-img"
-                  preload="none"
+                  preload="metadata"
                   muted
                   playsinline
                   @loadedmetadata="(e) => { const v = e.target; v.currentTime = 0.1; }"
@@ -1189,7 +1150,7 @@ onUnmounted(() => {
                   v-if="note.hasVideo && note.videoUrl"
                   :src="note.videoUrl"
                   class="ctrip-card-main-img"
-                  preload="none"
+                  preload="metadata"
                   muted
                   playsinline
                   @loadedmetadata="(e) => { const v = e.target; v.currentTime = 0.1; }"
@@ -1259,17 +1220,16 @@ onUnmounted(() => {
     <div class="bottom-spacer" />
 
     <!-- ==================== LAYER 7: Bottom Floating AI Input Bar ==================== -->
-    <div class="ai-float-bar" @click="goToAIChat">
-      <div class="float-bar-inner">
-        <div class="float-ai-icon">
-          <van-icon name="service-o" size="16" color="#fff" />
-        </div>
-        <span class="float-placeholder">问AI或按住说话</span>
-        <div class="float-mic-icon">
-          <van-icon name="audio" size="14" color="#8B5CF6" />
-        </div>
-      </div>
-    </div>
+    <Transition name="fab-pop">
+      <button v-if="!showAIChat" class="fab-ai-btn" @click="goToAIChat">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="#7C3AED" fill-opacity="0.15"/>
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          <circle cx="18" cy="5" r="1.5" fill="#A78BFA" stroke="none"/>
+          <circle cx="6" cy="19" r="1.5" fill="#A78BFA" stroke="none"/>
+        </svg>
+      </button>
+    </Transition>
 
     <!-- ==================== AIChatDialog ==================== -->
     <AIChatDialog
@@ -1314,9 +1274,9 @@ onUnmounted(() => {
   --text-primary: #1E293B;
   --text-secondary: #64748B;
   --text-hint: #94A3B8;
-  --card-bg: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.58);
   --card-radius: 18px;
-  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   --tabbar-height: 56px;
   --safe-area-bottom: 0px;
   --float-bar-height: 52px;
@@ -1325,672 +1285,520 @@ onUnmounted(() => {
   width: 100%;
   min-height: 100vh;
   background: transparent;
-  padding-bottom: calc(var(--tabbar-height, 56px) + var(--safe-area-bottom, 0px) + 80px);
+  padding-bottom: calc(10px + 48px + 60px + var(--safe-area-bottom, 0px));
 }
 
-/* ==================== LAYER 1: Hero Header ==================== */
+/* ==================== LAYER 1: Hero — 山水大图卡片 ==================== */
 .hero-header {
   position: relative;
-  background: linear-gradient(160deg, #8B5CF6 0%, #7C3AED 30%, #6366F1 60%, #5B8DEF 100%);
-  padding: calc(48px + env(safe-area-inset-top, 0px)) 20px 28px;
-  border-radius: 0 0 32px 32px;
+  aspect-ratio: 8 / 5;
+  margin: 0;
+  border-radius: 0 0 22px 22px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
 }
 
-.hero-bg-decor {
-  position: absolute; inset: 0; pointer-events: none;
+/* 全屏山水背景 */
+.hero-bg-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
-.hero-svg { width: 100%; height: 100%; }
 
-.hero-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 18px;
-  position: relative;
+/* 底部渐变遮罩 — 保证白色文字可读 */
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0,0,0,0.05) 0%,
+    rgba(0,0,0,0.02) 30%,
+    rgba(0,0,0,0.15) 65%,
+    rgba(0,0,0,0.45) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 左下：竖向主文案 */
+.hero-text-area {
+  position: absolute;
+  left: 20px;
+  bottom: 28px;
   z-index: 2;
-}
-
-.brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.brand-text {
-  font-size: 28px;
-  font-weight: 800;
+.hero-title {
+  font-size: 48px;
+  font-weight: 900;
   color: #fff;
-  letter-spacing: -0.3px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  background: linear-gradient(180deg, #ffffff 0%, #e2e0ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  line-height: 1;
+  margin: 0;
+  letter-spacing: 4px;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.3);
 }
 
-.header-btns {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.hero-sub-en {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  margin: 6px 0 10px;
+  letter-spacing: 3px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.3);
 }
 
-.hdr-btn {
+.hero-tagline {
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.78);
+  margin: 0;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.25);
+}
+
+/* 右下：两个磨砂半透深色按钮 — 与"旅迹"顶部齐平 */
+.hero-actions-right {
+  position: absolute;
+  right: 16px;
+  bottom: 90px;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+}
+
+.hero-glass-btn-right {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 7px 14px;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  gap: 5px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border: 0.5px solid rgba(255,255,255,0.18);
   border-radius: 20px;
   color: #fff;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
   transition: background 0.2s, transform 0.15s;
 }
-.hdr-btn:active {
-  background: rgba(255, 255, 255, 0.32);
-  transform: scale(0.95);
+.hero-glass-btn-right:active {
+  background: rgba(0, 0, 0, 0.45);
+  transform: scale(0.94);
 }
 
-.search-row {
-  position: relative;
-  /* z-index 移除：避免创建 stacking context 限制 SearchBar 遮罩/面板的 fixed z-index */
-  max-width: 480px;
-  margin: 0 auto;
+/* ==================== 统一卡片容器 ==================== */
+.section-card {
+  margin: 0 12px 12px;
+  padding: 16px;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 12px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.65);
 }
 
-/* ==================== LAYER 2: Service Icon Grid Row 1 ==================== */
+/* ==================== 服务入口：双行 5 列 ==================== */
 .service-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 12px 4px;
-  padding: 20px 16px 8px;
-  max-width: 480px;
-  margin: 0 auto;
+  gap: 14px 4px;
+  padding: 4px 0 12px;
 }
 
 .service-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
   transition: transform 0.2s;
 }
-.service-item:active {
-  transform: scale(0.92);
-}
+.service-item:active { transform: scale(0.92); }
 
 .service-icon-circle {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  transition: transform 0.2s;
+  border-radius: 14px;
 }
-.service-item:hover .service-icon-circle {
-  transform: scale(1.08);
-}
-
 .service-label {
   font-size: 11px;
   color: #475569;
   font-weight: 500;
-  text-align: center;
 }
 
-/* ==================== LAYER 2b: Service Icon Grid Row 2 ==================== */
-.service-grid-row2 {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px 4px;
-  padding: 0 16px 16px;
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-.service-item-sm {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-.service-item-sm:active {
-  transform: scale(0.92);
-}
-
-.service-icon-circle-sm {
-  width: 42px;
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-.service-item-sm:hover .service-icon-circle-sm {
-  transform: scale(1.06);
-}
-
-.service-label-sm {
-  font-size: 10px;
-  color: #64748B;
-  font-weight: 400;
-  text-align: center;
-}
-
-/* ==================== LAYER 3: More Products Bar ==================== */
+/* ==================== 更多产品入口条 ==================== */
 .more-products-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 14px;
-  padding: 12px 18px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+  padding: 10px 0 0;
+  margin-top: 2px;
+  border-top: 1px solid rgba(0,0,0,0.04);
   cursor: pointer;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-  transition: transform 0.15s;
+  transition: opacity 0.15s;
 }
-.more-products-bar:active {
-  transform: scale(0.98);
-}
-
-.more-products-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.mini-icon-row {
-  display: flex;
-  gap: -6px;
-}
-
+.more-products-bar:active { opacity: 0.6; }
+.more-products-left { display: flex; align-items: center; gap: 10px; }
+.mini-icon-row { display: flex; }
 .mini-icon {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  margin-right: -6px;
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  font-size: 10px; font-weight: 700;
+  margin-right: -4px;
   border: 2px solid #fff;
 }
+.more-products-text { font-size: 12px; color: #94A3B8; font-weight: 500; }
 
-.more-products-text {
-  font-size: 13px;
-  color: #64748B;
-  font-weight: 500;
-}
-
-/* ==================== LAYER 4: City Quick Tags ==================== */
-.city-tags-section {
-  padding: 14px 0 6px;
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-.city-tags {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding: 0 16px;
-}
-.city-tags::-webkit-scrollbar {
-  display: none;
-}
-
-.city-tag-chip {
-  flex-shrink: 0;
-  padding: 7px 16px;
-  background: #fff;
-  border-radius: 20px;
-  font-size: 13px;
-  color: #475569;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-.city-tag-chip:hover {
-  background: #f5f3ff;
-  color: #7C3AED;
-}
-.city-tag-chip:active {
-  transform: scale(0.94);
-  background: #ede9fe;
-  color: #7C3AED;
-}
-
-/* ==================== LAYER 5: Quick Function Tabs ==================== */
-.quick-tabs-card {
-  display: flex;
-  gap: 8px;
-  padding: 10px 14px;
-  margin: 0 14px;
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.quick-tabs-card::-webkit-scrollbar {
-  display: none;
-}
-
-.quick-tab-btn {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
-  border: none;
-  background: #F8FAFC;
-  border-radius: 14px;
-  color: #64748B;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-.quick-tab-btn:hover {
-  background: #f1f5f9;
-}
-.quick-tab-btn:active {
-  transform: scale(0.94);
-}
-
-.quick-tab-primary {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #7C3AED;
-  font-weight: 600;
-  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.2);
-}
-.quick-tab-primary:hover {
-  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
-}
-
-/* ==================== LAYER 6: Dual-Column Horizontal Scroll ==================== */
-.dual-cards-scroll {
-  display: flex; align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  max-width: 480px;
-  margin: 0 auto;
-}
-.dual-cards-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.event-card {
-  flex-shrink: 0;
-  width: 200px;
-  height: 130px;
-  border-radius: 18px;
-  overflow: hidden;
-  position: relative;
-  cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
-  transition: transform 0.25s;
-}
-.event-card:hover {
-  transform: translateY(-3px);
-}
-.event-card:active {
-  transform: scale(0.97);
-}
-
-.event-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.event-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 32px 14px 14px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.event-badge {
-  font-size: 10px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #7C3AED;
-  padding: 2px 10px;
-  border-radius: 10px;
-  font-weight: 600;
-  align-self: flex-start;
-}
-
-.event-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-}
-
-.city-card {
-  flex-shrink: 0;
-  width: 160px;
-  height: 130px;
-  border-radius: 18px;
-  overflow: hidden;
-  position: relative;
-  cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
-  transition: transform 0.25s;
-}
-.city-card:hover {
-  transform: translateY(-3px);
-}
-.city-card:active {
-  transform: scale(0.97);
-}
-
-.city-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.city-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 28px 12px 12px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.city-badge {
-  font-size: 10px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #6366F1;
-  padding: 2px 10px;
-  border-radius: 10px;
-  font-weight: 600;
-  align-self: flex-start;
-}
-
-.city-cta {
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* ==================== Content Card (existing sections) ==================== */
-.content-card {
-  background: transparent;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 0 10px;
-  margin: 0 auto 14px;
-  max-width: 480px;
-}
-
-/* ==================== Banner ==================== */
-.banner-wrap {
-  overflow: hidden;
-  padding: 6px 0;
-  margin-top: 2px;
-}
-.banner-swipe {
-  border-radius: 16px;
-  overflow: hidden;
-}
-.banner-slide {
-  position: relative;
-  width: 100%;
-  height: 150px;
-  cursor: pointer;
-}
-.banner-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.banner-info {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 28px 16px 14px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
-  display: flex;
-  flex-direction: column;
-}
-.banner-name {
-  font-size: 17px;
-  font-weight: 700;
-  color: #fff;
-}
-.banner-slogan {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  margin-top: 2px;
-}
-
-/* ==================== AI 规划卡片 ==================== */
-/* ==================== AI 一键规划行程卡片（分层边距） ==================== */
-/*
- * 层级逻辑：
- *   屏幕 → 20px外边距(.content-card继承) → 白色卡片(.plan-card) → 16px内边距 → 内容
- *   .plan-card 覆盖 .content-card 的 margin/padding，只对AI规划卡片生效
- */
-.plan-card {
-  position: relative;
-  /* 外层：左右20px外边距，杜绝贴边 */
-  margin-left: 10px !important;
-  margin-right: 10px !important;
-  margin-top: 16px !important;
-  /* 内层：左右16px内边距，上下20px */
-  padding: 12px 10px !important;
-  /* 卡片外观 */
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.04);
-}
-
-.plan-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-.plan-title-row { display: flex; align-items: center; gap: 8px; }
-.plan-icon { font-size: 22px; }
-.plan-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.plan-badge {
-  font-size: 11px;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #7C3AED;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-weight: 600;
-}
-
-/* 热门标签 */
-.hot-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.hot-tag {
-  padding: 6px 14px;
-  background: #f8f7ff;
-  border-radius: 20px;
-  font-size: 12px;
-  color: #64748B;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-}
-.hot-tag.active {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #7C3AED;
-  border-color: #c4b5fd;
-  font-weight: 600;
-}
-.hot-tag:active { transform: scale(0.95); }
-
-/* 表单 */
-.plan-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.plan-row { display: flex; gap: 10px; }
-.plan-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #F8FAFC;
-  border-radius: 14px;
-  padding: 13px 16px;
-  flex: 1;
-  min-width: 0;
-  border: 1.5px solid transparent;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.plan-field:focus-within {
-  border-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08);
-}
-.plan-field-full { cursor: pointer; }
-.plan-half { flex: 1; width: calc(50% - 5px); box-sizing: border-box; }
-.plan-label {
-  font-size: 13px; color: #64748B; font-weight: 500; white-space: nowrap; flex-shrink: 0;
-}
-.plan-input {
-  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
-  font-size: 15px; color: #1E293B; text-align: right;
-}
-.plan-input::placeholder { color: #CBD5E1; opacity: 1; }
-.plan-input::-webkit-input-placeholder { color: #CBD5E1; opacity: 1; }
-
-/* 提交按钮 */
-.plan-submit {
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #8B5CF6, #6366F1);
-  color: #fff;
-  font-size: 17px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
-  transition: transform 0.18s, box-shadow 0.25s;
-}
-.plan-submit:hover { box-shadow: 0 12px 32px rgba(139, 92, 246, 0.45); transform: translateY(-2px); }
-.plan-submit:active { transform: scale(0.96); }
-
-/* ==================== 通用区块头 ==================== */
-.sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.sec-title { font-size: 16px; font-weight: 700; color: #1E293B; }
-.sec-more { font-size: 12px; color: #94A3B8; cursor: pointer; display: flex; align-items: center; gap: 2px; }
-.sec-more:active { opacity: 0.6; }
-
-/* ==================== 6宫格快捷入口 ==================== */
-.quick-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px 12px;
-}
-.quick-cell {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  cursor: pointer; transition: transform 0.2s;
-}
-.quick-cell:hover { transform: translateY(-3px); }
-.quick-cell:active { transform: translateY(-1px) scale(0.97); }
-.quick-cell-icon {
-  width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
-  border-radius: 18px; transition: transform 0.2s;
-}
-.quick-cell:hover .quick-cell-icon { transform: scale(1.06); }
-.quick-cell-label { font-size: 12px; color: #475569; font-weight: 500; }
-
-/* ==================== 横向滚动 ==================== */
+/* ==================== 横向滚动容器 ==================== */
 .h-scroll {
   display: flex;
   gap: 10px;
   overflow-x: auto;
   scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding-bottom: 4px;
-  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 85%, transparent 100%);
-  mask-image: linear-gradient(90deg, #000 0%, #000 85%, transparent 100%);
+  padding-bottom: 2px;
 }
 .h-scroll::-webkit-scrollbar { display: none; }
 
-/* ==================== 热门目的地 ==================== */
+/* ==================== 双列活动卡片 ==================== */
+.dual-cards-scroll {
+  display: flex;
+  gap: 12px;
+  padding: 0 12px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dual-cards-scroll::-webkit-scrollbar { display: none; }
+
+.event-card, .city-card {
+  flex-shrink: 0;
+  width: 180px;
+  height: 120px;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+.event-img, .city-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.event-overlay, .city-overlay {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 28px 12px 10px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.55));
+}
+.event-badge, .city-badge {
+  font-size: 10px;
+  background: rgba(255,255,255,0.9);
+  color: #7C3AED;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+.event-title, .city-cta { font-size: 14px; font-weight: 700; color: #fff; margin-top: 4px; }
+
+/* ==================== Banner — 椭圆卡片包裹 ==================== */
+.banner-wrap {
+  margin: 12px 12px 10px !important;
+  padding: 0 !important;
+  max-width: none !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+.banner-swipe { border-radius: 16px; overflow: hidden; }
+.banner-slide { position: relative; width: 100%; height: 160px; cursor: pointer; }
+.banner-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner-info {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 28px 16px 14px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.5));
+  display: flex; flex-direction: column;
+}
+.banner-name {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  /* 斜向高光 + 底部暗角 = 玻璃反光感 */
+  background: linear-gradient(145deg,
+    #ffffff 0%,
+    rgba(255,255,255,0.9) 15%,
+    rgba(220,210,255,0.7) 35%,
+    rgba(200,190,245,0.55) 55%,
+    rgba(255,255,255,0.85) 75%,
+    #ffffff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  /* 文字外发光强化玻璃折射 */
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.35)) drop-shadow(0 0 8px rgba(255,255,255,0.15));
+}
+.banner-slogan {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  background: linear-gradient(145deg,
+    rgba(255,255,255,0.85) 0%,
+    rgba(220,210,255,0.6) 30%,
+    rgba(200,195,240,0.45) 55%,
+    rgba(255,255,255,0.8) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+}
+
+/* ==================== AI 智能规划卡片 ==================== */
+.plan-card {
+  margin: 16px 8px 0 !important;
+  padding: 20px 16px !important;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.65) 100%),
+    rgba(255,255,255,0.65);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.65),
+    0 2px 16px rgba(0,0,0,0.04);
+  border: 1px solid rgba(255,255,255,0.65);
+}
+
+/* 标题区：图标 + 主副文案 */
+.plan-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.plan-icon-wrap {
+  width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-radius: 14px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.plan-header-text {
+  display: flex;
+  flex-direction: column;
+}
+.plan-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.3;
+}
+.plan-subtitle {
+  font-size: 12px;
+  color: #94A3B8;
+  margin-top: 1px;
+}
+
+/* 目的地搜索行 — 磨砂玻璃 + 聚焦流光 */
+.plan-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  border-radius: 14px;
+  padding: 2px 4px 2px 14px;
+  margin-bottom: 12px;
+  border: 1.5px solid rgba(255,255,255,0.55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+}
+.plan-search-row:focus-within {
+  border-color: rgba(139,92,246,0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 0 0 3px rgba(139,92,246,0.08),
+    0 0 20px rgba(139,92,246,0.1);
+  animation: borderGlow 2s ease-in-out infinite;
+}
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(139,92,246,0.4); }
+  50%      { border-color: rgba(167,139,250,0.7); }
+}
+.plan-search-wrap {
+  flex: 1; min-width: 0;
+}
+.plan-search-wrap :deep(.edge-wrap) {
+  background: transparent;
+  padding: 6px 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.plan-search-wrap :deep(.edge-inp) {
+  font-size: 14px;
+  color: #1E293B;
+}
+.plan-search-wrap :deep(.edge-inp::placeholder) {
+  color: #94A3B8;
+}
+.plan-loc-btn {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: rgba(139,92,246,0.08);
+  border-radius: 10px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+/* 热门目的地标签 */
+.hot-tags {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.hot-tags::-webkit-scrollbar { display: none; }
+.hot-tag {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 14px;
+  font-size: 12px;
+  color: #64748B;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+.hot-tag.active {
+  background: #7C3AED;
+  color: #fff;
+  border-color: #7C3AED;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.25);
+}
+.hot-tag:active { transform: scale(0.95); }
+
+/* 预算/天数/人数 — 三个独立椭圆玻璃框 */
+.plan-meta-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.plan-meta-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 11px 6px;
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  border: 1.5px solid rgba(255,255,255,0.55);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.plan-meta-item:focus-within {
+  border-color: rgba(139,92,246,0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 0 0 3px rgba(139,92,246,0.08),
+    0 0 20px rgba(139,92,246,0.1);
+  animation: borderGlow 2s ease-in-out infinite;
+}
+.plan-meta-item.filled {
+  border-color: rgba(139,92,246,0.25);
+}
+.plan-meta-label {
+  font-size: 12px;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+.plan-meta-input {
+  width: 32px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1E293B;
+  text-align: center;
+  padding: 0;
+}
+.plan-meta-input::placeholder {
+  color: #CBD5E1;
+  font-weight: 400;
+  font-size: 13px;
+}
+.plan-meta-unit {
+  font-size: 11px;
+  color: #94A3B8;
+  font-weight: 500;
+}
+
+/* 提交按钮 */
+.plan-submit {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+  transition: transform 0.18s;
+  letter-spacing: 0.5px;
+}
+.plan-submit:active { transform: scale(0.97); }
+
+/* ==================== 通用区块头 ==================== */
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.sec-title { font-size: 16px; font-weight: 700; color: #1E293B; }
+.sec-more { font-size: 12px; color: #94A3B8; cursor: pointer; display: flex; align-items: center; gap: 2px; }
+.sec-more:active { opacity: 0.6; }
+
+/* ==================== 热门目的地卡片 ==================== */
 .dest-card {
-  flex-shrink: 0; width: 110px; height: 130px; border-radius: 16px;
+  flex-shrink: 0; width: 120px; height: 150px; border-radius: 16px;
   overflow: hidden; position: relative; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  transition: transform 0.25s;
-  will-change: transform;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
-.dest-card:hover { transform: translateY(-4px); }
-.dest-img { width: 100%; height: 100%; object-fit: cover; }
-.dest-mask {
-  position: absolute; inset: 0;
-  background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.55));
-}
-.dest-tag {
-  position: absolute; top: 8px; right: 8px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: 2px 8px; border-radius: 10px;
-  font-size: 10px; font-weight: 600; color: #7C3AED;
-}
-.dest-name {
-  position: absolute; bottom: 10px; left: 10px;
-  font-size: 14px; font-weight: 700; color: #fff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-}
+.dest-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dest-mask { position: absolute; inset: 0; background: linear-gradient(transparent 45%, rgba(0,0,0,0.5)); }
+.dest-name { position: absolute; bottom: 12px; left: 12px; font-size: 15px; font-weight: 700; color: #fff; }
 
 /* ==================== 骨架屏 ==================== */
 .skeleton-card {
@@ -2358,68 +2166,31 @@ onUnmounted(() => {
   justify-content: center; border-radius: 10px;
 }
 
-/* ==================== LAYER 7: Bottom Floating AI Input Bar ==================== */
-.ai-float-bar {
+/* ==================== LAYER 7: Bottom Floating AI Input Bar — 高级磨砂玻璃 ==================== */
+/* FAB — AI闪电按钮 */
+.fab-ai-btn {
   position: fixed;
-  bottom: calc(var(--tabbar-height, 56px) + var(--safe-area-bottom, 0px) + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: auto;
-  min-width: 160px;
-  max-width: 220px;
+  bottom: calc(10px + 48px + 16px + var(--safe-area-bottom, 0px));
+  right: 16px;
   z-index: 500;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: 0 0 24px rgba(139,92,246,0.3), 0 0 48px rgba(139,92,246,0.12);
+  display: flex; align-items: center; justify-content: center;
   cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.25s;
 }
+.fab-ai-btn:active { transform: scale(0.9); }
 
-.float-bar-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(139, 92, 246, 0.15);
-  border-radius: 22px;
-  box-shadow: 0 4px 24px rgba(139, 92, 246, 0.12), 0 8px 40px rgba(0, 0, 0, 0.06);
-  transition: all 0.25s;
-}
-.float-bar-inner:hover {
-  box-shadow: 0 6px 28px rgba(139, 92, 246, 0.2), 0 10px 44px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
-}
-.float-bar-inner:active {
-  transform: scale(0.97);
-}
-
-.float-ai-icon {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #8B5CF6, #6366F1);
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.float-placeholder {
-  flex: 1;
-  font-size: 12px;
-  color: #94A3B8;
-  font-weight: 400;
-}
-
-.float-mic-icon {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f3ff;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
+/* FAB 动画 */
+.fab-pop-enter-active { transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+.fab-pop-leave-active { transition: all 0.25s cubic-bezier(0.4, 0, 1, 1); }
+.fab-pop-enter-from { opacity: 0; transform: scale(0.3) translateY(20px); }
+.fab-pop-leave-to   { opacity: 0; transform: scale(0.5) translateY(30px); }
 
 /* ==================== Bottom Spacer ==================== */
 .bottom-spacer {
@@ -2503,7 +2274,7 @@ onUnmounted(() => {
 .c5 { width: 50px; height: 50px; top: 78%; right: 25%; animation-duration: 28s; animation-delay: -18s; }
 .c6 { width: 35px; height: 35px; top: 40%; left: 35%; animation-duration: 22s; animation-delay: -9s; background: rgba(139,92,246,0.05); }
 
-/* hero-header保留原有静态渐变，不设animation避免覆盖entrance-item的entranceUp */
+/* hero-header 不设 animation 避免覆盖 entrance-item 的 entranceUp */
 
 /* ---------- 圆形图标常驻呼吸 + hover发光 ---------- */
 .service-icon-circle {
@@ -2548,12 +2319,7 @@ onUnmounted(() => {
 
 /* ==================== Responsive ==================== */
 @media (max-width: 375px) {
-  .hero-header {
-    padding: calc(44px + env(safe-area-inset-top, 0px)) 14px 22px;
-  }
-  .brand-text {
-    font-size: 22px;
-  }
+  .hero-title { font-size: 38px; }
   .service-grid {
     padding: 16px 10px 6px;
     gap: 10px 2px;

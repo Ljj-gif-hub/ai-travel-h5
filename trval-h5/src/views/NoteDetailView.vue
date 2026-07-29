@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
@@ -57,13 +57,12 @@ const textareaRef = ref(null)
 const canSend = computed(() => (commentText.value.trim() || commentImage.value || commentVideo.value) && !isSending.value)
 
 const openDrawer = (comment) => {
-  showCommentsDrawer.value = false
   replyTo.value = comment || null
   commentText.value = ''
   commentImage.value = ''
   commentVideo.value = ''
-  setTimeout(() => { showDrawer.value = true }, 200)
-  setTimeout(() => { textareaRef.value?.focus() }, 550)
+  showDrawer.value = true
+  setTimeout(() => { textareaRef.value?.focus() }, 350)
 }
 const onDrawerShowChange = (val) => { if (!val) replyTo.value = null }
 const cancelReply = () => {
@@ -103,8 +102,12 @@ const groupedComments = computed(() => {
 })
 const toggleGroup = (id) => {
   const s = new Set(expandedGroups.value)
-  s.has(id) ? s.delete(id) : s.add(id)
+  if (s.has(id)) { s.delete(id); delete replyShowMap[id] }
+  else { s.add(id); replyShowMap[id] = 5 }
   expandedGroups.value = s
+}
+const loadMoreReplies = (id, total) => {
+  replyShowMap[id] = Math.min((replyShowMap[id] || 5) + 5, total)
 }
 const withMention = (c) => {
   const mention = c.parentId ? `@${findUserById(c.parentId)} ` : ''
@@ -474,7 +477,7 @@ onMounted(() => {
 <style scoped>
 .note-detail-page { width: 100%; min-height: 100vh; background: transparent; padding-bottom: 80px; box-sizing: border-box; }
 
-.custom-nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 8px 4px; background: #fff; border-bottom: 1px solid #f3f4f6; position: sticky; top: 0; z-index: 1000; }
+.custom-nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 8px 4px; background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.4) 100%),rgba(255,255,255,0.45); backdrop-filter: blur(22px) saturate(180%); -webkit-backdrop-filter: blur(22px) saturate(180%); border-bottom: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); position: sticky; top: 0; z-index: 1000; }
 .nav-left { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; cursor: pointer; flex-shrink: 0; }
 .nav-center { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .nav-avatar { flex-shrink: 0; border: 1.5px solid rgba(139, 92, 246, 0.2); }
@@ -503,9 +506,9 @@ onMounted(() => {
 .detail-date-row { padding: 8px 16px 16px; }
 .detail-date { font-size: 12px; color: #9ca3af; }
 
-/* 底部操作栏 */
-.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background: #fff; border-top: 1px solid #f3f4f6; z-index: 500; }
-.comment-oval-btn { padding: 6px 42px; border: 1px solid #e5e7eb; border-radius: 24px; background: #fafafa; color: #6b7280; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-right: 16px; }
+/* 底部操作栏 — iOS 透光磨砂玻璃 */
+.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.4) 100%),rgba(255,255,255,0.4); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border-top: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); z-index: 500; }
+.comment-oval-btn { padding: 6px 42px; border: 1px solid rgba(0,0,0,0.08); border-radius: 24px; background: rgba(255,255,255,0.5); color: #6b7280; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-right: 16px; }
 .comment-oval-btn:active { background: #f3f4f6; transform: scale(0.97); }
 .bottom-actions { display: flex; align-items: center; gap: 16px; }
 .bottom-actions .action-item { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #6b7280; cursor: pointer; min-width: 36px; }
@@ -547,8 +550,8 @@ onMounted(() => {
 .comments-drawer-footer { flex-shrink: 0; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #f3f4f6; }
 .drawer-write-btn { margin-right: 0; }
 
-/* 分享面板 */
-.share-sheet { padding: 24px 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: #fff; }
+/* 分享面板 — 磨砂玻璃 */
+.share-sheet { padding: 24px 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: rgba(255,255,255,0.6); backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%); }
 .share-sheet-title { font-size: 16px; font-weight: 600; color: #1e293b; text-align: center; margin-bottom: 24px; }
 .share-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px 8px; margin-bottom: 28px; }
 .share-option { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.15s; }

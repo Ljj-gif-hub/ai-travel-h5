@@ -379,10 +379,22 @@ onMounted(() => {
 }
 
 .form-group {
-  background: #fff;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.3) 100%),
+    rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 16px;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
 }
+/* 玻璃化 Vant 单元格 */
+.form-group :deep(.van-cell-group) { background: transparent !important; }
+.form-group :deep(.van-cell) { background: transparent !important; }
+.form-group :deep(.van-cell::after) { border-color: rgba(0,0,0,0.04) !important; }
+.form-group :deep(.van-field__control) { color: #1E293B; }
+.form-group :deep(.van-field__control::placeholder) { color: #94A3B8; }
 
 .content-media-section {
   display: flex;
@@ -390,8 +402,10 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  background: #fafafa;
-  border-top: 1px solid #f0f0f0;
+  background: rgba(255,255,255,0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid rgba(255,255,255,0.3);
 }
 .content-images-list,
 .content-videos-list {
@@ -432,12 +446,12 @@ onMounted(() => {
   border-radius: 6px;
   font-size: 12px;
   color: #323233;
-  background: #fff;
+  background: rgba(255,255,255,0.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   cursor: pointer;
   transition: all 0.2s;
 }
 .upload-label:active {
-  background: #f5f5f5;
+  background: rgba(255,255,255,0.7);
   transform: scale(0.96);
 }
 .toolbar-hint {

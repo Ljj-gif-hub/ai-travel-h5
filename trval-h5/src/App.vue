@@ -10,14 +10,18 @@
  * 底部 Tab 栏固定在 <transition> 外部，页面切换时 Tab 不跟随滑动
  */
 import { useRoute, useRouter } from 'vue-router'
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { initTabBarHide, destroyTabBarHide } from './utils/tabBarHide'
 
 const route = useRoute()
 const router = useRouter()
 
 /* ==================== 导航方向检测 ==================== */
-// 五大 Tab 页面路径（根级页面）
-const TAB_PATHS = ['/', '/messages', '/community', '/trips', '/profile']
+// 四大 Tab 页面路径
+const TAB_PATHS = ['/', '/community', '/trips', '/profile']
+
+onMounted(() => initTabBarHide())
+onUnmounted(() => destroyTabBarHide())
 const isTabPage = (path) => TAB_PATHS.includes(path)
 
 // 前进（tab→detail）= true，后退（detail→tab）= false
@@ -46,22 +50,32 @@ router.beforeEach((to, from) => {
   }
 })
 
-/* ==================== 底部5栏 Tab 导航 ==================== */
+/* ==================== 底部4栏 Tab 导航 ==================== */
+const tabIcons = {
+  home:    { viewBox: '0 0 24 24', body: '<path d="M12 3L4 9v12h5v-7h6v7h5V9z"/>' },
+  community: { viewBox: '0 0 24 24', body: '<circle cx="9" cy="9" r="4"/><circle cx="18" cy="8" r="3"/><path d="M3 19c0-2.6 2.6-5 6-5s6 2.4 6 5v1H3v-1zM17 15c-1.8 0-3.5.8-4.5 2h9c-1-1.2-2.7-2-4.5-2z"/>' },
+  trips:  { viewBox: '0 0 24 24', body: '<path d="M17 3H7c-1.1 0-2 .9-2 2v16l5-3 5 3V5c0-1.1-.9-2-2-2z"/>' },
+  profile: { viewBox: '0 0 24 24', body: '<circle cx="12" cy="8" r="4"/><path d="M12 14c-4.4 0-8 2-8 4.5v1.5h16v-1.5c0-2.5-3.6-4.5-8-4.5z"/>' },
+}
+
 const tabs = [
-  { path: '/',          name: '首页', icon: 'home-o' },
-  { path: '/messages',  name: '消息', icon: 'chat-o' },
-  { path: '/community', name: '社区', icon: 'friends-o' },
-  { path: '/trips',     name: '行程', icon: 'bookmark-o' },
-  { path: '/profile',   name: '我的', icon: 'user-o' },
+  { path: '/', name: '首页', icon: 'home' },
+  { path: '/community', name: '社区', icon: 'community' },
+  { path: '/trips', name: '行程', icon: 'trips' },
+  { path: '/profile', name: '我的', icon: 'profile' },
 ]
 
 const hideTabBar = computed(() => {
   if (route.meta?.hideTabBar) return true
-  const hiddenRoutes = ['/planning', '/login', '/register', '/trip-map', '/video-detail', '/note-detail']
-  return hiddenRoutes.includes(route.path)
+  return !TAB_PATHS.includes(route.path)
 })
 
 const isActive = (path) => route.path === path
+const activeIndex = computed(() => {
+  const idx = tabs.findIndex(t => isActive(t.path))
+  return idx >= 0 ? idx : 0
+})
+const isTabActive = computed(() => tabs.some(t => isActive(t.path)))
 
 /* 【性能优化】Tab点击防抖 + replace避免路由栈堆积 */
 let tabClickTimer = null
@@ -112,8 +126,13 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
       </transition>
     </router-view>
 
-    <!-- 底部固定三栏 Tab 导航 — 不参与过渡 -->
-    <div v-if="!hideTabBar" class="custom-tabbar">
+    <!-- 底部悬浮椭圆 Tab 导航 -->
+    <div class="custom-tabbar" :class="{ 'tab-hidden': hideTabBar }">
+      <div
+        v-show="isTabActive"
+        class="tab-indicator"
+        :style="{ left: `calc(4px + (100% - 8px) / 4 * ${activeIndex})` }"
+      />
       <div
         v-for="(tab, index) in tabs"
         :key="index"
@@ -121,7 +140,7 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
         :class="{ active: isActive(tab.path) }"
         @click="handleTabClick(tab.path)"
       >
-        <van-icon :name="tab.icon" size="22" />
+        <svg class="tab-icon" :viewBox="tabIcons[tab.icon].viewBox" v-html="tabIcons[tab.icon].body" />
         <span class="tab-text">{{ tab.name }}</span>
       </div>
     </div>
@@ -136,29 +155,69 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   --transition-speed: 300ms;
 }
 
+/* ==================== 全局 Vant 组件玻璃化 ==================== */
+.van-nav-bar {
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.35) 50%, rgba(255,255,255,0.55) 100%),
+    rgba(255,255,255,0.6) !important;
+  backdrop-filter: blur(18px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
+  border-bottom: 0.5px solid rgba(0,0,0,0.05) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5) !important;
+}
+/* 底部弹窗 — 悬浮卡片，四周留白 */
+.van-popup--bottom {
+  width: calc(100vw - 20px) !important;
+  max-width: calc(100vw - 20px) !important;
+  left: 10px !important;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  border-radius: 20px !important;
+}
+.van-popup {
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.3) 40%, rgba(255,255,255,0.5) 100%),
+    rgba(255,255,255,0.75) !important;
+  backdrop-filter: blur(22px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(170%) !important;
+}
+.van-dialog {
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0.5) 100%),
+    rgba(255,255,255,0.8) !important;
+  backdrop-filter: blur(24px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(170%) !important;
+  border-radius: 24px !important;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5) !important;
+  color: #323233 !important;
+}
+
 /* ==================== 全局滚动条隐藏 ==================== */
 ::-webkit-scrollbar { width: 0; height: 0; }
 * { scrollbar-width: none; -ms-overflow-style: none; }
 
-/* ==================== 路由过渡动画 ==================== */
+/* ==================== 路由过渡动画（GPU 加速，防闪烁） ==================== */
 
-/* fade — 底部 Tab 切换（淡入淡出） */
+/* fade — Tab 切换 */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.25s ease;
+  transition: opacity 0.2s ease;
+  will-change: opacity;
 }
 .fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+.fade-leave-to { opacity: 0; }
+
+/* slide — 子页面进出 */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1.0), opacity 0.25s ease;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
-/*
- * slide-left — 前进：离开元素 fixed 固定在视口，不参与文档流，进入元素正常流
- * slide-right — 后退：同上
- *
- * --saved-scroll-y 在 router.beforeEach 中设置为导航前的 scrollY
- * 用于补偿 fixed 定位的偏移，保证离开元素显示的是用户当前看到的内容
- */
 .slide-left-leave-active,
 .slide-right-leave-active {
   position: fixed;
@@ -166,20 +225,26 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   left: 0;
   width: 100%;
   height: 100vh;
-  transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1.0), opacity 0.3s ease;
   z-index: 1;
+  pointer-events: none;
 }
-.slide-left-leave-to   { transform: translateX(-30%); opacity: 0; }
-.slide-right-leave-to  { transform: translateX(100%);  opacity: 0; }
 
-.slide-left-enter-active,
-.slide-right-enter-active {
-  transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1.0), opacity 0.3s ease;
+.slide-left-enter-from  { transform: translateX(100%); opacity: 0.8; }
+.slide-left-leave-to    { transform: translateX(-30%); opacity: 0; }
+.slide-right-enter-from { transform: translateX(-20%); opacity: 0.8; }
+.slide-right-leave-to   { transform: translateX(100%); opacity: 0; }
+.slide-left-enter-to,
+.slide-left-leave-from,
+.slide-right-enter-to,
+.slide-right-leave-from { transform: translateX(0); opacity: 1; }
+
+/* 非 Tab 页 / 弹出层打开 — Tab 栏向下滑出 */
+.custom-tabbar.tab-hidden,
+.picker-open .custom-tabbar {
+  transform: translateX(-50%) translateY(120%) translateZ(0) !important;
+  opacity: 0;
+  pointer-events: none;
 }
-.slide-left-enter-from  { transform: translateX(100%); }
-.slide-left-enter-to    { transform: translateX(0); }
-.slide-right-enter-from { transform: translateX(-20%); opacity: 0.6; }
-.slide-right-enter-to   { transform: translateX(0); opacity: 1; }
 </style>
 
 <style scoped>
@@ -189,29 +254,59 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   position: relative;
   overflow-x: hidden;
   background: transparent;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ==================== 底部 Tab 导航栏（固定，不参与过渡）— 薰衣草毛玻璃风格 ==================== */
-/* 【性能优化】blur降至8px，保留translateZ确保backdrop-filter合成层 */
+/*
+ * ==================== 底部 Tab — 椭圆胶囊 + 滑动指示器 ====================
+ */
 .custom-tabbar {
   position: fixed;
-  transform: translateZ(0);
-  bottom: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  height: var(--tabbar-height);
-  padding-bottom: var(--safe-area-bottom);
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
+  bottom: calc(10px + var(--safe-area-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateZ(0);
+  width: auto;
+  min-width: 240px;
+  max-width: calc(100vw - 36px);
+  height: 48px;
+  border-radius: 24px;
+  padding: 0 4px;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.28) 35%, rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.5) 100%),
+    rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 1px 3px rgba(0,0,0,0.04),
+    0 4px 14px rgba(0,0,0,0.05);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   align-items: center;
-  justify-content: space-around;
-  box-shadow: 0 -2px 20px rgba(139, 92, 246, 0.08);
+  justify-items: center;
   z-index: 9999;
-  box-sizing: content-box;
-  border-top: 1px solid rgba(139, 92, 246, 0.06);
+  box-sizing: border-box;
+  border: 0.5px solid rgba(0,0,0,0.06);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+/* 滑动指示器 */
+.tab-indicator {
+  position: absolute;
+  top: 7px;
+  width: calc((100% - 8px) / 4);
+  height: 34px;
+  border-radius: 17px;
+  background:
+    linear-gradient(160deg, rgba(139,92,246,0.15) 0%, rgba(139,92,246,0.05) 50%, rgba(139,92,246,0.12) 100%),
+    rgba(139,92,246,0.06);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 0.5px solid rgba(139,92,246,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .tab-item {
@@ -219,45 +314,31 @@ const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 1;
-  height: 100%;
-  color: #B0B8C8;
-  transition: color 0.25s ease, transform 0.2s ease;
+  width: 48px;
+  height: 34px;
+  color: #999;
+  transition: color 0.25s ease;
   cursor: pointer;
   position: relative;
+  z-index: 1;
 }
 
-.tab-item.active {
-  color: #8B5CF6;
-}
-/* 选中Tab图标 — 呼吸动画已禁用，降低GPU消耗 */
-.tab-item.active :deep(.van-icon) {
-  /* animation: tabIconBreathe 2.8s ease-in-out infinite; */
-}
-/* @keyframes tabIconBreathe 已禁用 */
+.tab-item.active { color: #7C3AED; }
 
-.tab-item.active::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 20px;
-  height: 3px;
-  background: linear-gradient(135deg, #A78BFA, #8B5CF6);
-  border-radius: 2px;
-}
-
-/* Tab图标弹性缩放过渡 */
-.tab-item:active {
-  transform: scale(0.88);
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
+.tab-item:active { transform: scale(0.88); }
 
 .tab-text {
-  font-size: 10px;
-  margin-top: 3px;
+  font-size: 8px;
+  margin-top: 1px;
   font-weight: 500;
-  letter-spacing: 0.2px;
+  line-height: 1;
+  transform: scaleX(0.88);
+}
+
+.tab-icon {
+  width: 19px;
+  height: 19px;
+  fill: currentColor;
+  display: block;
 }
 </style>

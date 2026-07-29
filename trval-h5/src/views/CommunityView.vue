@@ -1,7 +1,7 @@
-﻿<script setup>
+<script setup>
 import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showToast, showImagePreview } from 'vant'
 import { getToken } from '../utils/auth'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
@@ -307,6 +307,27 @@ const mapNoteItem = (item) => {
 // 判断URL是否为视频
 const isVideoUrl = (url) => url && /\.(mp4|webm|mov)(\?|$)/i.test(url)
 
+/* 图片预览 & 视频播放 */
+const previewImages = (images, startIdx) => {
+  const imageList = images.filter(u => !isVideoUrl(u))
+  if (!imageList.length) return
+  showImagePreview(imageList, Math.min(startIdx, imageList.length - 1))
+}
+
+const playingVideos = reactive({})
+const toggleVideo = (noteId, idx, url) => {
+  const key = `${noteId}-${idx}`
+  if (playingVideos[key]) { playingVideos[key] = false; return }
+  // 停止其他视频
+  Object.keys(playingVideos).forEach(k => { playingVideos[k] = false })
+  playingVideos[key] = true
+  // 当前视频自动播放
+  setTimeout(() => {
+    const el = document.querySelector(`[data-video="${key}"]`)
+    if (el) { el.muted = true; el.play().catch(() => {}) }
+  }, 100)
+}
+
 /* ==================== 跳转详情页 ==================== */
 const goToDetail = (note) => {
   if (!note || !note.id) return
@@ -499,6 +520,7 @@ onActivated(async () => {
     loadNotes(true)
   }
 })
+
 </script>
 
 <template>
@@ -506,28 +528,30 @@ onActivated(async () => {
     <!-- 漂浮粒子 — 已禁用 -->
     <!-- ==================== 1. Hero Banner ==================== -->
     <div class="hero-banner entrance-item entrance-d1">
+      <img class="hero-bg-img" src="https://images.unsplash.com/photo-1530789253388-582c481c54b0?w=800&q=80" alt="" />
+      <div class="hero-overlay"></div>
       <div class="banner-content">
         <h1 class="banner-title">同路人社区</h1>
-        <p class="banner-subtitle">真点评&middot;真感受</p>
+        <p class="banner-subtitle">真点评 · 真感受</p>
       </div>
-      <div class="banner-illustration">
+      <div class="banner-illustration" style="display:none">
         <svg viewBox="0 0 200 120" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" class="banner-svg">
           <!-- 热气球 -->
           <g transform="translate(8, 5)">
             <ellipse cx="28" cy="24" rx="18" ry="20" fill="rgba(255,255,255,0.22)" />
-            <line x1="12" y1="44" x2="14" y2="58" stroke="rgba(255,255,255,0.35)" stroke-width="1.4" />
-            <line x1="44" y1="44" x2="42" y2="58" stroke="rgba(255,255,255,0.35)" stroke-width="1.4" />
-            <rect x="15" y="56" width="26" height="7" rx="3" fill="rgba(255,255,255,0.4)" />
+            <line x1="12" y1="44" x2="14" y2="58" stroke="rgba(255,255,255,0.65)" stroke-width="1.4" />
+            <line x1="44" y1="44" x2="42" y2="58" stroke="rgba(255,255,255,0.65)" stroke-width="1.4" />
+            <rect x="15" y="56" width="26" height="7" rx="3" fill="rgba(255,255,255,0.55)" />
             <path d="M12 10 Q20 4 28 10 Q36 4 44 10" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
           </g>
           <!-- 越野车 -->
           <g transform="translate(72, 68)">
             <rect x="4" y="8" width="48" height="18" rx="4" fill="rgba(255,255,255,0.25)" />
             <rect x="12" y="0" width="32" height="12" rx="3" fill="rgba(255,255,255,0.22)" />
-            <circle cx="14" cy="28" r="6" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2.5" />
-            <circle cx="42" cy="28" r="6" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2.5" />
-            <circle cx="14" cy="28" r="2.5" fill="rgba(255,255,255,0.35)" />
-            <circle cx="42" cy="28" r="2.5" fill="rgba(255,255,255,0.35)" />
+            <circle cx="14" cy="28" r="6" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2.5" />
+            <circle cx="42" cy="28" r="6" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2.5" />
+            <circle cx="14" cy="28" r="2.5" fill="rgba(255,255,255,0.65)" />
+            <circle cx="42" cy="28" r="2.5" fill="rgba(255,255,255,0.65)" />
           </g>
           <!-- 旅行者人物 -->
           <g transform="translate(145, 72)">
@@ -646,23 +670,45 @@ onActivated(async () => {
           <div
             v-if="note.images && note.images.length"
             class="card-images"
-            :class="'grid-' + Math.min(note.images.length, 4)"
+            :class="'grid-' + (note.images.length >= 5 ? 5 : note.images.length)"
           >
-            <template v-for="(url, idx) in note.images.slice(0, 4)" :key="idx">
-              <!-- 视频显示带播放按钮的缩略图 -->
-              <div v-if="isVideoUrl(url)" class="card-video-thumb">
-                <video :src="url" class="card-img" preload="none" muted playsinline></video>
-                <div class="video-play-icon">
-                  <van-icon name="play-circle-o" size="32" color="rgba(255,255,255,0.9)" />
+            <!-- 5张+：上2大 + 下3小 -->
+            <template v-if="note.images.length >= 5">
+              <template v-for="(url, idx) in note.images.slice(0, 5)" :key="idx">
+                <div
+                  v-if="isVideoUrl(url)"
+                  class="card-video-thumb" :style="{ gridColumn: idx < 2 ? `span 3` : `span 2` }" @click.stop="toggleVideo(note.id, idx, url)"
+                >
+                  <video :src="url" :data-video="`${note.id}-${idx}`" class="card-img" preload="metadata" muted playsinline :controls="!!playingVideos[`${note.id}-${idx}`]" />
+                  <div v-if="!playingVideos[`${note.id}-${idx}`]" class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
+                  <div class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
                 </div>
-              </div>
-              <!-- 图片 -->
-              <img v-else :src="url" class="card-img" loading="lazy" />
+                <div
+                  v-else-if="idx === 4 && note.images.length > 5"
+                  class="img-wrap"
+                  style="grid-column: span 2"
+                >
+                  <img :src="url" class="card-img" loading="lazy" @click.stop="previewImages(note.images, 4)" />
+                  <div class="img-overlay"><span>+{{ note.images.length - 5 }}</span></div>
+                </div>
+                <img
+                  v-else
+                  :src="url"
+                  class="card-img"
+                  :style="{ gridColumn: idx < 2 ? 'span 3' : 'span 2' }"
+                  loading="lazy"
+                  @click.stop="previewImages(note.images, idx)"
+                />
+              </template>
             </template>
-            <!-- 超过4张的蒙层 -->
-            <div v-if="note.images.length > 4" class="img-overlay" @click.stop>
-              <span>+{{ note.images.length - 4 }}</span>
-            </div>
+            <!-- 1-4张：普通网格 -->
+            <template v-else v-for="(url, idx) in note.images" :key="idx">
+              <div v-if="isVideoUrl(url)" class="card-video-thumb" @click.stop="toggleVideo(note.id, idx, url)">
+                <video :src="url" :data-video="`${note.id}-${idx}`" class="card-img" preload="metadata" muted playsinline :controls="!!playingVideos[`${note.id}-${idx}`]" />
+                <div v-if="!playingVideos[`${note.id}-${idx}`]" class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
+              </div>
+              <img v-else :src="url" class="card-img" loading="lazy" @click.stop="previewImages(note.images, idx)" />
+            </template>
           </div>
 
           <!-- 互动栏 -->
@@ -728,7 +774,10 @@ onActivated(async () => {
 
     <!-- ==================== 4. Floating Publish Button ==================== -->
     <div class="fab-publish" @click="goToWrite">
-      <van-icon name="add" size="26" color="#fff" />
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/>
+        <path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
     </div>
 
     <!-- ==================== 城市选择器弹窗 ==================== -->
@@ -753,7 +802,8 @@ onActivated(async () => {
 /* ==================== 页面容器 ==================== */
 .page-shell {
   width: 100%;
-  height: calc(100dvh - var(--tabbar-height) - env(safe-area-inset-bottom, 0px));
+  min-height: 100vh;
+  padding-bottom: calc(10px + 48px + 12px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   overflow-x: hidden;
   background: transparent;
@@ -762,56 +812,41 @@ onActivated(async () => {
   position: relative;
 }
 
-/* ==================== 1. Hero Banner ==================== */
+/* ==================== 1. Hero Banner — 山水大图 ==================== */
 .hero-banner {
   position: relative;
-  width: calc(100% - 32px);
-  margin: 16px auto 0;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #5B8DEF 100%);
-  padding: 22px 24px 18px;
+  margin: 0;
+  height: 160px;
+  border-radius: 0 0 18px 18px;
   overflow: hidden;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-shadow: 0 8px 28px rgba(139, 92, 246, 0.3);
+  align-items: flex-end;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
-
+.hero-bg-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.2) 60%, rgba(0,0,0,0.5) 100%);
+  pointer-events: none; z-index: 1;
+}
 .banner-content {
-  position: relative;
-  z-index: 2;
+  position: relative; z-index: 2;
+  padding: 20px;
 }
-
 .banner-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-  margin: 0 0 6px;
-  letter-spacing: 0.5px;
+  font-size: 22px; font-weight: 800; color: #fff;
+  margin: 0 0 4px; letter-spacing: 1px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
-
 .banner-subtitle {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.78);
-  margin: 0;
-  letter-spacing: 1px;
-  font-weight: 400;
+  font-size: 13px; color: rgba(255,255,255,0.85);
+  margin: 0; letter-spacing: 0.5px;
 }
-
-.banner-illustration {
-  position: absolute;
-  right: 8px;
-  top: 0;
-  bottom: 0;
-  width: 170px;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.banner-svg {
-  width: 100%;
-  height: 100%;
-}
+.banner-illustration { display: none; }
+.banner-svg { display: none; }
 
 /* ==================== 2. Navigation Filter Bar ==================== */
 .nav-filter {
@@ -827,18 +862,23 @@ onActivated(async () => {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: #fff;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   border-radius: 16px;
   padding: 8px 12px;
-  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.6);
   flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 .city-selector:active {
   transform: scale(0.96);
-  background: #faf5ff;
 }
 .city-text {
   font-size: 13px;
@@ -851,11 +891,17 @@ onActivated(async () => {
   display: flex;
   justify-content: center;
   gap: 6px;
-  background: #fff;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   border-radius: 16px;
   padding: 4px;
-  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.6);
 }
 
 .tab-chip {
@@ -873,7 +919,7 @@ onActivated(async () => {
 .tab-chip.active {
   background: linear-gradient(135deg, #8B5CF6, #6366F1);
   color: #fff;
-  box-shadow: 0 3px 10px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 3px 10px rgba(139, 92, 246, 0.25);
 }
 
 .search-btn {
@@ -882,17 +928,22 @@ onActivated(async () => {
   justify-content: center;
   width: 38px;
   height: 38px;
-  background: #fff;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   border-radius: 16px;
-  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.6);
   flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 .search-btn:active {
   transform: scale(0.92);
-  background: #faf5ff;
 }
 
 /* ==================== 3. Notes Feed ==================== */
@@ -906,11 +957,17 @@ onActivated(async () => {
 
 /* ==================== 骨架屏 ==================== */
 .skeleton-card {
-  background: #fff;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
   border-radius: 20px;
   padding: 16px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(139, 92, 246, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 12px rgba(0,0,0,0.03);
+  border: 1px solid rgba(255,255,255,0.6);
 }
 .sk-header {
   display: flex;
@@ -934,11 +991,17 @@ onActivated(async () => {
 
 /* ==================== 笔记卡片 ==================== */
 .note-card {
-  background: #fff;
-  border-radius: 20px;
-  padding: 16px 16px 12px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(139, 92, 246, 0.06);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.3) 100%),
+    rgba(255,255,255,0.55);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border-radius: 18px;
+  padding: 12px 12px 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 12px rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(255,255,255,0.65);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .note-card:active {
@@ -1036,52 +1099,53 @@ onActivated(async () => {
 /* --- 图片网格 --- */
 .card-images {
   display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-  border-radius: 12px;
+  gap: 3px;
+  margin-bottom: 10px;
+  border-radius: 10px;
   overflow: hidden;
   position: relative;
-  align-items: start; /* 顶部对齐，允许各行自然高度 */
 }
+/* 1张：通栏 16:9 */
+.grid-1 { grid-template-columns: 1fr; }
+.grid-1 .card-img, .grid-1 .card-video-thumb { aspect-ratio: 16/9; }
 
-/* 1 张图片 - 通栏，自然比例 */
-.grid-1 {
-  grid-template-columns: 1fr;
-}
+/* 2张：并排1:1 */
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-2 .card-img, .grid-2 .card-video-thumb { aspect-ratio: 1; }
 
-/* 2 张图片 - 双列，自然比例 */
-.grid-2 {
-  grid-template-columns: 1fr 1fr;
-}
+/* 3张：左1大(2/3宽) + 右2小(各为大的一半边长) → 整体 3:2 */
+.grid-3 { grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; }
+.grid-3 > :first-child { grid-row: 1 / 3; aspect-ratio: 1; width: 100%; height: 100%; }
+.grid-3 > :not(:first-child) { aspect-ratio: 1; }
 
-/* 3 张图片 - 左大右二，自然比例 */
-.grid-3 {
-  grid-template-columns: 1fr 1fr;
-}
-.grid-3 .card-img:first-child {
-  grid-row: 1 / 3;
-}
+/* 4张：2x2 方格 */
+.grid-4 { grid-template-columns: 1fr 1fr; }
+.grid-4 .card-img, .grid-4 .card-video-thumb { aspect-ratio: 1; }
 
-/* 4 张图片 - 2x2，自然比例 */
-.grid-4 {
-  grid-template-columns: 1fr 1fr;
-}
+/* 5张：6列网格，上2大(各占3列) + 下3小(各占2列) */
+.grid-5 { grid-template-columns: repeat(6, 1fr); }
+.grid-5 > * { aspect-ratio: 1; }
+.grid-5 .card-video-thumb { aspect-ratio: 1; }
 
 .card-img {
   width: 100%;
-  height: auto;
-  border-radius: 6px;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 3px;
   display: block;
+  cursor: pointer;
 }
 
 .card-video-thumb {
   position: relative;
-  border-radius: 6px;
+  border-radius: 3px;
   overflow: hidden;
+  cursor: pointer;
 }
 .card-video-thumb .card-img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
 }
 .video-play-icon {
   position: absolute;
@@ -1091,18 +1155,21 @@ onActivated(async () => {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
+.img-wrap { position: relative; border-radius: 3px; overflow: hidden; cursor: pointer; }
+.img-wrap .card-img { width: 100%; height: 100%; object-fit: cover; }
 .img-overlay {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.55);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
   color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 8px;
-  backdrop-filter: blur(4px);
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  letter-spacing: 1px;
 }
 
 /* --- 互动栏 --- */
@@ -1233,25 +1300,23 @@ onActivated(async () => {
 /* ==================== 4. Floating Publish Button ==================== */
 .fab-publish {
   position: fixed;
-  right: 20px;
-  bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px) + 20px);
-  width: 52px;
-  height: 52px;
+  right: 16px;
+  bottom: calc(10px + 48px + 16px + var(--safe-area-bottom, 0px));
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  border: 1px solid rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(18px) saturate(180%); -webkit-backdrop-filter: blur(18px) saturate(180%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 22px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 24px rgba(139,92,246,0.3), 0 0 48px rgba(139,92,246,0.12);
   z-index: 9995;
   cursor: pointer;
   transition: all 0.3s ease;
   user-select: none;
 }
-.fab-publish:active {
-  transform: scale(0.9);
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
-}
+
 
 /* ==================== Vant 组件覆盖 ==================== */
 :deep(.van-skeleton) {

@@ -1,8 +1,9 @@
 /* ================================================================
-   智能旅游助手 — 全局样式规范
+   智能旅游助手 — 全局样式规范 v3.0 磨砂玻璃主题
    主色调：薰衣草紫 → 浅青蓝渐变
    辅助色：奶油橙、薄荷绿（低饱和马卡龙）
-   通用规范：20rpx大圆角 · 柔和浅阴影 · 磨砂玻璃卡片
+   通用规范：磨砂玻璃卡片 · 高 blur 通透感 · 柔和浅阴影
+   设计灵感：iOS 相册底部栏透明磨砂玻璃效果
    ================================================================ */
 
 /* ==================== 全局 CSS 变量 ==================== */
@@ -23,14 +24,23 @@
   --gradient-cyan: linear-gradient(135deg, #4ECDC4 0%, #44B0A0 100%);
   --gradient-page: linear-gradient(180deg, #faf5ff 0%, #f0f4ff 40%, #f1f5f9 100%);
 
-  /* 背景 */
-  --bg-page: #f7f8fc;
-  --bg-card: #ffffff;
-  --bg-glass: rgba(255, 255, 255, 0.75);
+  /* 背景 — 磨砂玻璃主题 */
+  --bg-page: #f0edf7;
+  --bg-card: rgba(255, 255, 255, 0.72);
+  --bg-card-solid: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.65);
+  --bg-glass-strong: rgba(255, 255, 255, 0.78);
 
-  /* 卡片阴影 */
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.06);
-  --shadow-card-hover: 0 6px 24px rgba(0, 0, 0, 0.08);
+  /* 磨砂玻璃效果 */
+  --glass-blur: 18px;
+  --glass-blur-light: 10px;
+  --glass-blur-strong: 28px;
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-saturate: saturate(160%);
+
+  /* 卡片阴影 — 玻璃卡片用更柔和的阴影 */
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.06);
 
   /* 文字 */
   --text-primary: #1E293B;
@@ -39,8 +49,8 @@
   --text-white: #FFFFFF;
 
   /* 边框 */
-  --border-light: #F1F5F9;
-  --border-card: rgba(139, 92, 246, 0.08);
+  --border-light: rgba(255, 255, 255, 0.4);
+  --border-card: rgba(255, 255, 255, 0.5);
 
   /* 圆角系统 */
   --radius-sm: 10px;
@@ -49,12 +59,12 @@
   --radius-xl: 24px;
   --radius-pill: 28px;
 
-  /* 阴影系统 */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
-  --shadow-purple: 0 8px 24px rgba(139, 92, 246, 0.18);
-  --shadow-purple-lg: 0 12px 32px rgba(139, 92, 246, 0.25);
+  /* 阴影系统 — 更轻盈，适合玻璃主题 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.05);
+  --shadow-purple: 0 8px 24px rgba(139, 92, 246, 0.12);
+  --shadow-purple-lg: 0 12px 32px rgba(139, 92, 246, 0.18);
 
   /* Tab Bar */
   --tabbar-height: 56px;
@@ -76,7 +86,8 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(180deg, #F8F7FF 0%, #FBFBFF 30%, #FFFFFF 100%);
+  /* 磨砂玻璃主题 — 深色微妙渐变背景，让玻璃卡片更有层次感 */
+  background: linear-gradient(175deg, #ede9f6 0%, #f0ecf9 15%, #f4f1fb 30%, #f8f7fd 50%, #f5f3fa 70%, #ede9f6 100%);
   background-attachment: fixed;
   overflow-x: hidden;
   overflow-y: auto;
@@ -92,23 +103,35 @@ html, body {
   position: relative;
 }
 
-/* 顶部淡紫色装饰光圈 */
+/* 顶部装饰光晕 — 琥珀暖光 */
 #app::before {
   content: '';
-  position: fixed; top: -120px; right: -80px;
-  width: 360px; height: 360px;
-  background: radial-gradient(circle, rgba(139,92,246,0.08) 0%, rgba(139,92,246,0.03) 50%, transparent 70%);
+  position: fixed; top: -150px; right: -100px;
+  width: 420px; height: 420px;
+  background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, rgba(167,139,250,0.05) 35%, rgba(245,158,11,0.03) 60%, transparent 75%);
   border-radius: 50%;
   pointer-events: none;
   z-index: 0;
 }
 
-/* 底部淡紫色装饰光圈 */
+/* 底部装饰光晕 — 青色冷光 */
 #app::after {
   content: '';
-  position: fixed; bottom: -100px; left: -60px;
-  width: 280px; height: 280px;
-  background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, rgba(99,102,241,0.02) 50%, transparent 70%);
+  position: fixed; bottom: -120px; left: -80px;
+  width: 350px; height: 350px;
+  background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, rgba(52,211,153,0.04) 40%, rgba(99,102,241,0.02) 60%, transparent 75%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 中间点缀光晕 */
+#app > .app::before {
+  content: '';
+  position: fixed; top: 40%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(139,92,246,0.04) 0%, transparent 70%);
   border-radius: 50%;
   pointer-events: none;
   z-index: 0;
@@ -124,24 +147,36 @@ html, body {
   overflow-x: hidden;
 }
 
-/* ==================== 通用卡片容器 ==================== */
+/* ==================== 通用卡片容器 — iOS 透光磨砂玻璃 ====================
+ * 高光渐变 + 半透底 + backdrop-filter + inset 顶边光线 = iOS 玻璃质感
+ */
 .card-macaron {
-  background: var(--bg-card);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.1) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.3) 100%),
+    var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
   border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: var(--shadow-md);
-  border: 1px solid var(--border-card);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    var(--shadow-md);
+  border: 1px solid var(--glass-border);
 }
 
-/* ==================== 通用磨砂玻璃卡片 ==================== */
+/* ==================== 通用磨砂玻璃卡片 — iOS 透光 ==================== */
 .card-glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.35) 100%),
+    rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
   border-radius: var(--radius-xl);
   padding: 20px;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    var(--shadow-sm);
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 /* ==================== Vant 组件全局覆盖 ==================== */
