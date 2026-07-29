@@ -12,7 +12,7 @@
 
 ## 🎬 功能演示
 
-📥 [**下载完整演示视频 (MP4, 7.8MB)**](https://github.com/Ljj-gif-hub/ai-travel-h5/raw/main/public/showcase/full-demo.mp4)
+📥 [**下载完整演示视频 (MP4, 7.8MB)**](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/full-demo.mp4)
 
 > 下载后观看完整功能演示：山水 Banner · AI 智能对话 · 行程规划 · 携程风格图片网格 · 视频内联播放 · 评论区 · 收藏/订单 · 登录注册
 
