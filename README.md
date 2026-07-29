@@ -10,6 +10,10 @@
 └── README.md          # 本文件
 ```
 
+## 🎬 功能演示
+
+<video src="https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/public/showcase/full-demo.mp4" controls width="100%"></video>
+
 ## 🔗 子项目文档
 
 - 📱 [前端详细文档](trval-h5/README.md) — 技术栈、功能列表、UI 设计系统、项目结构
