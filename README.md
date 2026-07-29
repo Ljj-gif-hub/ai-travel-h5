@@ -12,7 +12,7 @@
 
 ## 🎬 功能演示
 
-[![完整功能演示](https://img.shields.io/badge/▶-观看完整演示视频-8B5CF6?style=for-the-badge)](https://github.com/Ljj-gif-hub/ai-travel-h5/blob/main/public/showcase/full-demo.mp4?raw=true)
+[![完整功能演示](https://img.shields.io/badge/▶-观看完整演示视频-8B5CF6?style=for-the-badge)](https://github.com/Ljj-gif-hub/ai-travel-h5/blob/main/public/showcase/full-demo.mp4)
 
 > 点击上方按钮查看完整功能演示：山水 Banner · AI 智能对话 · 行程规划 · 携程风格图片网格 · 视频内联播放 · 评论区 · 收藏/订单 · 登录注册
 
