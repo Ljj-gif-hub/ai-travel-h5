@@ -43,6 +43,48 @@ mvn spring-boot:run   # → http://localhost:3200
 - **前端**：Node.js >= 18，npm >= 9
 - **后端**：JDK >= 17，Maven >= 3.8，Redis（可选，限流用）
 
+## 📸 界面截图
+
+| 首页 | AI 行程规划 |
+|------|------------|
+| ![首页](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e9%a6%96%e9%a1%b5.jpg) | ![AI规划](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%e8%a7%84%e5%88%92%e5%a5%bd%e7%9a%84%e8%a1%8c%e7%a8%8b1.jpg) |
+
+| 社区动态 | 视频详情 |
+|---------|---------|
+| ![社区](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e7%a4%be%e5%8c%ba.jpg) | ![视频详情](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%a7%86%e9%a2%91%e8%af%a6%e6%83%85.jpg) |
+
+| 图片详情 & 评论 | 写游记 |
+|---------------|-------|
+| ![图片评论](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e5%9b%be%e7%89%87%e8%af%a6%e6%83%85%e8%af%84%e8%ae%ba.jpg) | ![写游记](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e5%86%99%e6%b8%b8%e8%ae%b0.jpg) |
+
+| AI 智能对话 | 热门目的地 |
+|------------|-----------|
+| ![AI对话](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%e5%af%b9%e8%af%9d.jpg) | ![热门目的地](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e7%83%ad%e9%97%a8%e7%9b%ae%e7%9a%84%e5%9c%b0.jpg) |
+
+| 热门景点详情 | 选择出行偏好 |
+|------------|------------|
+| ![景点详情](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e7%83%ad%e9%97%a8%e6%99%af%e7%82%b9%e8%af%a6%e6%83%85.jpg) | ![出行偏好](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e9%80%89%e6%8b%a9%e5%87%ba%e8%a1%8c%e5%81%8f%e5%a5%bd.jpg) |
+
+| 选择起点 | 规划日期 |
+|---------|---------|
+| ![选择起点](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e9%80%89%e6%8b%a9%e8%b5%b7%e7%82%b9.jpg) | ![日期选择](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%a7%84%e5%88%92%e6%97%a5%e6%9c%9f%e9%80%89%e6%8b%a9.jpg) |
+
+| 行程管理 | 个人中心 |
+|---------|---------|
+| ![行程](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%a1%8c%e7%a8%8b.jpg) | ![我的](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e6%88%91%e7%9a%84.jpg) |
+
+| 我的收藏 | 订单中心 |
+|---------|---------|
+| ![收藏](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e6%88%91%e7%9a%84%e6%94%b6%e8%97%8f.jpg) | ![订单](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%ae%a2%e5%8d%95%e4%b8%ad%e5%bf%83.jpg) |
+
+| 更多产品服务 | AI 规划（旧版） |
+|------------|---------------|
+| ![更多产品](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e6%9b%b4%e5%a4%9a%e4%ba%a7%e5%93%81.jpg) | ![规划](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%a7%84%e5%88%92.jpg) |
+
+| 视频评论区 | 登录 / 注册 |
+|----------|-----------|
+| ![视频评论](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e8%a7%86%e9%a2%91%e8%af%a6%e6%83%85%e7%95%8c%e9%9d%a2%e8%af%84%e8%ae%ba%e5%8c%ba.jpg) | ![登录](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%e7%99%bb%e5%bd%95.jpg) |
+
 ## 🛠️ 技术栈概览
 
 | 层 | 技术 |
