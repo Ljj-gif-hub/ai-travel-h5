@@ -43,6 +43,24 @@ mvn spring-boot:run   # → http://localhost:3200
 - **前端**：Node.js >= 18，npm >= 9
 - **后端**：JDK >= 17，Maven >= 3.8，Redis（可选，限流用）
 
+## 📸 界面截图
+
+| 首页 | AI 智能对话 |
+|------|------------|
+| ![首页](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E9%A6%96%E9%A1%B5.jpg) | ![AI对话](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%E5%AF%B9%E8%AF%9D.jpg) |
+
+| AI 行程规划 | 社区游记 |
+|------------|---------|
+| ![AI规划](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%E8%A7%84%E5%88%92%E5%A5%BD1.jpg) | ![社区](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E7%A4%BE%E5%8C%BA.jpg) |
+
+| 行程管理 | 个人中心 |
+|---------|---------|
+| ![行程](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E8%A1%8C%E7%A8%8B.jpg) | ![我的](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E6%88%91%E7%9A%84.jpg) |
+
+| 登录 | 注册 |
+|-----|------|
+| ![登录](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E7%99%BB%E5%BD%95.jpg) | ![注册](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E6%B3%A8%E5%86%8C.jpg) |
+
 ## 🛠️ 技术栈概览
 
 | 层 | 技术 |

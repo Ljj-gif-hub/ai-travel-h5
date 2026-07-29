@@ -19,6 +19,24 @@ AI 智能旅游助手是一款面向移动端用户的智能旅游规划应用�
 
 > 下载后观看完整功能演示：山水 Banner · AI 智能对话 · 行程规划 · 携程风格图片网格 · 视频内联播放 · 评论区 · 收藏/订单 · 登录注册
 
+## 📸 界面截图
+
+| 首页 | AI 智能对话 |
+|------|------------|
+| ![首页](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E9%A6%96%E9%A1%B5.jpg) | ![AI对话](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%E5%AF%B9%E8%AF%9D.jpg) |
+
+| AI 行程规划 | 社区游记 |
+|------------|---------|
+| ![AI规划](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/ai%E8%A7%84%E5%88%92%E5%A5%BD1.jpg) | ![社区](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E7%A4%BE%E5%8C%BA.jpg) |
+
+| 行程管理 | 个人中心 |
+|---------|---------|
+| ![行程](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E8%A1%8C%E7%A8%8B.jpg) | ![我的](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E6%88%91%E7%9A%84.jpg) |
+
+| 登录 | 注册 |
+|-----|------|
+| ![登录](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E7%99%BB%E5%BD%95.jpg) | ![注册](https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/trval-h5/public/showcase/screenshots/%E6%B3%A8%E5%86%8C.jpg) |
+
 ## 🛠️ 技术栈清单
 
 | 分类 | 技术 | 版本 |
