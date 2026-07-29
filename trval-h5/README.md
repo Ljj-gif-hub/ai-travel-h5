@@ -13,6 +13,12 @@ AI 智能旅游助手是一款面向移动端用户的智能旅游规划应用�
 - **短视频播放器**：抖音风格全屏沉浸式视频，滑动切换，原生 Fullscreen API，侧边操作栏
 - **用户系统**：注册/登录，JWT 认证，多账户数据隔离，关注/粉丝，收藏，订单，优惠券
 
+## 🎬 功能演示
+
+<video src="https://raw.githubusercontent.com/Ljj-gif-hub/ai-travel-h5/main/public/showcase/full-demo.mp4" controls width="100%"></video>
+
+> 📱 完整功能演示：山水 Banner · AI 智能对话 · 行程规划 · 携程风格图片网格 · 视频内联播放 · 评论区 · 收藏/订单 · 登录注册
+
 ## 🛠️ 技术栈清单
 
 | 分类 | 技术 | 版本 |
