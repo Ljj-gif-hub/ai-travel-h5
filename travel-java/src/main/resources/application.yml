@@ -50,13 +50,13 @@ app:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5177}
 
 # ================================================================
-# AI 多供应商配置（支持所有 OpenAI 兼容协议的 API）
-# 切换供应商：修改 ai.active-provider 的值即可
-# 添加新供应商：在 ai.providers 下新增一组配置
+# AI 多供应商配置（支持所�?OpenAI 兼容协议�?API�?
+# 切换供应商：修改 ai.active-provider 的值即�?
+# 添加新供应商：在 ai.providers 下新增一组配�?
 # ================================================================
 ai:
-  # 设为 auto 或不设 → 启动时自动扫描已配置的 API Key 来激活对应供应商
-  # 显式指定如 deepseek/openai/claude → 强制使用该供应商
+  # 设为 auto 或不�?�?启动时自动扫描已配置�?API Key 来激活对应供应商
+  # 显式指定�?deepseek/openai/claude �?强制使用该供应商
   active-provider: ${AI_PROVIDER:auto}
   # ---- AI 图片生成（独立于LLM供应商） ----
   image:
@@ -96,7 +96,7 @@ ai:
       chat-path: /models/${GEMINI_MODEL:gemini-2.0-flash}:generateContent
       max-tokens: 4096
       temperature: 0.7
-    # ---- 自定义/代理 API（任何兼容 OpenAI 协议的接口） ----
+    # ---- 自定�?代理 API（任何兼�?OpenAI 协议的接口） ----
     custom:
       api-key: ${CUSTOM_AI_KEY:YOUR_KEY_HERE}
       base-url: ${CUSTOM_AI_URL:https://apihub.agnes-ai.com/v1}
@@ -109,16 +109,16 @@ jwt:
   expiration: ${JWT_EXPIRATION:86400000}
 
 # ================================================================
-# 地图多供应商配置（百度地图 + 高德地图 双API接入）
-# 切换供应商：修改 map.provider 的值即可
+# 地图多供应商配置（百度地�?+ 高德地图 双API接入�?
+# 切换供应商：修改 map.provider 的值即�?
 #   baidu - 百度地图（默认）
 #   amap  - 高德地图
-#   auto  - 自动检测已配置的 Key 来激活
+#   auto  - 自动检测已配置�?Key 来激�?
 # ================================================================
 map:
   provider: ${MAP_PROVIDER:amap}
   baidu:
     ak: ${BAIDU_MAP_AK:}
   amap:
-    web-key: ${AMAP_WEB_KEY:2c67e0c2bebef2cbd6ddcf365a5920c5}                                         # 高德 Web 服务 API Key（通过环境变量注入）
-    js-key: ${AMAP_JS_KEY:}        # 高德 JS API v2.0 Key（前端加载地图用，为空则用 web-key）
+    web-key: ${AMAP_WEB_KEY:2c67e0c2bebef2cbd6ddcf365a5920c5}                                         # 高德 Web 服务 API Key（通过环境变量注入�?
+    js-key: ${AMAP_JS_KEY:}        # 高德 JS API v2.0 Key（前端加载地图用，为空则�?web-key�?
