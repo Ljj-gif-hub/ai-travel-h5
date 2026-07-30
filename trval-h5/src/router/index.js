@@ -41,9 +41,19 @@ const routes = [
   },
   {
     path: '/ai-planner',
-    name: 'AITripPlanner',
-    component: () => import('../views/AITripPlanner.vue'),
-    meta: { transition: 'slide-left' },
+    redirect: '/agent-planner',
+  },
+  {
+    path: '/agent-planner',
+    name: 'AgentPlanner',
+    component: () => import('../views/AgentPlannerView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
+  },
+  {
+    path: '/agent-map',
+    name: 'AgentMap',
+    component: () => import('../views/AgentMapView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
   },
   {
     path: '/ai-planner/progress',

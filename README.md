@@ -7,6 +7,7 @@
 ```
 ├── trval-h5/          # 前端 — Vue 3 + Vite 8 + Vant 4 移动端 H5
 ├── travel-java/       # 后端 — Spring Boot 3.2 + Java 17 + JWT + Redis
+├── agent-service/     # 🆕 Agent 微服务 — Python FastAPI + LangChain 智能体
 └── README.md          # 本文件
 ```
 
@@ -115,6 +116,86 @@ mvn spring-boot:run   # → http://localhost:3200
 ### 后端
 - 评论回复系统（parentId 二级嵌套）
 - 关注/粉丝数据隔离（JWT 提取 userId）
+
+## 🤖 AI Agent 智能规划（v4.0 重大升级）
+
+> 从「LLM 一次性生成」升级为「Agent 自主规划 + 工具调用 + 实时校验 + 自动优化」的智能体闭环。
+
+### 🆚 新旧对比
+
+| | 旧版 AI 规划 | 🆕 Agent 智能规划 |
+|---|---|---|
+| **信息源** | LLM 训练数据（可能过时） | Tavily 实时搜索 + LLM 推理 |
+| **预算** | ❌ 不校验 | ✅ 自动核算 + 超标 4 策略逐级调整 |
+| **路线** | ❌ 不检查 | ✅ 同天景点同区域，避免折返 |
+| **规划方式** | 一次 Prompt → 一次输出 | ReAct 循环：思考→调工具→分析→再决策 |
+| **过程可见** | 黑盒等待 | SSE 流式推送 5 阶段实时进度 |
+| **二次修改** | 重新生成全部 | 局部增量调整 |
+| **目的地** | 受限 | 全球任意城市 |
+
+### 🏗️ Agent 架构
+
+```
+用户输入「成都3天·情侣·美食·5000元」
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│         Agent 5 阶段流水线                │
+│                                          │
+│  Phase 1 🔍 RESEARCH                     │
+│    Tavily 并行搜索景点/美食/酒店实时信息   │
+│                                          │
+│  Phase 2 📋 PLAN                         │
+│    LLM 基于搜索结果生成结构化 JSON 行程   │
+│    · 每个景点 4-6 句深度介绍             │
+│    · 自动标签【5A】【网红打卡】【需预约】 │
+│                                          │
+│  Phase 3 🔍 VERIFY                       │
+│    核算总预算 + 检查路线合理性            │
+│                                          │
+│  Phase 4 🔧 ADJUST                       │
+│    超标自动调整：降酒店→删次要景点→优化餐饮│
+│                                          │
+│  Phase 5 ✨ FINALIZE                      │
+│    输出完整方案：每日卡片/预算/酒店/贴士   │
+└─────────────────────────────────────────┘
+        │
+        ▼
+  前端渲染：高德地图 + DragSheet 抽屉 + 景点卡片
+```
+
+### 🛠️ Agent 技术栈
+
+| 层 | 技术 |
+|----|------|
+| Agent 框架 | Python FastAPI + LangChain |
+| LLM | DeepSeek / OpenAI / 通义千问 等 OpenAI 兼容接口 |
+| 搜索工具 | Tavily Search API（实时景点/酒店/美食） |
+| 地图工具 | 高德地图 API（通勤距离/时间） |
+| 预算工具 | 本地核算引擎（4 策略自动降级） |
+| 编排模式 | ReAct Agent + 多阶段流水线 |
+| 流式推送 | SSE (Server-Sent Events) 实时进度 |
+
+### 🚀 启动 Agent 服务
+
+```bash
+# 1. 配置 API Key
+cd agent-service
+cp .env.example .env
+# 编辑 .env，填写 LLM_API_KEY（必填）、TAVILY_API_KEY（可选）、AMAP_WEB_KEY（可选）
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 启动
+python main.py         # → http://localhost:3201
+```
+
+### 🎯 体验入口
+
+启动后进入行程 Tab → 点击「🤖 AI Agent 智能规划」→ 填写目的地/天数/偏好 → 查看 Agent 5 阶段实时规划过程 → 获得完整行程方案。
+
+> 💡 Demo 模式：未配置 LLM API Key 时自动启用内置 8 城数据，无需任何外部 API 即可体验完整流程。
 
 ## 📄 许可证
 

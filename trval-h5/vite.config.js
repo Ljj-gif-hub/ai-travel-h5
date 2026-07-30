@@ -56,6 +56,14 @@ export default defineConfig(({ mode }) => ({
   server: {
     proxy: {
       '/uploads': { target: 'http://localhost:3200', changeOrigin: true },
+      '/api/agent': {
+        // Agent SSE 流式直连 Python 服务，避免 Spring Boot 二次代理导致 resp.body 为 null
+        target: 'http://localhost:3201',
+        changeOrigin: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+        ws: false,
+      },
       '/api': {
         target: 'http://localhost:3200',
         changeOrigin: true,

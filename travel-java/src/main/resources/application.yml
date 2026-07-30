@@ -98,7 +98,7 @@ ai:
       temperature: 0.7
     # ---- 自定义/代理 API（任何兼容 OpenAI 协议的接口） ----
     custom:
-      api-key: ${CUSTOM_AI_KEY:}
+      api-key: ${CUSTOM_AI_KEY:YOUR_KEY_HERE}
       base-url: ${CUSTOM_AI_URL:https://apihub.agnes-ai.com/v1}
       model: ${CUSTOM_AI_MODEL:agnes-2.0-flash}
       max-tokens: 4096
@@ -120,5 +120,5 @@ map:
   baidu:
     ak: ${BAIDU_MAP_AK:}
   amap:
-    web-key: ${AMAP_WEB_KEY:}                                         # 高德 Web 服务 API Key（通过环境变量注入）
+    web-key: ${AMAP_WEB_KEY:2c67e0c2bebef2cbd6ddcf365a5920c5}                                         # 高德 Web 服务 API Key（通过环境变量注入）
     js-key: ${AMAP_JS_KEY:}        # 高德 JS API v2.0 Key（前端加载地图用，为空则用 web-key）

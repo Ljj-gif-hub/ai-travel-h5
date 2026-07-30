@@ -242,7 +242,7 @@ const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399
 const loadTrips = async () => { isLoading.value = true; loadError.value = false; try { const res = await planApi.getSavedPlans(); if (res.code === 0) trips.value = (res.data || []).map(p => ({ ...p, _status: inferStatus(p) })); else trips.value = [] } catch (e) { trips.value = []; if (e?.response?.status === 502) loadError.value = true } finally { isLoading.value = false } }
 const viewTrip = (plan) => { if (!plan?.destination) { showToast('行程数据异常'); return }; router.push({ path: '/trip-map', query: { savedPlanId: plan.id } }) }
 const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = true }
-const goToAIPlanner = () => { router.push('/ai-planner') }
+const goToAgentPlanner = () => { router.push('/agent-planner') }
 const onPlanSaved = () => { showAIChat.value = false; showToast('行程已保存'); loadTrips() }
 const confirmDelete = async (plan) => { try { await showConfirmDialog({ title:'删除行程', message:`确定要删除「${plan?.destination||'未知'}」吗？` }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast('已删除'); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
 const goDestinationDetail = (city) => { if (!city) return; router.push(`/destination-detail?city=${encodeURIComponent(city)}`) }
@@ -262,7 +262,7 @@ onUnmounted(() => { stopCarousel() })
       <template #title><span class="nav-title">{{ hasTrips ? '我的全部行程' : '暂无行程' }}</span></template>
       <template #right>
         <div class="nav-actions">
-          <div class="nav-btn" @click="goToAIPlanner"><van-icon name="add" size="20" color="#7C3AED" /></div>
+          <div class="nav-btn" @click="goToAgentPlanner"><van-icon name="add" size="20" color="#7C3AED" /></div>
           <div class="nav-btn" @click="showMoreMenu = true"><van-icon name="ellipsis" size="20" color="#7C3AED" /></div>
         </div>
       </template>
@@ -283,9 +283,9 @@ onUnmounted(() => { stopCarousel() })
             <div class="hero-mask" />
             <span class="hero-tag">线路规划</span>
             <span v-if="hasTrips" class="hero-top-link" @click.stop="activeTab = 'all'">我的线路 <van-icon name="arrow" size="12" /></span>
-            <button class="hero-glass-btn" @click="goToAIPlanner">
-              <span class="hero-btn-title">AI 线路规划</span>
-              <span class="hero-btn-sub">智能推荐最佳旅行线路</span>
+            <button class="hero-glass-btn" @click="goToAgentPlanner">
+              <span class="hero-btn-title">🤖 AI Agent 智能规划</span>
+              <span class="hero-btn-sub">自主搜索 · 实时校验 · 自动优化</span>
             </button>
           </div>
 
@@ -357,7 +357,7 @@ onUnmounted(() => { stopCarousel() })
                 <div class="guide-line" />
               <div class="section-block">
                 <div class="section-head"><span class="section-head-title">📋 行程规划</span><span class="section-head-count">{{ tripPlans.length }}条</span></div>
-                <div v-if="tripPlans.length === 0" class="empty-hint-row">暂无AI行程规划，<span class="link" @click="goToAIPlanner">去创建</span></div>
+                <div v-if="tripPlans.length === 0" class="empty-hint-row">暂无AI行程规划，<span class="link" @click="goToAgentPlanner">去创建</span></div>
                 <div v-for="trip in tripPlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
                   <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">我的线路</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
                   <div class="trip-card-title">{{ cardTitle(trip) }}</div>
@@ -429,11 +429,11 @@ onUnmounted(() => { stopCarousel() })
 .hero-tag { position:absolute; top:16px; left:18px; z-index:3; font-size:12px; color:rgba(255,255,255,0.85); padding:4px 10px; border-radius:10px; background:rgba(255,255,255,0.12); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); font-weight:500; letter-spacing:0.5px; }
 .hero-top-link { position:absolute; top:16px; right:18px; z-index:3; font-size:12px; color:#fff; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:3px; padding:4px 10px; border-radius:10px; background:rgba(0,0,0,0.2); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); text-shadow:0 1px 3px rgba(0,0,0,0.3); }
 .hero-top-link:active { background:rgba(0,0,0,0.35); }
-.hero-glass-btn { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:3; display:flex; flex-direction:column; align-items:center; gap:1px; padding:10px 20px; border:1px solid rgba(255,255,255,0.3); border-radius:18px; background:rgba(255,255,255,0.12); backdrop-filter:blur(24px) saturate(180%); -webkit-backdrop-filter:blur(24px) saturate(180%); color:#fff; cursor:pointer; white-space:nowrap; box-shadow:0 4px 20px rgba(0,0,0,0.2); transition:all 0.3s; }
-.hero-glass-btn:hover { background:rgba(255,255,255,0.2); box-shadow:0 6px 28px rgba(0,0,0,0.35); }
+.hero-glass-btn { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:3; display:flex; flex-direction:column; align-items:center; gap:1px; padding:10px 24px; border:1px solid rgba(255,255,255,0.3); border-radius:18px; background:rgba(139,92,246,0.20); backdrop-filter:blur(24px) saturate(180%); -webkit-backdrop-filter:blur(24px) saturate(180%); color:#fff; cursor:pointer; white-space:nowrap; box-shadow:0 4px 20px rgba(0,0,0,0.2); transition:all 0.3s; }
+.hero-glass-btn:hover { background:rgba(139,92,246,0.30); box-shadow:0 6px 28px rgba(0,0,0,0.35); }
 .hero-glass-btn:active { transform:translateX(-50%) scale(0.96); }
 .hero-btn-title { font-size:15px; font-weight:700; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
-.hero-btn-sub { font-size:10px; color:rgba(255,255,255,0.65); text-shadow:0 1px 3px rgba(0,0,0,0.3); }
+.hero-btn-sub { font-size:10px; color:rgba(255,255,255,0.80); text-shadow:0 1px 3px rgba(0,0,0,0.3); }
 
 .nearby-card { position:relative; z-index:1; overflow:hidden; height:200px; margin-bottom:14px; cursor:pointer; border-radius:20px; background:#e8e4f0; box-shadow:0 4px 18px rgba(0,0,0,0.06); transition:transform 0.25s, box-shadow 0.25s; }
 .nearby-card:active { transform:scale(0.985); box-shadow:0 2px 8px rgba(0,0,0,0.08); }
