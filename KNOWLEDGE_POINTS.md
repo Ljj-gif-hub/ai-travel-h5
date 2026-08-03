@@ -613,7 +613,7 @@ ai:
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}
       base-url: https://api.deepseek.com
-      model: deepseek-chat
+      model: deepseek-v4-flash
     openai:
       api-key: ${OPENAI_API_KEY:}
       base-url: https://api.openai.com
