@@ -2,6 +2,9 @@ package org.example.traveljava.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
+import org.example.traveljava.annotation.RateLimit;
+import org.example.traveljava.util.AuthUtils;
+import org.example.traveljava.util.JwtUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,13 +35,15 @@ public class AgentProxyController {
 
     private final WebClient agentWebClient;
     private final ObjectMapper objectMapper;
+    private final JwtUtil jwtUtil;
 
     /** Agent 服务地址（默认 localhost:3201） */
     @Value("${agent.service.url:http://localhost:3201}")
     private String agentServiceUrl;
 
-    public AgentProxyController(ObjectMapper objectMapper) {
+    public AgentProxyController(ObjectMapper objectMapper, JwtUtil jwtUtil) {
         this.objectMapper = objectMapper;
+        this.jwtUtil = jwtUtil;
         this.agentWebClient = WebClient.builder()
                 .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024)) // 10MB
                 .build();
@@ -57,23 +62,24 @@ public class AgentProxyController {
                     .block();
             Map<String, Object> result = objectMapper.readValue(response, Map.class);
             result.put("proxyStatus", "ok");
-            result.put("agentUrl", agentServiceUrl);
             return result;
         } catch (Exception e) {
             log.warn("Agent 服务不可用: {} — {}", agentServiceUrl, e.getMessage());
             return Map.of(
                 "proxyStatus", "error",
-                "message", "Agent 服务不可用: " + e.getMessage(),
-                "agentUrl", agentServiceUrl
+                "message", "Agent 服务不可用"
             );
         }
     }
 
     /**
-     * 同步生成行程 — 透传到 Agent 服务
+     * 同步生成行程 — 透传到 Agent 服务（需登录）
      */
     @PostMapping("/plan")
-    public Map<String, Object> generatePlanSync(@RequestBody Map<String, Object> body) {
+    @RateLimit(max = 20, duration = 60, key = "agent_plan")
+    public Map<String, Object> generatePlanSync(@RequestHeader("Authorization") String authHeader,
+                                                @RequestBody Map<String, Object> body) {
+        AuthUtils.requireUserId(authHeader, jwtUtil);
         log.info("Agent 同步规划: {}", body.getOrDefault("destination", "unknown"));
 
         try {
@@ -104,8 +110,11 @@ public class AgentProxyController {
      * 前端可以直接连接此端点，Agent 的每一步思考过程都会实时推送
      */
     @PostMapping(value = "/plan/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> generatePlanStream(@RequestBody Map<String, Object> body,
+    @RateLimit(max = 20, duration = 60, key = "agent_plan")
+    public Flux<String> generatePlanStream(@RequestHeader("Authorization") String authHeader,
+                                           @RequestBody Map<String, Object> body,
                                            HttpServletResponse response) {
+        AuthUtils.requireUserId(authHeader, jwtUtil);
         String dest = (String) body.getOrDefault("destination", "unknown");
         log.info("Agent SSE 流式规划: {}", dest);
 

@@ -4,12 +4,15 @@ import org.example.traveljava.dto.CityDTO.*;
 import org.example.traveljava.entity.AttractionImage;
 import org.example.traveljava.entity.CityImage;
 import org.example.traveljava.entity.CityMaterial;
+import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.repository.AttractionImageRepository;
 import org.example.traveljava.repository.CityImageRepository;
 import org.example.traveljava.repository.CityMaterialRepository;
 import org.example.traveljava.service.AmapService;
 import org.example.traveljava.service.CityMaterialService;
 import org.example.traveljava.service.CityService;
+import org.example.traveljava.util.AuthUtils;
+import org.example.traveljava.util.JwtUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,18 +38,20 @@ public class CityController {
     private final CityMaterialService cityMaterialService;
     private final CityMaterialRepository cityMaterialRepository;
     private final AttractionImageRepository attractionImageRepository;
+    private final JwtUtil jwtUtil;
 
     @Autowired(required = false)
     private AmapService amapService;
 
     public CityController(CityService cityService, CityImageRepository cityImageRepository,
                           CityMaterialService cityMaterialService, CityMaterialRepository cityMaterialRepository,
-                          AttractionImageRepository attractionImageRepository) {
+                          AttractionImageRepository attractionImageRepository, JwtUtil jwtUtil) {
         this.cityService = cityService;
         this.cityImageRepository = cityImageRepository;
         this.cityMaterialService = cityMaterialService;
         this.cityMaterialRepository = cityMaterialRepository;
         this.attractionImageRepository = attractionImageRepository;
+        this.jwtUtil = jwtUtil;
     }
 
     /**
@@ -184,7 +189,10 @@ public class CityController {
      * Body: [{"cityName":"北京","imageUrl":"https://...","source":"bing"}, ...]
      */
     @PostMapping("/images/batch")
-    public Result<Map<String, Object>> batchSave(@RequestBody List<Map<String, String>> images) {
+    @RateLimit(max = 30, duration = 60, key = "city_admin")
+    public Result<Map<String, Object>> batchSave(@RequestHeader("Authorization") String authHeader,
+                                                 @RequestBody List<Map<String, String>> images) {
+        AuthUtils.requireAdmin(authHeader, jwtUtil);
         int saved = 0, skipped = 0;
         for (Map<String, String> img : images) {
             String name = img.get("cityName");
@@ -220,14 +228,18 @@ public class CityController {
 
     /** 手动触发全量刷新城市图片（从高德重新爬取） */
     @PostMapping("/images/refresh")
-    public Result<Map<String, Object>> refreshAllCityImages() {
+    @RateLimit(max = 10, duration = 60, key = "city_admin")
+    public Result<Map<String, Object>> refreshAllCityImages(@RequestHeader("Authorization") String authHeader) {
+        AuthUtils.requireAdmin(authHeader, jwtUtil);
         int fetched = cityMaterialService.refreshAllPhotos();
         return Result.ok(Map.of("fetched", fetched, "message", "已从高德重新爬取 " + fetched + " 张城市照片"));
     }
 
     /** 清空城市素材 */
     @DeleteMapping("/materials/clear")
-    public Result<String> clearMaterials() {
+    @RateLimit(max = 10, duration = 60, key = "city_admin")
+    public Result<String> clearMaterials(@RequestHeader("Authorization") String authHeader) {
+        AuthUtils.requireAdmin(authHeader, jwtUtil);
         long count = cityMaterialRepository.count();
         cityMaterialRepository.deleteAll();
         log.info("已清空 {} 条素材记录", count);
@@ -236,7 +248,10 @@ public class CityController {
 
     /** 批量导入素材到 city_material */
     @PostMapping("/materials/batch")
-    public Result<Map<String, Object>> batchMaterials(@RequestBody List<Map<String, String>> items) {
+    @RateLimit(max = 30, duration = 60, key = "city_admin")
+    public Result<Map<String, Object>> batchMaterials(@RequestHeader("Authorization") String authHeader,
+                                                      @RequestBody List<Map<String, String>> items) {
+        AuthUtils.requireAdmin(authHeader, jwtUtil);
         int saved = 0, updated = 0, idx = 0;
         for (Map<String, String> item : items) {
             String name = item.get("cityName");
@@ -278,7 +293,10 @@ public class CityController {
 
     /** 批量保存景点图片 */
     @PostMapping("/attraction/images/batch")
-    public Result<Map<String, Object>> batchSaveAttractionImages(@RequestBody List<Map<String, String>> images) {
+    @RateLimit(max = 30, duration = 60, key = "city_admin")
+    public Result<Map<String, Object>> batchSaveAttractionImages(@RequestHeader("Authorization") String authHeader,
+                                                                 @RequestBody List<Map<String, String>> images) {
+        AuthUtils.requireAdmin(authHeader, jwtUtil);
         int saved = 0, updated = 0;
         for (Map<String, String> img : images) {
             String name = img.get("attractionName");

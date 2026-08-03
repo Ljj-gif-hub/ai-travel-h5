@@ -147,9 +147,13 @@ public class MapScriptController {
         // 如果 Key 可用，生成 JS SDK URL（方便前端直接从 CDN 加载）
         if (available) {
             if ("amap".equals(provider)) {
+                // 只用专供前端的 js-key；web-key 是服务端 API 调用用的，不暴露给浏览器
                 String jsKey = mapConfig.getAmap().getJsKey();
-                if (jsKey == null || jsKey.isEmpty()) jsKey = mapConfig.getAmap().getWebKey();
-                dto.setJsSdkUrl("https://webapi.amap.com/maps?v=2.0&key=" + jsKey);
+                if (jsKey == null || jsKey.isEmpty()) {
+                    dto.setJsSdkUrl(null); // 未配置 js-key 时由前端走 /api/map/script 代理
+                } else {
+                    dto.setJsSdkUrl("https://webapi.amap.com/maps?v=2.0&key=" + jsKey);
+                }
             } else {
                 dto.setJsSdkUrl(null); // 百度通过后端代理加载，不暴露 AK
             }

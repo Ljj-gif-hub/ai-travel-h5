@@ -7,6 +7,7 @@ import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
@@ -23,6 +24,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+
+    /** 是否信任反向代理注入的 X-Real-IP / X-Forwarded-For（仅当部署在受信代理后时置 true） */
+    @Value("${app.rate-limit.trust-proxy:false}")
+    private boolean trustProxy;
 
     public RateLimitInterceptor(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
         this.redisTemplate = redisTemplate;
@@ -65,17 +70,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+        String ip;
+        if (trustProxy) {
+            // 受信代理后：优先 X-Real-IP（由网关设置），再退化为 remoteAddr，绝不信任可伪造的 X-Forwarded-For 首段
             ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+                ip = request.getRemoteAddr();
+            }
+        } else {
+            // 直连场景：客户端可伪造 X-Forwarded-For，直接用 TCP 对端地址，防止限流绕过
             ip = request.getRemoteAddr();
         }
         if (ip != null && ip.contains(",")) {

@@ -45,6 +45,46 @@ public final class AuthUtils {
     }
 
     /**
+     * 提取裸 token（去掉 "Bearer " 前缀），校验失败抛 AuthException
+     */
+    private static String extractToken(String authHeader) {
+        if (authHeader == null || authHeader.isBlank()) {
+            throw new AuthException("请先登录");
+        }
+        String token = authHeader.startsWith("Bearer ")
+                ? authHeader.substring(7).trim()
+                : authHeader.trim();
+        if (token.isEmpty()) {
+            throw new AuthException("请先登录");
+        }
+        return token;
+    }
+
+    /**
+     * 管理员鉴权 — 先校验登录，再校验 JWT 中的 role claim 必须为 ADMIN
+     * @return 当前管理员用户 ID
+     * @throws AuthException 未登录或非管理员时抛出
+     */
+    public static Long requireAdmin(String authHeader, JwtUtil jwtUtil) {
+        Long userId = requireUserId(authHeader, jwtUtil);
+        String token = extractToken(authHeader);
+        String role = jwtUtil.extractClaim(token, claims -> claims.get("role", String.class));
+        if (!"ADMIN".equals(role)) {
+            throw new ForbiddenException("无权限执行该操作");
+        }
+        return userId;
+    }
+
+    /**
+     * 权限不足异常 — 已登录但角色无权（区别于未登录的 AuthException）
+     */
+    public static class ForbiddenException extends RuntimeException {
+        public ForbiddenException(String message) {
+            super(message);
+        }
+    }
+
+    /**
      * 身份校验失败异常
      */
     public static class AuthException extends RuntimeException {

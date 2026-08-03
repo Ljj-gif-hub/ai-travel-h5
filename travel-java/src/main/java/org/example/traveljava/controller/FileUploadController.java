@@ -1,5 +1,8 @@
 package org.example.traveljava.controller;
 
+import org.example.traveljava.annotation.RateLimit;
+import org.example.traveljava.util.AuthUtils;
+import org.example.traveljava.util.JwtUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,14 +36,16 @@ public class FileUploadController {
         ".3gp", ".3gpp", ".mpeg", ".mpg", ".ts", ".wmv", ".flv"
     );
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
-        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico"
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
     );
     private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024;
     private static final long MAX_VIDEO_SIZE = 1024L * 1024 * 1024;
 
     private final Path uploadDir;
+    private final JwtUtil jwtUtil;
 
-    public FileUploadController() {
+    public FileUploadController(JwtUtil jwtUtil) {
+        this.jwtUtil = jwtUtil;
         this.uploadDir = Paths.get(System.getProperty("user.dir"), "uploads").toAbsolutePath().normalize();
         try {
             Files.createDirectories(uploadDir);
@@ -50,10 +55,13 @@ public class FileUploadController {
     }
 
     /**
-     * 文件上传
+     * 文件上传（需登录）
      */
     @PostMapping("/api/upload")
-    public Result<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
+    @RateLimit(max = 30, duration = 60, key = "file_upload")
+    public Result<Map<String, Object>> upload(@RequestHeader("Authorization") String authHeader,
+                                              @RequestParam("file") MultipartFile file) {
+        AuthUtils.requireUserId(authHeader, jwtUtil);
         if (file == null || file.isEmpty()) {
             return Result.fail("请选择文件");
         }
@@ -134,9 +142,15 @@ public class FileUploadController {
                 contentType = "application/octet-stream";
             }
 
+            // SVG 等可在浏览器执行的类型强制附件下载，避免存储型 XSS（同源 inline 执行内嵌脚本）
+            boolean dangerousInline = "image/svg+xml".equalsIgnoreCase(contentType)
+                    || "text/html".equalsIgnoreCase(contentType)
+                    || "application/xhtml+xml".equalsIgnoreCase(contentType);
+            String disposition = dangerousInline ? "attachment" : "inline";
+
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filePath.getFileName() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition + "; filename=\"" + filePath.getFileName() + "\"")
                     .body(resource);
 
         } catch (IOException e) {

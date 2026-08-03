@@ -15,6 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -35,6 +37,35 @@ public class GlobalExceptionHandler {
         log.warn("认证失败: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Result.fail(e.getMessage()));
+    }
+
+    /** 已登录但权限不足 → 403（不触发前端 401 登出逻辑） */
+    @ExceptionHandler(AuthUtils.ForbiddenException.class)
+    public ResponseEntity<Result<Object>> handleForbidden(AuthUtils.ForbiddenException e) {
+        log.warn("权限不足: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Result.fail(e.getMessage()));
+    }
+
+    /** 缺少必需请求头（如 Authorization）→ 401 而非 500 */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<Result<Object>> handleMissingHeader(MissingRequestHeaderException e) {
+        if ("authorization".equalsIgnoreCase(e.getHeaderName())) {
+            log.warn("缺少 Authorization 请求头: uri={}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Result.fail("请先登录"));
+        }
+        log.warn("缺少请求头: {}", e.getHeaderName());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.fail("缺少必需的请求头: " + e.getHeaderName()));
+    }
+
+    /** 缺少必需请求参数 → 400 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Result<Object>> handleMissingParameter(MissingServletRequestParameterException e) {
+        log.warn("缺少请求参数: {}", e.getParameterName());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.fail("缺少必需的请求参数: " + e.getParameterName()));
     }
 
     /** JWT 过期 → 401 */

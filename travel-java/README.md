@@ -68,8 +68,12 @@ cp src/main/resources/application.yml.example src/main/resources/application.yml
 
 # 编辑 application.yml，填写以下必填项：
 # - ai.{provider}.api-key: 至少配置一个 AI 供应商的 API Key
-# - spring.jwt.secret: JWT 密钥
-# - baidu.map.ak: 百度地图 AK（服务端类型）
+# - jwt.secret: JWT 密钥（必填，>=32 字符，未设置时应用启动即失败）
+# - amap.web-key: 高德 Web 服务 Key（地图功能需要，通过 AMAP_WEB_KEY 注入）
+# - baidu.map.ak: 百度地图 AK（服务端类型，可选）
+
+# 也可以通过环境变量注入（推荐，避免密钥入库）：
+#   JWT_SECRET=xxx  AMAP_WEB_KEY=xxx  DEEPSEEK_API_KEY=xxx  ...
 ```
 
 ### AI 供应商配置

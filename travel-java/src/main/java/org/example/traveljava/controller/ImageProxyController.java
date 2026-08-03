@@ -17,6 +17,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.util.Arrays;
@@ -50,9 +51,16 @@ public class ImageProxyController {
     private final RestTemplate restTemplate;
 
     public ImageProxyController() {
-        ClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        ((SimpleClientHttpRequestFactory) factory).setConnectTimeout(TIMEOUT_MS);
-        ((SimpleClientHttpRequestFactory) factory).setReadTimeout(TIMEOUT_MS);
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+                super.prepareConnection(connection, httpMethod);
+                // 禁止跟随 3xx 重定向，防止白名单域名 302 跳转内网造成 SSRF
+                connection.setInstanceFollowRedirects(false);
+            }
+        };
+        factory.setConnectTimeout(TIMEOUT_MS);
+        factory.setReadTimeout(TIMEOUT_MS);
         this.restTemplate = new RestTemplate(factory);
     }
 

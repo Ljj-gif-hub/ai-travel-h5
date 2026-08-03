@@ -23,6 +23,8 @@ public class VoiceController {
 
     private static final Logger log = LoggerFactory.getLogger(VoiceController.class);
 
+    private static final long MAX_AUDIO_SIZE = 10L * 1024 * 1024; // 10MB，与服务端 VoiceToTextService 上限一致
+
     private final VoiceToTextService voiceToTextService;
 
     public VoiceController(VoiceToTextService voiceToTextService) {
@@ -61,6 +63,12 @@ public class VoiceController {
         if (!isSupportedFormat(format)) {
             log.warn("不支持的音频格式：{}", format);
             return Result.fail("不支持的音频格式：" + format + "。支持的格式：wav, mp3, pcm, amr, flac");
+        }
+
+        // 先按大小拒绝，避免把超大文件整个读入内存
+        if (file.getSize() > MAX_AUDIO_SIZE) {
+            log.warn("音频文件过大：{} bytes", file.getSize());
+            return Result.fail("音频文件大小不能超过" + (MAX_AUDIO_SIZE / 1024 / 1024) + "MB");
         }
 
         try {
