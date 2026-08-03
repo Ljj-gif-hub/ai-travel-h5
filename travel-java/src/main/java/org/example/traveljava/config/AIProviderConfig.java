@@ -131,7 +131,7 @@ public class AIProviderConfig {
         private String apiKey = "";
         /** API 基础 URL（如 https://api.deepseek.com） */
         private String baseUrl = "https://api.openai.com/v1";
-        /** 模型名称（如 deepseek-chat / gpt-4o / claude-sonnet-4-20250514） */
+        /** 模型名称（如 deepseek-v4-flash / deepseek-v4-pro / gpt-4o / claude-sonnet-4-20250514） */
         private String model = "gpt-3.5-turbo";
         /** 默认最大 token 数 */
         private int maxTokens = 4096;

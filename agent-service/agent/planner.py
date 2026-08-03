@@ -20,12 +20,9 @@ from typing import AsyncGenerator, Dict, Any, List, Optional
 logger = logging.getLogger("travel-agent")
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
 
-from .tools import ALL_TOOLS, TOOLS_BY_NAME
 from .schemas import TripPlanOutput, AgentEvent
-from .prompts import TRAVEL_AGENT_SYSTEM, BUDGET_ADJUSTMENT_SYSTEM, ROUTE_OPTIMIZATION_SYSTEM
 
 
 # ==================== LLM 工厂 ====================
@@ -34,7 +31,7 @@ def _build_llm(temperature: float = 0.3) -> ChatOpenAI:
     """从环境变量构建 LLM 实例（兼容 DeepSeek/OpenAI/通义千问/Kimi 等）"""
     base_url = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
     api_key = os.getenv("LLM_API_KEY", "")
-    model = os.getenv("LLM_MODEL", "deepseek-chat")
+    model = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 
     extra_headers = {}
     headers_env = os.getenv("LLM_EXTRA_HEADERS", "")
@@ -123,15 +120,13 @@ class TravelAgentPlanner:
         styles = self.req.get("styles", [])
         hotel_level = self.req.get("hotel_level", "舒适型")
 
-        import time as _time
-
         # Demo 模式始终用内置中文数据（Tavily 搜出的英文结果不适合中文行程）
         yield AgentEvent(
             event_type="phase_start", phase="research",
             message=f"🔍 正在查询「{destination}」景点、美食、酒店信息…",
         )
         research_data = _get_demo_research(destination, days)
-        _time.sleep(0.3)
+        await asyncio.sleep(0.3)
 
         yield AgentEvent(
             event_type="phase_end", phase="research",
@@ -144,7 +139,7 @@ class TravelAgentPlanner:
             event_type="phase_start", phase="plan",
             message=f"📋 正在规划 {days} 天行程…",
         )
-        _time.sleep(0.8)
+        await asyncio.sleep(0.8)
 
         plan = _build_demo_plan(destination, days, budget, people, pace, styles, hotel_level, research_data)
         self.plan_data = plan
@@ -160,7 +155,7 @@ class TravelAgentPlanner:
             event_type="phase_start", phase="verify",
             message="🔍 [Demo] 正在核算总预算、检查路线合理性…",
         )
-        _time.sleep(0.5)
+        await asyncio.sleep(0.5)
 
         bd = plan.get("budget_detail", {})
         actual_total = bd.get("total", sum([
@@ -192,9 +187,9 @@ class TravelAgentPlanner:
                 event_type="phase_start", phase="adjust",
                 message="🔧 [Demo] 正在自动优化：降低酒店档位、优化餐饮…",
             )
-            _time.sleep(0.8)
+            await asyncio.sleep(0.8)
 
-            # Demo 调整策略：降低酒店
+            # Demo 调整策略：优先降低酒店档位
             hotels = plan.get("hotels", [])
             if hotels and hotel_level != "经济型":
                 level_discount = {"豪华型": 0.5, "舒适型": 0.4, "经济型": 0.3}
@@ -205,17 +200,31 @@ class TravelAgentPlanner:
                     h["total_price"] = h["price_per_night"] * days
                     h["highlights"] = "性价比之选 · " + h.get("highlights", "")
                 # 更新住宿费
-                new_accommodation = sum(h.get("total_price", 0) for h in hotels)
-                plan["budget_detail"]["accommodation"] = new_accommodation
-                plan["budget_detail"]["total"] = sum([
-                    plan["budget_detail"].get(k, 0) for k in ["transport", "accommodation", "food", "tickets", "shopping"]
-                ])
+                plan["budget_detail"]["accommodation"] = sum(h.get("total_price", 0) for h in hotels)
+            else:
+                # 已是经济型/无酒店可降档：改降餐饮档位 20%
+                plan["budget_detail"]["food"] = int(plan["budget_detail"].get("food", 0) * 0.8)
 
+            plan["budget_detail"]["total"] = sum([
+                plan["budget_detail"].get(k, 0) for k in ["transport", "accommodation", "food", "tickets", "shopping"]
+            ])
+
+            # 调整后重新核算预算，据实给出结果文案（不再无条件声称已达标）
+            adj_total = plan["budget_detail"]["total"]
+            adj_ok = adj_total <= budget * people
             self.plan_data = plan
-            yield AgentEvent(
-                event_type="phase_end", phase="adjust",
-                message="✅ [Demo] 调整完成 — 已优化至预算范围内",
-            )
+            if adj_ok:
+                yield AgentEvent(
+                    event_type="phase_end", phase="adjust",
+                    message=f"✅ [Demo] 调整完成 — 已优化至预算范围内（{adj_total}/{budget * people} 元）",
+                    data={"budget_ok": True, "actual_total": adj_total, "budget_total": budget * people},
+                )
+            else:
+                yield AgentEvent(
+                    event_type="phase_end", phase="adjust",
+                    message=f"⚠️ [Demo] 已尽力调整，仍超出预算 {adj_total - budget * people} 元，建议提高预算或减少天数",
+                    data={"budget_ok": False, "actual_total": adj_total, "budget_total": budget * people},
+                )
         else:
             yield AgentEvent(
                 event_type="phase_end", phase="verify",
@@ -228,7 +237,7 @@ class TravelAgentPlanner:
             event_type="phase_start", phase="finalize",
             message="✨ [Demo] 正在生成最终旅行方案…",
         )
-        _time.sleep(0.3)
+        await asyncio.sleep(0.3)
 
         plan.setdefault("research_notes", [
             f"Demo 模式 — 使用 {destination} 内置景点/酒店数据",
@@ -242,117 +251,6 @@ class TravelAgentPlanner:
             message=f"🎉 [Demo] {destination} {days} 天行程方案已生成！"
                    f"\n💡 提示：配置 LLM_API_KEY + TAVILY_API_KEY + AMAP_WEB_KEY 后可使用实时 Agent 模式",
             data=plan,
-        )
-
-    async def _run_full(self) -> AsyncGenerator[AgentEvent, None]:
-        destination = self.req.get("destination", "")
-        days = self.req.get("days", 3)
-        budget = self.req.get("budget", 5000)
-        origin = self.req.get("origin", "深圳")
-
-        # ===== Phase 1: 需求解析 + 调研 =====
-        yield AgentEvent(
-            event_type="phase_start",
-            phase="research",
-            message=f"🔍 开始为您调研「{destination}」— 搜索实时景点、美食、酒店信息…",
-        )
-
-        research_results = await self._phase_research(destination, days)
-        yield AgentEvent(
-            event_type="phase_end",
-            phase="research",
-            message=f"✅ 调研完成：已获取 {destination} 的景点、美食、酒店实时信息",
-            data={"research_summary": research_results.get("summary", "")},
-        )
-
-        # ===== Phase 2: 初始行程规划 =====
-        yield AgentEvent(
-            event_type="phase_start",
-            phase="plan",
-            message=f"📋 正在规划 {days} 天行程 — 分配景点、安排每日时段…",
-        )
-
-        plan = await self._phase_plan(research_results)
-        self.plan_data = plan
-        yield AgentEvent(
-            event_type="phase_end",
-            phase="plan",
-            message=f"✅ 初始行程已生成：共 {len(plan.get('day_plans', []))} 天行程",
-            data={"plan_preview": self._build_plan_preview(plan)},
-        )
-
-        # ===== Phase 3: 校验（预算 + 路线） =====
-        yield AgentEvent(
-            event_type="phase_start",
-            phase="verify",
-            message="🔍 正在核算总预算、检查路线合理性…",
-        )
-
-        verify_result = await self._phase_verify(plan, budget)
-        self.budget_ok = verify_result.get("budget_ok", True)
-        route_issues = verify_result.get("route_issues", [])
-
-        if self.budget_ok and not route_issues:
-            yield AgentEvent(
-                event_type="phase_end",
-                phase="verify",
-                message="✅ 校验通过！预算在范围内，路线合理",
-                data=verify_result,
-            )
-        else:
-            warnings = []
-            if not self.budget_ok:
-                over = verify_result.get("budget_gap", 0)
-                warnings.append(f"⚠️ 预算超标 {over} 元，正在自动调整…")
-            if route_issues:
-                warnings.append(f"⚠️ 发现 {len(route_issues)} 处路线可优化，正在调整…")
-
-            yield AgentEvent(
-                event_type="warning",
-                phase="verify",
-                message="\n".join(warnings),
-                data=verify_result,
-            )
-
-            # ===== Phase 4: 自动调整 =====
-            yield AgentEvent(
-                event_type="phase_start",
-                phase="adjust",
-                message="🔧 正在自动优化：替换高价项目、调整路线顺序…",
-            )
-
-            plan = await self._phase_adjust(plan, verify_result)
-            self.plan_data = plan
-
-            # 二次校验
-            yield AgentEvent(
-                event_type="thinking",
-                phase="adjust",
-                message="🔍 调整后二次校验…",
-            )
-            verify_again = await self._phase_verify(plan, budget)
-            self.budget_ok = verify_again.get("budget_ok", True)
-
-            yield AgentEvent(
-                event_type="phase_end",
-                phase="adjust",
-                message=f"✅ 调整完成 — 预算已控制在范围内" if self.budget_ok else "⚠️ 预算仍有超出，已尽最大努力优化",
-                data={"adjusted_plan": self._build_plan_preview(plan)},
-            )
-
-        # ===== Phase 5: 最终输出 =====
-        yield AgentEvent(
-            event_type="phase_start",
-            phase="finalize",
-            message="✨ 正在生成最终旅行方案…",
-        )
-
-        final_output = await self._phase_finalize(plan)
-        yield AgentEvent(
-            event_type="complete",
-            phase="finalize",
-            message=f"🎉 {destination} {days} 天行程方案已生成！",
-            data=final_output,
         )
 
     async def _run_full(self) -> AsyncGenerator[AgentEvent, None]:
@@ -449,65 +347,6 @@ class TravelAgentPlanner:
             message=f"🎉 {destination} {days} 天行程方案已生成！",
             data=final_output,
         )
-
-    async def _research_with_tavily(self, destination: str, days: int) -> dict:
-        """Demo 模式下调用 Tavily 搜索获取目的地实时信息"""
-        from .tools import search_attractions_info, search_hotels_info
-
-        # 并行搜索景点和酒店
-        tasks = [
-            search_attractions_info.ainvoke({"query": f"{destination} 必去景点推荐 门票价格 开放时间"}),
-            search_attractions_info.ainvoke({"query": f"{destination} 特色美食 推荐餐厅 人均消费"}),
-            search_hotels_info.ainvoke({"query": f"{destination} 酒店区域推荐 价格区间 住宿攻略"}),
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        spots = []
-        foods = []
-        summary_parts = []
-
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                continue
-            try:
-                data = json.loads(result) if isinstance(result, str) else result
-                content_parts = []
-                for r in data.get("results", []):
-                    content_parts.append(r.get("content", ""))
-                full_text = " ".join(content_parts)
-
-                if i == 0:  # 景点
-                    summary_parts.append(full_text[:300])
-                    names = re.findall(r'「([^」]+)」|"([^"]+)"|【([^】]+)】', full_text)
-                    for name_group in names[:8]:
-                        name = next((n for n in name_group if n), "")
-                        if name and len(name) > 1 and len(name) < 30:
-                            spots.append({"name": name, "desc": "实时搜索推荐", "price": 0, "hours": "", "tips": ""})
-                elif i == 1:  # 美食
-                    summary_parts.append(full_text[:200])
-                    food_names = re.findall(r'([一-龥]{2,6}(?:鸡|鸭|鱼|肉|虾|蟹|面|粉|汤|锅|饼|包|饺|糕|茶|酒|串|烤|烧|炖|蒸|炒))', full_text)
-                    for f in food_names[:6]:
-                        if f and len(f) > 1:
-                            foods.append(f)
-            except Exception:
-                pass
-
-        # 用内置数据兜底
-        demo_data = _get_demo_research(destination, days)
-        if not spots:
-            spots = demo_data.get("spots", [])
-        if not foods:
-            foods = demo_data.get("foods", [])
-        if not summary_parts:
-            summary_parts = [demo_data.get("summary", "")]
-
-        return {
-            "summary": "。".join(summary_parts) if summary_parts else demo_data.get("summary", ""),
-            "spots": spots,
-            "foods": foods,
-            "hotel_areas": demo_data.get("hotel_areas", {}),
-            "source": "tavily+demo",
-        }
 
     async def _phase_research(self, destination: str, days: int) -> dict:
         """并行搜索工具获取实时信息（无 LLM 中间环节，提速 3-5x）"""
@@ -628,8 +467,8 @@ class TravelAgentPlanner:
         """核算预算 + 检查路线"""
         llm = _build_llm(temperature=0.1)
 
-        # 提取费用数据
-        people = self.req.get("people", 1)
+        # 提取费用数据（people 与请求默认保持一致）
+        people = self.req.get("people", 2)
         days = plan.get("days", 3)
         budget_detail = plan.get("budget_detail", {})
 
@@ -649,16 +488,13 @@ class TravelAgentPlanner:
         route_issues = []
 
         for dp in day_plans:
-            slots = dp.get("time_slots", [])
-            # 检查同日景点是否跨区过多
-            areas = set()
-            for s in slots:
+            for s in dp.get("time_slots", []):
                 attraction = s.get("attraction", "")
-                transport = s.get("transport", "")
-                if transport == "打车" or "打车" in str(transport):
+                slot_transport = s.get("transport", "")
+                if slot_transport == "打车" or "打车" in str(slot_transport):
                     route_issues.append(f"Day{dp.get('day')}「{attraction}」使用打车，建议改用公共交通")
 
-        # 用 calculate_budget 工具做精确核算
+        # 用 calculate_budget 工具做精确核算（items 口径与主流程一致，不额外追加 city_transport）
         try:
             budget_json = json.dumps({
                 "budget_total": budget,
@@ -671,7 +507,6 @@ class TravelAgentPlanner:
                     "food": food,
                     "tickets": tickets,
                     "shopping": shopping,
-                    "city_transport": budget_detail.get("city_transport", int(actual_total * 0.1)),
                 },
             })
 
@@ -835,9 +670,28 @@ class TravelAgentPlanner:
 
     # ==================== 辅助方法 ====================
 
-    def _parse_json(self, text: str) -> Optional[dict]:
+    def _parse_json(self, text) -> Optional[dict]:
         """从 LLM 输出中提取 JSON（兼容各种格式问题）"""
-        if not text:
+        # 部分 OpenAI 兼容接口（启用工具调用风格）content 可能是 list[dict] 或 dict
+        if isinstance(text, list):
+            parts = []
+            for item in text:
+                if isinstance(item, dict):
+                    if isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                    elif isinstance(item.get("content"), str):
+                        parts.append(item["content"])
+                elif isinstance(item, str):
+                    parts.append(item)
+            text = "\n".join(parts)
+        elif isinstance(text, dict):
+            if isinstance(text.get("text"), str):
+                text = text["text"]
+            elif isinstance(text.get("content"), str):
+                text = text["content"]
+
+        if not isinstance(text, str) or not text.strip():
+            logger.warning("AI 返回内容不是字符串/可提取文本，解析失败")
             return None
 
         text = text.strip()
@@ -927,7 +781,14 @@ class TravelAgentPlanner:
             "total_budget": budget * people,
             "overview": f"{destination} {days}天旅行方案。建议提前预订酒店和门票，注意当地天气变化。",
             "day_plans": day_plans,
-            "budget_detail": {"transport": int(budget * 0.3), "accommodation": int(budget * 0.35), "food": int(budget * 0.2), "tickets": int(budget * 0.1), "shopping": int(budget * 0.05), "total": budget * people},
+            "budget_detail": {
+                "transport": int(budget * 0.3),
+                "accommodation": int(budget * 0.35),
+                "food": int(budget * 0.2),
+                "tickets": int(budget * 0.1),
+                "shopping": int(budget * 0.05),
+                "total": int(budget * 0.3) + int(budget * 0.35) + int(budget * 0.2) + int(budget * 0.1) + int(budget * 0.05),
+            },
             "hotels": [{"name": f"{destination}市中心酒店", "district": "市中心", "price_per_night": 500, "total_price": 500 * days, "rating": 4.3, "highlights": "交通便利"}],
             "transport": {"depart_type": "flight", "depart_title": f"前往{destination}", "depart_price": 800, "return_type": "flight", "return_title": f"从{destination}返回", "return_price": 800},
             "tips": ["提前预订门票", "注意天气", "品尝当地美食", "下载离线地图", "保管好随身物品"],
@@ -1049,22 +910,28 @@ def _build_demo_plan(dest: str, days: int, budget: int, people: int, pace: str,
         })
         day_idx += 1
 
-    # 预算
+    # 预算（晚间餐饮只计入 food，避免与晚上时段 cost 重复计费）
     total_budget = budget * people
     accommodation = price_per_night * days
     tickets = sum(
         int(s.get("cost", 0) or 0)
         for dp in day_plans
         for s in dp["time_slots"]
+        if s.get("time_of_day") != "晚上"
     )
-    food = 80 * days * 3  # 三餐
+    food = 80 * days * 3  # 三餐（含晚餐）
     transport_est = int(total_budget * 0.25)
     shopping = total_budget - accommodation - tickets - food - transport_est
     if shopping < 0:
+        # 预算过紧：压缩住宿，保证 accommodation 非负且与酒店价格一致
         shopping = int(total_budget * 0.05)
         accommodation = total_budget - tickets - food - transport_est - shopping
-        hotels[0]["price_per_night"] = max(200, accommodation // max(days, 1))
-        hotels[0]["total_price"] = hotels[0]["price_per_night"] * days
+        if accommodation < 0:
+            accommodation = 0
+        room_price = max(200, accommodation // max(days, 1))
+        hotels[0]["price_per_night"] = room_price
+        hotels[0]["total_price"] = room_price * days
+        accommodation = room_price * days
 
     return {
         "destination": dest, "days": days, "people": people,

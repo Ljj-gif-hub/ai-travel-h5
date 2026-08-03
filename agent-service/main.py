@@ -28,8 +28,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
 from agent.planner import TravelAgentPlanner
 from agent.schemas import TravelRequest, AgentEvent
@@ -65,6 +67,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STREAM_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
+
+# ==================== 错误处理 ====================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Pydantic 校验失败时，流式端点返回 SSE 错误事件（而非 422 JSON），避免前端卡死"""
+    if request.url.path == "/api/agent/plan/stream":
+        async def gen():
+            err = json.dumps(
+                AgentEvent(event_type="error", message="请求参数校验失败，请检查输入").model_dump(),
+                ensure_ascii=False,
+            )
+            yield f"data: {err}\n\n"
+        return StreamingResponse(gen(), media_type="text/event-stream", headers=STREAM_HEADERS)
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 # ==================== 端点 ====================
@@ -135,9 +159,10 @@ async def generate_plan_sync(req: TravelRequest):
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"同步规划失败: {e}\n{tb}")
+        # 对外只返回通用文案，避免泄露内部异常/路径
         return JSONResponse(
             status_code=500,
-            content={"code": -1, "message": f"规划失败: {str(e)}", "traceback": tb.split('\n')[-3:]},
+            content={"code": -1, "message": "规划服务暂时不可用，请稍后重试"},
         )
 
 
@@ -178,17 +203,14 @@ async def generate_plan_stream(req: TravelRequest):
                 yield f"data: {json.dumps(event.model_dump(), ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"流式规划异常: {e}", exc_info=True)
-            err = json.dumps(AgentEvent(event_type="error", message=f"服务异常: {str(e)}").model_dump(), ensure_ascii=False)
+            # 对外只返回通用文案，完整堆栈留在服务端日志
+            err = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {err}\n\n"
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
+        headers=STREAM_HEADERS,
     )
 
 
@@ -222,17 +244,14 @@ async def generate_plan_stream_raw(request: Request):
                 yield f"data: {event_json}\n\n"
         except Exception as e:
             logger.error(f"SSE异常: {e}", exc_info=True)
-            error_json = json.dumps(AgentEvent(event_type="error", message=f"服务异常: {str(e)}").model_dump(), ensure_ascii=False)
+            # 对外只返回通用文案，完整堆栈留在服务端日志
+            error_json = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {error_json}\n\n"
 
     return StreamingResponse(
         raw_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
+        headers=STREAM_HEADERS,
     )
 
 

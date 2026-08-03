@@ -456,9 +456,9 @@ def calculate_budget(items_json: str) -> str:
                 "detail": f"用当地特色小吃和美食街替代高档餐厅，节省{save}元",
             })
 
-        # 策略4：调整交通
-        if remaining_gap > 0:
-            save = min(remaining_gap, int(city_transport * 0.5) if city_transport > 0 else remaining_gap)
+        # 策略4：调整交通（无市内交通预算时跳过，避免生成虚假建议）
+        if city_transport > 0 and remaining_gap > 0:
+            save = min(remaining_gap, int(city_transport * 0.5))
             remaining_gap -= save
             suggestions.append({
                 "strategy": "优化交通方式",
