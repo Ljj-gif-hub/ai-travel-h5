@@ -108,7 +108,7 @@ const transitionName = computed(() => {
  * 三个 Tab 页必须缓存，否则每次切换都会销毁→重建 → 空白闪烁
  * 组件名通过各页面的 defineOptions({ name: '...' }) 显式声明
  */
-const CACHED_VIEWS = ['HomeView', 'MessagesView', 'CommunityView', 'TripsView', 'ProfileView']
+const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
 </script>
 
 <template>

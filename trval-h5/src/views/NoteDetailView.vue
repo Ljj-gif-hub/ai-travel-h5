@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
+import { filterXss } from '../utils/security';
 import { noteApi, commentApi, uploadApi, followApi } from '../api';
 
 const router = useRouter();
@@ -120,7 +121,10 @@ const parseUserId = () => {
     const token = getToken();
     if (!token) return null;
     const payload = token.split('.')[1];
-    const decoded = JSON.parse(atob(payload));
+    // jjwt 生成的是 base64url（可能含 -/_，无 padding），先转标准 base64 再解码
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded));
     return decoded.userId || null;
   } catch { return null }
 };
@@ -139,7 +143,8 @@ const extractImages = (html) => {
 const contentImages = computed(() => extractImages(note.value.content || ''))
 const cleanedContent = computed(() => {
   const html = note.value.content || ''
-  return html.replace(/<img[^>]*>/gi, '')
+  // 先移除 <img>，再过滤 XSS 危险标签/事件属性，最后才 v-html 渲染
+  return filterXss(html.replace(/<img[^>]*>/gi, ''))
 })
 
 const swipeIndex = ref(0)

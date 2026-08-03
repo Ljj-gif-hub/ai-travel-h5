@@ -50,6 +50,7 @@ export const tripNewApi = {
     const controller = new AbortController()
     let reader = null
     let lastProgress = 0
+    let streamClosed = false  // cleanup() 后停止继续读流，避免 reader=null 时报错
 
     console.log('[SSE] 单端点POST开始:', params.destination)
     fetch(`${BASE}/travel/trip/generate/stream`, {
@@ -126,14 +127,16 @@ export const tripNewApi = {
                   if (onTextUpdate) onTextUpdate(data); break
                 case 'cost-update':
                   if (onCostUpdate) onCostUpdate(data); break
-                case 'generate-finish': if (onComplete) onComplete(data); cleanup(); break
-                case 'stream-error': console.error('[SSE] err:', data.message); if (onError) onError(data.message); cleanup(); break
-                case 'task-stop': if (onStop) onStop(data); cleanup(); break
+                case 'generate-finish': if (onComplete) onComplete(data); cleanup(); streamClosed = true; break
+                case 'stream-error': console.error('[SSE] err:', data.message); if (onError) onError(data.message); cleanup(); streamClosed = true; break
+                case 'task-stop': if (onStop) onStop(data); cleanup(); streamClosed = true; break
               }
             } catch (e) {
               console.warn('[SSE] JSON parse fail:', jsonStr.substring(0, 100))
             }
           }
+          // 已结束（finish/error/stop）后不再继续 reader.read()
+          if (streamClosed) break
         }
       })
       .catch((err) => {

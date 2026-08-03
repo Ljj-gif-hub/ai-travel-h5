@@ -262,17 +262,21 @@ const loadAmap = () => new Promise(resolve => {
 
 const loadBaidu = () => new Promise(resolve => {
   if (window.BMapGL) { resolve(true); return }
-  // /api/map/script already tried for amap, force Baidu by trying directly
+  // 通过后端代理 /api/map/script 加载百度地图 SDK（服务端带 AK，不暴露到前端）
   const script = document.createElement('script')
-  // If we already have a script from amap attempt, BMapGL won't be available
-  // Try a direct Baidu approach — but we don't have the AK here
-  // Just check if BMapGL appeared somehow
-  let retries = 0
-  const check = setInterval(() => {
-    if (window.BMapGL) { clearInterval(check); resolve(true) }
-    else if (retries++ > 50) { clearInterval(check); resolve(false) }
-  }, 100)
-  pendingIntervals.push(check)
+  script.src = '/api/map/script'
+  const timeout = setTimeout(() => resolve(false), 5000)
+  script.onload = () => {
+    clearTimeout(timeout)
+    let retries = 0
+    const check = setInterval(() => {
+      if (window.BMapGL) { clearInterval(check); resolve(true) }
+      else if (retries++ > 50) { clearInterval(check); resolve(false) }
+    }, 100)
+    pendingIntervals.push(check)
+  }
+  script.onerror = () => { clearTimeout(timeout); resolve(false) }
+  document.body.appendChild(script)
 })
 
 const loadLeafletSDK = () => new Promise(resolve => {

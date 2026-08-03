@@ -7,7 +7,7 @@
  *   圆角: 输入框12px / 卡片18px / 按钮14px
  *   字号: 标题24px / 正文15px / 辅助12px
  */
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
 import { setToken } from '../utils/auth'
@@ -69,6 +69,7 @@ const sendVerifyCode = () => {
   codeCountdown.value = 60
   countdownTimer = setInterval(() => { codeCountdown.value--; if (codeCountdown.value <= 0) { clearInterval(countdownTimer); countdownTimer = null } }, 1000)
 }
+onUnmounted(() => { if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null } })
 
 const validateLogin = () => {
   loginErrors.username = ''; loginErrors.password = ''

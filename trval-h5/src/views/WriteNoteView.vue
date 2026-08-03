@@ -147,14 +147,28 @@ const removeContentVideo = (index) => {
 // 构建最终保存的HTML内容
 const buildContentHtml = () => {
   let html = noteForm.content || '';
-  // 图片
-  contentImageList.value.forEach(url => {
-    html += `\n<img src="${url}" style="max-width:100%;border-radius:8px;margin:8px 0;" />`;
+  let imgIdx = 0;
+  let videoIdx = 0;
+  // 原位插回占位符，保证编辑后图片/视频位置不变（不再全部追加到文末）
+  html = html.replace(/\[图片\]/g, () => {
+    const url = contentImageList.value[imgIdx++];
+    return url
+      ? `<img src="${url}" style="max-width:100%;border-radius:8px;margin:8px 0;" />`
+      : '';
   });
-  // 视频
-  contentVideoList.value.forEach(url => {
-    html += `\n<video src="${url}" controls style="width:100%;max-height:400px;border-radius:8px;margin:8px 0;background:#000;"></video>`;
+  html = html.replace(/\[视频\]/g, () => {
+    const url = contentVideoList.value[videoIdx++];
+    return url
+      ? `<video src="${url}" controls style="width:100%;max-height:400px;border-radius:8px;margin:8px 0;background:#000;"></video>`
+      : '';
   });
+  // 新建时正文无占位符，媒体追加到文末
+  for (let i = imgIdx; i < contentImageList.value.length; i++) {
+    html += `\n<img src="${contentImageList.value[i]}" style="max-width:100%;border-radius:8px;margin:8px 0;" />`;
+  }
+  for (let i = videoIdx; i < contentVideoList.value.length; i++) {
+    html += `\n<video src="${contentVideoList.value[i]}" controls style="width:100%;max-height:400px;border-radius:8px;margin:8px 0;background:#000;"></video>`;
+  }
   return html.trim();
 };
 

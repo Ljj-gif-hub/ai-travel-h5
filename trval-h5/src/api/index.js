@@ -29,22 +29,31 @@ const request = async (url, options = {}) => {
     removeToken();
     // 【多账号隔离】401仅清空会话缓存，保留账号持久化数据
     clearSession();
-    // 避免在登录页循环跳转
-    if (!window.location.pathname.includes('/login')) {
-      localStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
-      window.location.href = '/login';
+    // hash 路由下用 hash 跳转登录页，避免全页跳 /login 落到首页
+    if (!window.location.hash.includes('/login')) {
+      localStorage.setItem('redirectUrl', window.location.hash || '#/');
+      window.location.hash = '#/login';
     }
-    throw new Error('登录已过期，请重新登录');
+    const err = new Error('登录已过期，请重新登录');
+    err.status = response.status;
+    err.response = { status: response.status };
+    throw err;
   }
 
   // HTTP 403 → 权限不足
   if (response.status === 403) {
-    throw new Error('权限不足，无法执行此操作');
+    const err = new Error('权限不足，无法执行此操作');
+    err.status = response.status;
+    err.response = { status: response.status };
+    throw err;
   }
 
   // HTTP 500+ → 服务器错误
   if (response.status >= 500) {
-    throw new Error('服务器繁忙，请稍后重试');
+    const err = new Error('服务器繁忙，请稍后重试');
+    err.status = response.status;
+    err.response = { status: response.status };
+    throw err;
   }
 
   // 尝试解析JSON
@@ -53,7 +62,10 @@ const request = async (url, options = {}) => {
     data = await response.json();
   } catch (e) {
     if (!response.ok) {
-      throw new Error(`请求失败 (${response.status})`);
+      const err = new Error(`请求失败 (${response.status})`);
+      err.status = response.status;
+      err.response = { status: response.status };
+      throw err;
     }
     return null;
   }
@@ -115,8 +127,8 @@ export const orderApi = {
 };
 
 export const noteApi = {
-  /** 【新增】社区发现页：获取所有用户已发布的游记 */
-  getAllNotes: () => request('/notes'),
+  /** 社区发现页：分页获取所有用户已发布的游记 */
+  getAllNotes: (page = 1, size = 10) => request(`/notes?page=${page}&size=${size}`),
   getMyNotes: () => request('/notes/my'),
   getNoteDetail: (id) => request(`/notes/${id}`),
   createNote: (data) => request('/notes', { method: 'POST', body: JSON.stringify(data) }),
@@ -146,7 +158,7 @@ export const uploadApi = {
     formData.append('file', file);
     const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch('/api/upload', {
+    const response = await fetch(`${BASE_URL}/upload`, {
       method: 'POST',
       headers,
       body: formData,
@@ -181,7 +193,7 @@ export const planApi = {
   getPlanById: (id) => request(`/travel/plan/saved/${id}`),
   savePlan: (data) => request('/travel/plan/save', { method: 'POST', body: JSON.stringify(data) }),
   deletePlan: (id) => request(`/travel/plan/saved/${id}`, { method: 'DELETE' }),
-  generatePlan: (data) => request('/travel/plan/structured', { method: 'POST', body: JSON.stringify(data) }),
+  generatePlan: (data, options = {}) => request('/travel/plan/structured', { method: 'POST', body: JSON.stringify(data), ...options }),
 };
 
 // 行程专属 AI 接口

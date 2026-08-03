@@ -338,7 +338,8 @@ const savePlan = async () => {
       destination: destination || '未指定',
       budget: budget || '',
       days: days || '',
-      content: lastAI.content,
+      // 后端 SavedPlanRequest 只有 planData 字段，content 会被丢弃 → 内容放进 planData
+      planData: { content: lastAI.content },
       source: 'home',
     })
     showToast('行程已保存')

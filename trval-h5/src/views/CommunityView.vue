@@ -157,11 +157,11 @@ const loadNotes = async (reset = false) => {
 
   try {
     loadingMore.value = !reset
-    // 【修复】社区广场应加载所有用户的游记，而非仅当前用户的
-    const res = await noteApi.getAllNotes()
+    // 服务端分页加载所有用户的游记
+    const res = await noteApi.getAllNotes(page.value)
 
     if (res && res.code === 0 && res.data) {
-      const list = Array.isArray(res.data) ? res.data : (res.data.records || res.data.list || [])
+      const list = Array.isArray(res.data) ? res.data : (res.data.list || [])
       // 适配后端返回格式
       let mapped = list.map(mapNoteItem)
       // 用本地关注列表同步所有笔记的 isFollowing 状态
@@ -182,7 +182,8 @@ const loadNotes = async (reset = false) => {
       } else {
         notes.value = [...notes.value, ...mapped].slice(-50)  // 最多保留50条防OOM
       }
-      hasMore.value = list.length >= 10
+      // 以服务端 hasMore 为准，避免无限滚动重复加载
+      hasMore.value = res.data.hasMore !== undefined ? res.data.hasMore : (list.length >= (res.data.size || 10))
       page.value += 1
     } else {
       if (reset) {
@@ -257,7 +258,8 @@ const mapNoteItem = (item) => {
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
   const authorOnline = isSeedData ? item.author.online : (item.online !== undefined ? item.online : Math.random() > 0.4)
-  const authorUserId = isSeedData ? item.author.userId : (item.userId || item.authorId || item.id)
+  // 作者ID：API 数据用后端返回的 userId（作者本人），绝不可回退到笔记 id，否则关注错人
+  const authorUserId = isSeedData ? item.author.userId : (item.userId || item.authorId || null)
 
   // 图片+视频：种子数据直接用images数组，API数据从cover+正文提取
   let images = []

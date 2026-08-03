@@ -962,7 +962,7 @@ const fetchTravelPlan = async () => {
       budget: parseInt(budget.value) || 1000,
       days: parseInt(days.value) || 3,
       people: parseInt(people.value) || 2
-    })
+    }, { signal: abortController.signal })
 
     clearTimeout(timeoutId)
 

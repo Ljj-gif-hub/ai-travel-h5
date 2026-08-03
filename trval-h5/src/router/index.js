@@ -253,14 +253,13 @@ router.beforeEach((to, from) => {
 
 /* ==================== 白名单（未登录可访问） ==================== */
 const whiteList = [
+  // 仅公开浏览页/登录注册可匿名访问；写操作与个人数据页必须登录
   '/', '/community', '/trips', '/profile',
   '/login', '/register', '/about',
   '/planning', '/destinations', '/destination-detail',
-  '/notes', '/note-detail', '/video-detail', '/write-note', '/post',
-  '/trip-map', '/ai-planner', '/ai-planner/progress',
+  '/notes', '/note-detail', '/video-detail',
+  '/ai-planner', '/ai-planner/progress',
   '/city-select', '/attraction-select',
-  '/edit-profile', '/following', '/followers',
-  '/orders', '/favorites', '/coupons', '/feedback',
   '/chat', '/Profile', '/saved-plans', // 旧路由兼容
 ]
 

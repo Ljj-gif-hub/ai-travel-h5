@@ -198,9 +198,10 @@ const loadVideos = async () => {
   isLoading.value = true;
   try {
     // 【修复】视频广场应加载所有用户的视频游记，而非仅当前用户
-    const res = await noteApi.getAllNotes();
+    const res = await noteApi.getAllNotes(1, 50);
     if (res?.code === 0 && res.data) {
-      const all = Array.isArray(res.data) ? res.data : [];
+      // 兼容旧数组结构 与 新分页结构 { list, total, hasMore }
+      const all = Array.isArray(res.data) ? res.data : (res.data.list || []);
       const withVideo = all.filter(n => {
         const c = n.cover || '', t = n.content || '';
         return /\.(mp4|webm|mov)(\?|$)/i.test(c) || /<video[^>]*src=/i.test(t);

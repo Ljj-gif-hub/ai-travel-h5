@@ -92,6 +92,15 @@ const canSubmit = computed(() => destination.value.trim() && selectedDays.value)
 const isGenerating = ref(false)
 
 // ====== 跳转到 Agent 地图页 ======
+// 把前端选项值（如'四钻/星高档型'）按前缀映射为后端枚举：经济型/舒适型/豪华型
+function mapHotelLevel(v) {
+  const raw = v || '舒适型'
+  if (raw.startsWith('三钻')) return '经济型'
+  if (raw.startsWith('四钻')) return '舒适型'
+  if (raw.startsWith('五钻')) return '豪华型'
+  return '舒适型'
+}
+
 function startPlanning() {
   if (!canSubmit.value || isGenerating.value) return
 
@@ -103,7 +112,7 @@ function startPlanning() {
     people: people.value,
     companion: preferences.companion || '',
     styles: (preferences.styles || []).join(','),
-    hotel_level: (preferences.hotelLevel || '舒适型').replace(/三钻\/星|四钻\/星|五钻\/星/g, m => ({'三钻/星':'经济型','四钻/星':'舒适型','五钻/星':'豪华型'}[m] || '舒适型')),
+    hotel_level: mapHotelLevel(preferences.hotelLevel),
     pace: preferences.pace || '适中',
     schedule: preferences.schedule || '',
     cabin: preferences.cabinClass || '',

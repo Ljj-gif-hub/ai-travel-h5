@@ -108,6 +108,9 @@ const resetToForm = () => {
   pageState.value = 'form'; progress.value = 0; previewData.value = {}; allSteps.value = []
 }
 
+// 模板中的"停止生成"按钮：与 resetToForm 等价
+const stopGenerate = () => { resetToForm() }
+
 const handleSubmit = () => { startGeneration() }
 
 const quickFill = () => {

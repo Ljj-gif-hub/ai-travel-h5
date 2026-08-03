@@ -414,16 +414,17 @@ const loadNotes = async (reset = false) => {
   if (!hasMore.value && !reset) return
   try {
     loadingMore.value = !reset
-    const res = await noteApi.getAllNotes()
+    // 服务端分页加载
+    const res = await noteApi.getAllNotes(page.value)
     if (res && res.code === 0 && res.data) {
-      const list = Array.isArray(res.data) ? res.data : (res.data.records || res.data.list || [])
+      const list = Array.isArray(res.data) ? res.data : (res.data.list || [])
       const mapped = list.map(mapNoteItem)
       if (reset) {
         notes.value = mapped
       } else {
         notes.value = [...notes.value, ...mapped].slice(-50)  // 最多保留50条防OOM
       }
-      hasMore.value = list.length >= 10
+      hasMore.value = res.data.hasMore !== undefined ? res.data.hasMore : (list.length >= (res.data.size || 10))
       page.value += 1
     } else {
       if (reset) notes.value = [...seedNotes]
@@ -486,7 +487,8 @@ const mapNoteItem = (item) => {
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
   const authorOnline = isSeedData ? item.author.online : (item.online !== undefined ? item.online : Math.random() > 0.4)
-  const authorUserId = isSeedData ? item.author.userId : (item.userId || item.authorId || item.id)
+  // 作者ID：API 数据用后端返回的 userId（作者本人），绝不可回退到笔记 id，否则关注错人
+  const authorUserId = isSeedData ? item.author.userId : (item.userId || item.authorId || null)
   let images = []
   if (isSeedData) {
     images = item.images || []
