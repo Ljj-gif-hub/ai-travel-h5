@@ -10,11 +10,13 @@ import org.example.traveljava.repository.PostRepository;
 import org.example.traveljava.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class PostService {
@@ -35,32 +37,43 @@ public class PostService {
 
     /**
      * 【修复】社区广场：返回所有用户的动态（而非仅当前用户）
-     * 每篇动态附带作者信息（昵称、头像）和当前用户是否已点赞
+     * 每篇动态附带作者信息（昵称、头像、userId）和当前用户是否已点赞
+     * 批量查询作者与点赞，消除 N+1；images 反序列化为数组返回
      */
     public List<Map<String, Object>> getPosts(Long currentUserId) {
         List<Post> posts = postRepository.findAllByOrderByCreatedAtDesc();
         List<Map<String, Object>> result = new ArrayList<>();
 
+        // 批量作者信息
+        List<Long> authorIds = posts.stream().map(Post::getUserId).distinct().toList();
+        Map<Long, User> authorMap = authorIds.isEmpty() ? Map.of()
+                : userRepository.findAllById(authorIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+
+        // 批量点赞状态
+        List<Long> postIds = posts.stream().map(Post::getId).toList();
+        Set<Long> likedPostIds = currentUserId == null || postIds.isEmpty() ? Set.of()
+                : postLikeRepository.findByPostIdInAndUserId(postIds, currentUserId).stream()
+                        .map(PostLike::getPostId)
+                        .collect(Collectors.toSet());
+
         for (Post post : posts) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", post.getId());
+            item.put("userId", post.getUserId());
             item.put("content", post.getContent());
-            item.put("images", post.getImages());
+            item.put("images", parseImages(post.getImages()));
             item.put("likes", post.getLikes());
             item.put("comments", post.getComments());
 
             // 作者信息
-            userRepository.findById(post.getUserId()).ifPresent(author -> {
+            User author = authorMap.get(post.getUserId());
+            if (author != null) {
                 item.put("authorName", author.getNickname() != null ? author.getNickname() : author.getUsername());
                 item.put("authorAvatar", author.getAvatar());
-            });
-
-            // 当前用户是否已点赞
-            if (currentUserId != null) {
-                item.put("isLiked", postLikeRepository.existsByPostIdAndUserId(post.getId(), currentUserId));
-            } else {
-                item.put("isLiked", false);
             }
+
+            item.put("isLiked", currentUserId != null && likedPostIds.contains(post.getId()));
 
             // 日期
             item.put("date", post.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
@@ -68,6 +81,20 @@ public class PostService {
             result.add(item);
         }
         return result;
+    }
+
+    /** 数据库里 images 存的是 JSON 数组字符串，反序列化为数组返回 */
+    private List<String> parseImages(String imagesJson) {
+        if (imagesJson == null || imagesJson.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(imagesJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("解析动态图片列表失败: {}", e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     @Transactional
@@ -121,8 +148,12 @@ public class PostService {
             post.setLikes(postLikeRepository.countByPostId(postId));
             postRepository.save(post);
         } else {
-            // 点赞
-            postLikeRepository.save(new PostLike(postId, userId));
+            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞
+            try {
+                postLikeRepository.save(new PostLike(postId, userId));
+            } catch (DataIntegrityViolationException e) {
+                log.debug("动态点赞并发冲突：postId={}, userId={}", postId, userId);
+            }
             post.setLikes(postLikeRepository.countByPostId(postId));
             postRepository.save(post);
         }

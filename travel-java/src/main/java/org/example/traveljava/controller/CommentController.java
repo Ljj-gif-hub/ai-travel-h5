@@ -132,14 +132,17 @@ public class CommentController {
         }
     }
 
-    /** 点赞评论 */
+    /** 点赞评论（同一用户对同一评论幂等，防止刷量） */
     @PostMapping("/comments/{id}/like")
     public Result<Map<String, Object>> likeComment(@RequestHeader("Authorization") String authHeader,
                                                      @PathVariable Long id) {
         try {
             String token = authHeader.replace("Bearer ", "");
-            jwtUtil.extractUserId(token); // auth check
-            Comment comment = commentService.likeComment(id);
+            Long userId = jwtUtil.extractUserId(token); // auth check
+            if (userId == null) {
+                throw new AuthUtils.AuthException("请先登录");
+            }
+            Comment comment = commentService.likeComment(userId, id);
             Map<String, Object> result = new HashMap<>();
             result.put("id", comment.getId());
             result.put("likes", comment.getLikes());

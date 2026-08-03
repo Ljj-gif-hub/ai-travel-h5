@@ -1,11 +1,15 @@
 package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Comment;
+import org.example.traveljava.entity.CommentLike;
 import org.example.traveljava.entity.Note;
+import org.example.traveljava.repository.CommentLikeRepository;
 import org.example.traveljava.repository.CommentRepository;
 import org.example.traveljava.repository.NoteRepository;
+import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,10 +22,13 @@ public class CommentService {
     private static final Logger log = LoggerFactory.getLogger(CommentService.class);
 
     private final CommentRepository commentRepository;
+    private final CommentLikeRepository commentLikeRepository;
     private final NoteRepository noteRepository;
 
-    public CommentService(CommentRepository commentRepository, NoteRepository noteRepository) {
+    public CommentService(CommentRepository commentRepository, CommentLikeRepository commentLikeRepository,
+                          NoteRepository noteRepository) {
         this.commentRepository = commentRepository;
+        this.commentLikeRepository = commentLikeRepository;
         this.noteRepository = noteRepository;
     }
 
@@ -71,10 +78,12 @@ public class CommentService {
         Note note = noteRepository.findById(noteId)
                 .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
 
-        // 如果是回复，验证父评论存在
+        // 如果是回复，验证父评论存在且属于同一篇游记（防止跨笔记孤儿回复）
         if (parentId != null) {
-            if (!commentRepository.existsById(parentId)) {
-                throw new IllegalArgumentException("原评论不存在");
+            Comment parent = commentRepository.findById(parentId)
+                    .orElseThrow(() -> new IllegalArgumentException("原评论不存在"));
+            if (!parent.getNoteId().equals(noteId)) {
+                throw new IllegalArgumentException("回复的评论不属于该游记");
             }
         }
 
@@ -82,7 +91,7 @@ public class CommentService {
         comment.setNoteId(noteId);
         comment.setUserId(userId);
         comment.setParentId(parentId);
-        comment.setContent(hasContent ? content.trim() : null);
+        comment.setContent(hasContent ? TextCleaner.sanitizeHtml(content.trim()) : null);
         comment.setImage(image);
         comment.setVideo(video);
         comment.setLikes(0);
@@ -119,12 +128,22 @@ public class CommentService {
         log.info("删除评论：commentId={}, userId={}", commentId, userId);
     }
 
-    /** 点赞评论或回复 */
+    /** 点赞评论或回复（幂等：同一用户对同一评论只能点赞一次） */
     @Transactional
-    public Comment likeComment(Long commentId) {
+    public Comment likeComment(Long userId, Long commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("评论不存在"));
-        comment.setLikes(comment.getLikes() + 1);
-        return commentRepository.save(comment);
+
+        if (commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
+            return comment; // 已点过，幂等返回
+        }
+        try {
+            commentLikeRepository.save(new CommentLike(commentId, userId));
+            commentRepository.incrementLikes(commentId);
+        } catch (DataIntegrityViolationException e) {
+            // 并发重复点赞，唯一约束兜底，视为已点赞
+            log.debug("评论点赞并发冲突：commentId={}, userId={}", commentId, userId);
+        }
+        return commentRepository.findById(commentId).orElse(comment);
     }
 }

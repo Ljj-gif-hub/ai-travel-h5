@@ -82,16 +82,19 @@ public class CostCalculationService {
 
         // ---- 1. 酒店费用 ----
         BigDecimal hotelCost = BigDecimal.ZERO;
-        int nights = Math.max(1, days - 1); // 住 days-1 晚（最后一天退房）
+        // 1 天行程按 0 晚住宿（当天往返），N 天行程住 N-1 晚
+        int nights = Math.max(0, days - 1);
         if (hotelIds != null && !hotelIds.isEmpty()) {
             hotelCost = hotelService.calculateHotelCost(hotelIds, nights);
         }
         if (hotelCost.compareTo(BigDecimal.ZERO) == 0) {
             // 无实际酒店数据时，使用估算：基准费用的50%用于住宿
+            // 房间数按每 2 人 1 间估算（2人→1间，3人→2间），避免高估
+            int rooms = Math.max(1, (people + 1) / 2);
             hotelCost = baseCostPerDayPerPerson
                     .multiply(new BigDecimal("0.50"))
                     .multiply(BigDecimal.valueOf(nights))
-                    .multiply(BigDecimal.valueOf(Math.max(1, people / 2 + 1))); // 按房间数估算
+                    .multiply(BigDecimal.valueOf(rooms));
         }
         breakdown.setHotelCost(hotelCost.setScale(2, RoundingMode.HALF_UP));
 

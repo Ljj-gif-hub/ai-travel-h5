@@ -19,6 +19,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.slf4j.LoggerFactory;
 import org.example.traveljava.config.AIProviderConfig;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -43,8 +44,32 @@ public class TravelController {
     /** SSE emitter 注册表：taskId → emitter，用于后台生成线程向 SSE 通道推送进度 */
     private final ConcurrentHashMap<String, SseEmitter> emitterRegistry = new ConcurrentHashMap<>();
 
-    /** 待处理的生成请求：taskId → TripPlannerRequest，SSE连接后才开始生成 */
-    private final ConcurrentHashMap<String, TripPlannerRequest> pendingRequests = new ConcurrentHashMap<>();
+    /** 待处理的生成请求：taskId → 请求（带时间戳），SSE连接后才开始生成 */
+    private final ConcurrentHashMap<String, PendingEntry> pendingRequests = new ConcurrentHashMap<>();
+
+    /** 待处理请求条目 — 记录创建时间，供定时清理过期条目（防内存泄漏） */
+    private static class PendingEntry {
+        final TripPlannerRequest req;
+        final long createdAt = System.currentTimeMillis();
+        PendingEntry(TripPlannerRequest req) { this.req = req; }
+    }
+
+    /** 定期清理超过 10 分钟未被 SSE 消费的待处理请求 */
+    @Scheduled(fixedDelay = 60_000)
+    public void purgeStalePendingRequests() {
+        long now = System.currentTimeMillis();
+        int removed = 0;
+        for (var it = pendingRequests.entrySet().iterator(); it.hasNext(); ) {
+            var e = it.next();
+            if (now - e.getValue().createdAt > 10 * 60_000L) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            log.info("清理过期待处理请求 {} 条", removed);
+        }
+    }
 
     public TravelController(AIService aiService, AIProviderConfig aiConfig) {
         this.aiService = aiService;
@@ -62,7 +87,6 @@ public class TravelController {
         result.put("status", "ok");
         result.put("provider", aiConfig.getActiveProvider());
         result.put("model", aiConfig.getActiveModel());
-        result.put("apiKeyConfigured", aiConfig.getActiveApiKey() != null && aiConfig.getActiveApiKey().length() > 8 ? "yes" : "no");
         return Result.ok(result);
     }
 
@@ -369,7 +393,11 @@ public class TravelController {
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
 
         String dest = (String) body.getOrDefault("destination", "");
-        int days = ((Number) body.getOrDefault("days", 1)).intValue();
+        int rawDays = ((Number) body.getOrDefault("days", 1)).intValue();
+        // 天数截断到 1-14，防止恶意传超大值刷爆逐天 AI 调用
+        if (rawDays < 1) rawDays = 1;
+        if (rawDays > 14) rawDays = 14;
+        final int days = rawDays;
         long budget = ((Number) body.getOrDefault("budget", 5000)).longValue();
         String taskId = (String) body.getOrDefault("taskId", UUID.randomUUID().toString().substring(0, 8));
 
@@ -553,7 +581,7 @@ public class TravelController {
         req.setBudget(budget);
 
         // 暂存请求参数，等待SSE连接后启动生成（消除竞态）
-        pendingRequests.put(taskId, req);
+        pendingRequests.put(taskId, new PendingEntry(req));
 
         Map<String, Object> result = new HashMap<>();
         result.put("taskId", taskId);
@@ -614,12 +642,13 @@ public class TravelController {
         safeSendJson(emitter, init);
 
         // 第三步：取出暂存的请求参数，启动生成线程
-        TripPlannerRequest req = pendingRequests.remove(taskId);
-        if (req == null) {
+        PendingEntry entry = pendingRequests.remove(taskId);
+        if (entry == null) {
             safeSendJson(emitter, Map.of("eventType", "stream-error", "message", "任务不存在，请重新发起"));
             try { emitter.complete(); } catch (Exception ex) {}
             return emitter;
         }
+        final TripPlannerRequest req = entry.req;
 
         final String dest = req.getDestination();
         final int days = req.getDays();
@@ -732,15 +761,15 @@ public class TravelController {
         if (!schedule.isEmpty()) sb.append("行程尽量偏").append(schedule.equals("偏晚归") ? "晚归" : "早出").append("，");
         sb.append("交通选择经济舱。");
         sb.append("请给出预算估计。");
-        sb.append("请帮我设计出详细的行程，用Markdown格式输出，标题用##，尽量详细丰富。\\n\\n");
-        sb.append("行程要求：\\n");
-        sb.append("- 先写一段200字的行程总览，概述目的地的特色和本次行程的亮点\\n");
-        sb.append("- 按天详细规划，每天包含上午/下午/晚上三个时段\\n");
-        sb.append("- 每个时段写明真实的景点名、活动描述、预计时长和大致费用\\n");
-        sb.append("- 每个景点写2-3句介绍，让行程内容充实丰富\\n");
-        sb.append("- 每天末尾推荐1-2家当地特色餐厅，附人均消费\\n");
-        sb.append("- 规划往返交通建议，说明航班或高铁的参考时间和价格\\n");
-        sb.append("- 最后给出5-8条针对该目的地的实用旅行贴士\\n");
+        sb.append("请帮我设计出详细的行程，用Markdown格式输出，标题用##，尽量详细丰富。\n\n");
+        sb.append("行程要求：\n");
+        sb.append("- 先写一段200字的行程总览，概述目的地的特色和本次行程的亮点\n");
+        sb.append("- 按天详细规划，每天包含上午/下午/晚上三个时段\n");
+        sb.append("- 每个时段写明真实的景点名、活动描述、预计时长和大致费用\n");
+        sb.append("- 每个景点写2-3句介绍，让行程内容充实丰富\n");
+        sb.append("- 每天末尾推荐1-2家当地特色餐厅，附人均消费\n");
+        sb.append("- 规划往返交通建议，说明航班或高铁的参考时间和价格\n");
+        sb.append("- 最后给出5-8条针对该目的地的实用旅行贴士\n");
         sb.append("- 输出一份费用预估汇总表，分项列出交通、住宿、门票、餐饮的预算");
         return sb.toString();
     }

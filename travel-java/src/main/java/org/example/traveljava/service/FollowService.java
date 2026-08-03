@@ -6,6 +6,7 @@ import org.example.traveljava.repository.FollowRepository;
 import org.example.traveljava.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class FollowService {
@@ -47,17 +50,35 @@ public class FollowService {
 
     private List<Map<String, Object>> convertToUserInfoList(List<Follow> follows, String userIdField, Long currentUserId) {
         List<Map<String, Object>> result = new ArrayList<>();
+        if (follows.isEmpty()) {
+            return result;
+        }
+
+        List<Long> targetIds = follows.stream()
+                .map(f -> "followingId".equals(userIdField) ? f.getFollowingId() : f.getFollowerId())
+                .toList();
+
+        // 批量作者信息
+        Map<Long, User> userMap = userRepository.findAllById(targetIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        // 批量 isFollowed（当前用户是否关注了这些目标用户）
+        Set<Long> followedIds = currentUserId == null ? Set.of()
+                : followRepository.findByFollowerIdAndFollowingIdIn(currentUserId, targetIds).stream()
+                        .map(Follow::getFollowingId)
+                        .collect(Collectors.toSet());
+
         for (Follow follow : follows) {
             Long targetId = "followingId".equals(userIdField) ? follow.getFollowingId() : follow.getFollowerId();
-            userRepository.findById(targetId).ifPresent(user -> {
-                Map<String, Object> userInfo = new HashMap<>();
-                userInfo.put("id", user.getId());
-                userInfo.put("nickname", user.getNickname());
-                userInfo.put("avatar", user.getAvatar());
-                userInfo.put("bio", user.getBio());
-                userInfo.put("isFollowed", followRepository.existsByFollowerIdAndFollowingId(currentUserId, targetId));
-                result.add(userInfo);
-            });
+            User user = userMap.get(targetId);
+            if (user == null) continue;
+            Map<String, Object> userInfo = new HashMap<>();
+            userInfo.put("id", user.getId());
+            userInfo.put("nickname", user.getNickname());
+            userInfo.put("avatar", user.getAvatar());
+            userInfo.put("bio", user.getBio());
+            userInfo.put("isFollowed", followedIds.contains(targetId));
+            result.add(userInfo);
         }
         return result;
     }
@@ -76,18 +97,17 @@ public class FollowService {
         follow.setFollowerId(followerId);
         follow.setFollowingId(followingId);
 
-        followRepository.save(follow);
+        try {
+            followRepository.save(follow);
+        } catch (DataIntegrityViolationException e) {
+            // 并发重复关注：唯一约束兜底
+            throw new IllegalArgumentException("已经关注过了");
+        }
         log.info("关注用户：followerId={}, followingId={}", followerId, followingId);
 
-        userRepository.findById(followerId).ifPresent(user -> {
-            user.setFollowingCount(user.getFollowingCount() + 1);
-            userRepository.save(user);
-        });
-
-        userRepository.findById(followingId).ifPresent(user -> {
-            user.setFollowersCount(user.getFollowersCount() + 1);
-            userRepository.save(user);
-        });
+        // 原子增减计数，避免并发丢失更新
+        userRepository.incrementFollowingCount(followerId);
+        userRepository.incrementFollowersCount(followingId);
     }
 
     @Transactional
@@ -99,14 +119,7 @@ public class FollowService {
         followRepository.deleteByFollowerIdAndFollowingId(followerId, followingId);
         log.info("取消关注：followerId={}, followingId={}", followerId, followingId);
 
-        userRepository.findById(followerId).ifPresent(user -> {
-            user.setFollowingCount(Math.max(0, user.getFollowingCount() - 1));
-            userRepository.save(user);
-        });
-
-        userRepository.findById(followingId).ifPresent(user -> {
-            user.setFollowersCount(Math.max(0, user.getFollowersCount() - 1));
-            userRepository.save(user);
-        });
+        userRepository.decrementFollowingCount(followerId);
+        userRepository.decrementFollowersCount(followingId);
     }
 }

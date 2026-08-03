@@ -5,6 +5,7 @@ import org.example.traveljava.repository.UserRepository;
 import org.example.traveljava.util.JwtUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,13 @@ public class UserService {
     public User register(String username, String password, String phone, String email) {
         log.info("用户注册：username={}", username);
 
+        if (username == null || username.trim().isEmpty()) {
+            throw new IllegalArgumentException("用户名不能为空");
+        }
+        if (password == null || password.length() < 6) {
+            throw new IllegalArgumentException("密码长度不能少于6位");
+        }
+
         if (userRepository.existsByUsername(username)) {
             throw new IllegalArgumentException("用户名已存在");
         }
@@ -40,17 +48,22 @@ public class UserService {
         }
 
         User user = new User();
-        user.setUsername(username);
+        user.setUsername(username.trim());
         user.setPassword(passwordEncoder.encode(password));
         user.setPhone(phone);
         user.setEmail(email);
         user.setRole("USER");
         user.setStatus(1);
-        user.setNickname(username);
+        user.setNickname(username.trim());
 
-        User savedUser = userRepository.save(user);
-        log.info("用户注册成功：id={}, username={}", savedUser.getId(), savedUser.getUsername());
-        return savedUser;
+        try {
+            User savedUser = userRepository.save(user);
+            log.info("用户注册成功：id={}, username={}", savedUser.getId(), savedUser.getUsername());
+            return savedUser;
+        } catch (DataIntegrityViolationException e) {
+            // 并发注册同用户名/手机号：唯一约束兜底
+            throw new IllegalArgumentException("用户名或手机号已被注册");
+        }
     }
 
     public Map<String, Object> login(String username, String password) {
@@ -120,7 +133,16 @@ public class UserService {
             user.setBio((String) params.get("bio"));
         }
         if (params.containsKey("phone")) {
-            user.setPhone((String) params.get("phone"));
+            String phone = (String) params.get("phone");
+            if (phone != null && !phone.trim().isEmpty()) {
+                String target = phone.trim();
+                userRepository.findByPhone(target)
+                        .filter(other -> !other.getId().equals(userId))
+                        .ifPresent(other -> {
+                            throw new IllegalArgumentException("该手机号已被其他账号使用");
+                        });
+                user.setPhone(target);
+            }
         }
         if (params.containsKey("email")) {
             user.setEmail((String) params.get("email"));

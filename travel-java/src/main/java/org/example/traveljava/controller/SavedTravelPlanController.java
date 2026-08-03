@@ -36,7 +36,7 @@ public class SavedTravelPlanController {
             SavedTravelPlan saved = savedTravelPlanService.savePlan(userId, request);
             return Result.ok(savedTravelPlanService.toResponseMap(saved));
         } catch (AuthUtils.AuthException e) {
-            return Result.fail(e.getMessage());
+            throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("保存旅行规划失败", e);
             return Result.fail("保存失败：" + e.getMessage());
@@ -53,7 +53,7 @@ public class SavedTravelPlanController {
                     .collect(Collectors.toList());
             return Result.ok(result);
         } catch (AuthUtils.AuthException e) {
-            return Result.fail(e.getMessage());
+            throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("获取旅行规划列表失败", e);
             return Result.fail("获取列表失败：" + e.getMessage());
@@ -68,7 +68,7 @@ public class SavedTravelPlanController {
             SavedTravelPlan plan = savedTravelPlanService.getPlanById(userId, id);
             return Result.ok(savedTravelPlanService.toResponseMap(plan));
         } catch (AuthUtils.AuthException e) {
-            return Result.fail(e.getMessage());
+            throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("获取旅行规划详情失败：id={}", id, e);
             return Result.fail(e.getMessage());
@@ -83,7 +83,7 @@ public class SavedTravelPlanController {
             savedTravelPlanService.deletePlan(userId, id);
             return Result.ok(null);
         } catch (AuthUtils.AuthException e) {
-            return Result.fail(e.getMessage());
+            throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("删除旅行规划失败：id={}", id, e);
             return Result.fail(e.getMessage());

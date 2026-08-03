@@ -10,11 +10,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+
+    private static final Set<String> VALID_TYPES = Set.of("flight", "hotel", "ticket");
+    private static final Set<String> KNOWN_STATUS = Set.of("pending", "paid", "completed", "cancelled");
+    /** 合法状态转移白名单：pending→paid/completed/cancelled，paid→completed/cancelled，终态不可变 */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+            "pending", Set.of("paid", "completed", "cancelled"),
+            "paid", Set.of("completed", "cancelled"),
+            "completed", Set.of(),
+            "cancelled", Set.of()
+    );
 
     private final OrderRepository orderRepository;
 
@@ -47,25 +58,54 @@ public class OrderService {
         Order order = new Order();
         order.setUserId(userId);
         order.setOrderNo("ORD" + System.currentTimeMillis() + (int)(Math.random() * 1000));
-        
+
         String type = (String) params.get("type");
+        if (type == null || !VALID_TYPES.contains(type)) {
+            throw new IllegalArgumentException("无效的订单类型");
+        }
         order.setType(type);
         order.setStatus("pending");
-        
-        Long price = ((Number) params.get("price")).longValue();
+
+        Object priceObj = params.get("price");
+        if (priceObj == null) {
+            throw new IllegalArgumentException("价格无效");
+        }
+        Long price;
+        try {
+            price = ((Number) priceObj).longValue();
+        } catch (ClassCastException e) {
+            throw new IllegalArgumentException("价格无效");
+        }
+        if (price <= 0) {
+            throw new IllegalArgumentException("价格无效");
+        }
         order.setPrice(price);
+
+        if (params.containsKey("quantity") && params.get("quantity") != null) {
+            try {
+                int qty = ((Number) params.get("quantity")).intValue();
+                if (qty >= 1) {
+                    order.setQuantity(qty);
+                }
+            } catch (ClassCastException ignored) {
+                // 非法数量忽略，保持默认 1
+            }
+        }
 
         if ("flight".equals(type)) {
             order.setFlightNo((String) params.get("flightNo"));
             order.setFromCity((String) params.get("fromCity"));
             order.setToCity((String) params.get("toCity"));
+            // 补齐航班时间字段（此前从未赋值，导致列表永远为 null）
+            order.setDepartureTime(parseDateTime(params.get("departureTime")));
+            order.setArrivalTime(parseDateTime(params.get("arrivalTime")));
         } else if ("hotel".equals(type)) {
             order.setHotelName((String) params.get("hotelName"));
-            order.setCheckInTime((LocalDateTime) params.get("checkInTime"));
-            order.setCheckOutTime((LocalDateTime) params.get("checkOutTime"));
+            order.setCheckInTime(parseDateTime(params.get("checkInTime")));
+            order.setCheckOutTime(parseDateTime(params.get("checkOutTime")));
         } else if ("ticket".equals(type)) {
             order.setScenicName((String) params.get("scenicName"));
-            order.setTicketDate((LocalDateTime) params.get("ticketDate"));
+            order.setTicketDate(parseDateTime(params.get("ticketDate")));
         }
 
         Order saved = orderRepository.save(order);
@@ -73,13 +113,45 @@ public class OrderService {
         return saved;
     }
 
+    /**
+     * 把请求体中的日期统一解析为 LocalDateTime（兼容 ISO 字符串与 LocalDateTime 两种传参）。
+     */
+    private LocalDateTime parseDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt;
+        }
+        if (value instanceof String s) {
+            String str = s.trim();
+            if (str.isEmpty()) {
+                return null;
+            }
+            try {
+                return LocalDateTime.parse(str);
+            } catch (Exception e) {
+                throw new IllegalArgumentException("日期格式不正确: " + str);
+            }
+        }
+        throw new IllegalArgumentException("日期格式不正确");
+    }
+
     @Transactional
     public Order updateOrderStatus(Long userId, Long orderId, String status) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
-        
+
         if (!order.getUserId().equals(userId)) {
             throw new IllegalArgumentException("无权操作该订单");
+        }
+
+        if (status == null || !KNOWN_STATUS.contains(status)) {
+            throw new IllegalArgumentException("无效的订单状态");
+        }
+        String current = order.getStatus();
+        if (!STATUS_TRANSITIONS.getOrDefault(current, Set.of()).contains(status)) {
+            throw new IllegalArgumentException("订单状态不能从 " + current + " 变更为 " + status);
         }
 
         order.setStatus(status);
@@ -92,9 +164,14 @@ public class OrderService {
     public void cancelOrder(Long userId, Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
-        
+
         if (!order.getUserId().equals(userId)) {
             throw new IllegalArgumentException("无权操作该订单");
+        }
+
+        String current = order.getStatus();
+        if (!("pending".equals(current) || "paid".equals(current))) {
+            throw new IllegalArgumentException("当前订单状态不可取消");
         }
 
         order.setStatus("cancelled");

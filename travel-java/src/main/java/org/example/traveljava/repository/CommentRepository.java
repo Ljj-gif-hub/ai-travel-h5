@@ -2,6 +2,9 @@ package org.example.traveljava.repository;
 
 import org.example.traveljava.entity.Comment;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -24,4 +27,9 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     int countByNoteId(Long noteId);
 
     void deleteByNoteId(Long noteId);
+
+    /** 原子自增点赞数，配合 comment_likes 去重表使用 */
+    @Modifying
+    @Query("update Comment c set c.likes = c.likes + 1 where c.id = :id")
+    int incrementLikes(@Param("id") Long id);
 }

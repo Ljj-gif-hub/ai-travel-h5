@@ -16,4 +16,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
     int countByFollowerId(Long followerId);
     int countByFollowingId(Long followingId);
     void deleteByFollowerIdAndFollowingId(Long followerId, Long followingId);
+
+    /** 批量查询当前用户关注的用户，用于列表接口消除 N+1 */
+    List<Follow> findByFollowerIdAndFollowingIdIn(Long followerId, List<Long> followingIds);
 }

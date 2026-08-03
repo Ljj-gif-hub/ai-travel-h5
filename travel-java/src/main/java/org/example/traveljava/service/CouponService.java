@@ -1,7 +1,9 @@
 package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Coupon;
+import org.example.traveljava.entity.Order;
 import org.example.traveljava.repository.CouponRepository;
+import org.example.traveljava.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -16,9 +18,11 @@ public class CouponService {
     private static final Logger log = LoggerFactory.getLogger(CouponService.class);
 
     private final CouponRepository couponRepository;
+    private final OrderRepository orderRepository;
 
-    public CouponService(CouponRepository couponRepository) {
+    public CouponService(CouponRepository couponRepository, OrderRepository orderRepository) {
         this.couponRepository = couponRepository;
+        this.orderRepository = orderRepository;
     }
 
     public List<Coupon> getCoupons(Long userId) {
@@ -73,26 +77,39 @@ public class CouponService {
     public Coupon useCoupon(Long userId, Long couponId, Long orderId) {
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new IllegalArgumentException("优惠券不存在"));
-        
+
         if (!coupon.getUserId().equals(userId)) {
             throw new IllegalArgumentException("无权使用该优惠券");
         }
-        
+
         if (!"unused".equals(coupon.getStatus())) {
             throw new IllegalArgumentException("优惠券不可用");
         }
-        
+
         if (coupon.getValidUntil().isBefore(LocalDateTime.now())) {
             coupon.setStatus("expired");
             throw new IllegalArgumentException("优惠券已过期");
         }
 
-        coupon.setStatus("used");
-        coupon.setUsedAt(LocalDateTime.now());
-        coupon.setOrderId(orderId);
+        // 校验订单存在、归属本人、金额达到使用门槛
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
+        if (!order.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("无权使用该订单的优惠券");
+        }
+        if (order.getPrice() < coupon.getMinAmount()) {
+            throw new IllegalArgumentException("订单金额未达优惠券使用门槛");
+        }
 
-        Coupon saved = couponRepository.save(coupon);
-        log.info("使用优惠券：userId={}, couponId={}", userId, couponId);
+        // 原子占位，防止并发重复使用同一张券
+        int claimed = couponRepository.claimCoupon(couponId, LocalDateTime.now(), orderId);
+        if (claimed == 0) {
+            throw new IllegalArgumentException("优惠券已被使用");
+        }
+
+        Coupon saved = couponRepository.findById(couponId)
+                .orElseThrow(() -> new IllegalArgumentException("优惠券不存在"));
+        log.info("使用优惠券：userId={}, couponId={}, orderId={}", userId, couponId, orderId);
         return saved;
     }
 }

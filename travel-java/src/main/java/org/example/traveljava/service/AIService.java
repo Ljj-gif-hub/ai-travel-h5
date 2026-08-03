@@ -49,8 +49,9 @@ public class AIService {
 
     private final WebClient webClient;
     private final AIProviderConfig aiConfig;
-    private final Map<String, String> planCache = new ConcurrentHashMap<>();
-    private final Map<String, String> chatCache = new ConcurrentHashMap<>();
+    /** 有界 LRU 缓存（容量 200），防止长期运行内存无限增长 */
+    private final Map<String, String> planCache = lruCache(200);
+    private final Map<String, String> chatCache = lruCache(200);
     private final SceneImageService sceneImageService;
     private final ExecutorService imageFetchExecutor;
     /** 用户出行偏好（由 Controller 在生成前设置） */
@@ -64,6 +65,16 @@ public class AIService {
         this.objectMapper = objectMapper;
         this.sceneImageService = sceneImageService;
         this.imageFetchExecutor = imageFetchExecutor;
+    }
+
+    /** 线程安全的有界 LRU 缓存 */
+    private static <K, V> Map<K, V> lruCache(int maxEntries) {
+        return Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                return size() > maxEntries;
+            }
+        });
     }
 
     /** 当前活跃模型名（从配置动态读取） */
@@ -85,6 +96,9 @@ public class AIService {
      * 用于自然语言行程生成
      */
     public void streamChatText(String userPrompt, java.util.function.Consumer<String> onChunk) {
+        // 声明在 try 外，catch 分支也能读取是否已产生内容
+        final int[] chunkCount = {0};
+        final StringBuilder fullContent = new StringBuilder();
         try {
             ChatRequest req = ChatRequest.builder()
                 .model(model()).stream(true).maxTokens(8192).temperature(0.7)
@@ -94,8 +108,6 @@ public class AIService {
                 )).build();
 
             // 使用 Flux 处理流式 SSE 响应
-            final int[] chunkCount = {0};
-            final StringBuilder fullContent = new StringBuilder();
             String result = webClient.post().uri(chatPath())
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(req)
                 .accept(MediaType.TEXT_EVENT_STREAM)
@@ -125,9 +137,13 @@ public class AIService {
             }
         } catch (Exception e) {
             log.error("流式文本生成失败: {}", e.getMessage());
-            onChunk.accept("\\n\\n> ⚠️ AI服务繁忙，请稍后重试。以下为预设行程：\\n\\n");
-            // 回退：推送预设文本
-            onChunk.accept(buildFallbackText(userPrompt));
+            // 已产生内容则保留已推送部分，避免"半成品+回退文本"拼接
+            if (fullContent.length() == 0) {
+                onChunk.accept("\n\n> ⚠️ AI服务繁忙，请稍后重试。以下为预设行程：\n\n");
+                onChunk.accept(buildFallbackText(userPrompt));
+            } else {
+                log.warn("流式生成已产生部分内容后异常，保留已推送内容");
+            }
         }
     }
 
@@ -169,12 +185,12 @@ public class AIService {
             int e = prompt.indexOf("旅行", s);
             if (e > s) dest = prompt.substring(s, e);
         }
-        return "## " + dest + "行程规划\\n\\n" +
-            "### 📋 行程总览\\n" + dest + "是一座充满魅力的旅游城市，建议安排充足时间深度游览。\\n\\n" +
-            "### 📅 Day1：抵达" + dest + "\\n- **上午**：抵达" + dest + "，入住酒店，稍作休整\\n- **下午**：游览" + dest + "市中心地标景点（约2小时，费用50元）\\n- **晚上**：品尝" + dest + "当地特色美食（约100元）\\n\\n" +
-            "### 📅 Day2：深度探索\\n- **上午**：参观" + dest + "最著名的景点（约3小时，费用80元）\\n- **下午**：体验" + dest + "特色文化活动（约2小时，费用60元）\\n- **晚上**：漫步" + dest + "夜市或古城街区\\n\\n" +
-            "### 🏨 酒店推荐\\n建议选择" + dest + "市中心区域，交通便利，周边餐饮丰富。\\n\\n" +
-            "### 💡 出行贴士\\n1. 提前预订景点门票\\n2. 注意防晒保暖\\n3. 品尝当地特色小吃\\n4. 保管好随身物品\\n5. 下载离线地图备用\\n";
+        return "## " + dest + "行程规划\n\n" +
+            "### 📋 行程总览\n" + dest + "是一座充满魅力的旅游城市，建议安排充足时间深度游览。\n\n" +
+            "### 📅 Day1：抵达" + dest + "\n- **上午**：抵达" + dest + "，入住酒店，稍作休整\n- **下午**：游览" + dest + "市中心地标景点（约2小时，费用50元）\n- **晚上**：品尝" + dest + "当地特色美食（约100元）\n\n" +
+            "### 📅 Day2：深度探索\n- **上午**：参观" + dest + "最著名的景点（约3小时，费用80元）\n- **下午**：体验" + dest + "特色文化活动（约2小时，费用60元）\n- **晚上**：漫步" + dest + "夜市或古城街区\n\n" +
+            "### 🏨 酒店推荐\n建议选择" + dest + "市中心区域，交通便利，周边餐饮丰富。\n\n" +
+            "### 💡 出行贴士\n1. 提前预订景点门票\n2. 注意防晒保暖\n3. 品尝当地特色小吃\n4. 保管好随身物品\n5. 下载离线地图备用\n";
     }
 
     /* ==================== 测试连接 ==================== */
@@ -607,7 +623,7 @@ public class AIService {
             "你是旅行规划师。输出纯Markdown格式行程。\n" +
             "硬性规则：\n" +
             "1. 严禁输出 | △ ▲ ▼ ◆ ◇ ▪ ▫ • ★ ☆ ─ ━ ═ 等特殊符号\n" +
-            "2. 表格仅用标准Markdown表格语法：| 列1 | 列2 |\\n|-----|-----|\\n| 值1 | 值2 |\n" +
+            "2. 表格仅用标准Markdown表格语法：| 列1 | 列2 |\n|-----|-----|\n| 值1 | 值2 |\n" +
             "3. 法语/外语地名正常书写，不添加任何占位图标\n" +
             "4. 标题仅用 ## 和 ###\n" +
             "5. 结尾写「祝您旅途愉快！✨」\n" +
@@ -680,7 +696,8 @@ public class AIService {
                 .doOnComplete(() -> log.info("AI规划器流式完成"))
                 .doOnCancel(() -> log.info("AI规划器流式取消"));
 
-        return Flux.merge(heartbeat, dataStream);
+        // 心跳在 dataStream 结束时一并结束，保证异常/超时时整个流能正常关闭（否则 merge 永不完成）
+        return Flux.merge(heartbeat.takeUntilOther(dataStream), dataStream);
     }
 
     /** 截断偏好标签，最多3个 */
@@ -965,7 +982,7 @@ public class AIService {
             if (b < 0 || e <= b) {
                 // 兜底：按行或逗号分割
                 List<String> list = new ArrayList<>();
-                for (String line : s.split("[,\\n]")) {
+                for (String line : s.split("[,\n]")) {
                     String t = line.trim().replaceAll("^\"|\"$", "").trim();
                     if (!t.isEmpty() && t.length() > 2) list.add(t);
                 }
@@ -1096,7 +1113,7 @@ public class AIService {
         "2.所有字符串值必须用英文双引号\"包裹 " +
         "3.数组用[]包裹，元素间用英文逗号分隔 " +
         "4.对象用{}包裹，键值间用英文冒号:分隔 " +
-        "5.禁止输出换行符\\n、禁止输出注释、禁止输出说明文字 " +
+        "5.禁止输出换行符\n、禁止输出注释、禁止输出说明文字 " +
         "6.键名严格使用提供的字段名，禁止拼写错误 " +
         "7.tips数组示例：[\"贴士1\",\"贴士2\"]，每条贴士完整包裹在双引号内";
 
