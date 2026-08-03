@@ -4,14 +4,17 @@ import org.example.traveljava.entity.Note;
 import org.example.traveljava.entity.NoteLike;
 import org.example.traveljava.repository.NoteLikeRepository;
 import org.example.traveljava.repository.NoteRepository;
+import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Map;
 
 @Service
@@ -38,9 +41,19 @@ public class NoteService {
         return noteRepository.findByStatusOrderByCreatedAtDesc("published");
     }
 
+    /** 社区发现页：分页获取已发布游记（page 从 1 开始） */
+    public Page<Note> getAllPublishedNotes(int page, int size) {
+        return noteRepository.findByStatusOrderByCreatedAtDesc("published", PageRequest.of(page - 1, size));
+    }
+
     public Note getNoteById(Long noteId) {
-        return noteRepository.findById(noteId)
+        Note note = noteRepository.findById(noteId)
                 .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
+        // 软删除的游记不可再通过详情接口读取
+        if ("deleted".equals(note.getStatus())) {
+            throw new IllegalArgumentException("游记不存在");
+        }
+        return note;
     }
 
     public int getNoteCount(Long userId) {
@@ -52,7 +65,7 @@ public class NoteService {
         Note note = new Note();
         note.setUserId(userId);
         note.setTitle((String) params.get("title"));
-        note.setContent((String) params.get("content"));
+        note.setContent(TextCleaner.sanitizeHtml((String) params.get("content")));
         note.setCover((String) params.get("cover"));
         
         if (params.containsKey("tags")) {
@@ -87,7 +100,7 @@ public class NoteService {
             note.setTitle((String) params.get("title"));
         }
         if (params.containsKey("content")) {
-            note.setContent((String) params.get("content"));
+            note.setContent(TextCleaner.sanitizeHtml((String) params.get("content")));
         }
         if (params.containsKey("cover")) {
             note.setCover((String) params.get("cover"));
@@ -122,10 +135,10 @@ public class NoteService {
 
     @Transactional
     public Note incrementViews(Long noteId) {
-        Note note = noteRepository.findById(noteId)
+        // 原子自增，避免并发读改写丢失更新
+        noteRepository.incrementViews(noteId);
+        return noteRepository.findById(noteId)
                 .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
-        note.setViews(note.getViews() + 1);
-        return noteRepository.save(note);
     }
 
     @Transactional
@@ -141,8 +154,12 @@ public class NoteService {
             note.setLikes(noteLikeRepository.countByNoteId(noteId));
             noteRepository.save(note);
         } else {
-            // 点赞
-            noteLikeRepository.save(new NoteLike(noteId, userId));
+            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞
+            try {
+                noteLikeRepository.save(new NoteLike(noteId, userId));
+            } catch (DataIntegrityViolationException e) {
+                log.debug("游记点赞并发冲突：noteId={}, userId={}", noteId, userId);
+            }
             note.setLikes(noteLikeRepository.countByNoteId(noteId));
             noteRepository.save(note);
         }

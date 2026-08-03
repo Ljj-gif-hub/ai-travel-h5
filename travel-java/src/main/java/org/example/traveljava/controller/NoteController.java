@@ -1,7 +1,9 @@
 package org.example.traveljava.controller;
 
 import org.example.traveljava.entity.Note;
+import org.example.traveljava.entity.NoteLike;
 import org.example.traveljava.entity.User;
+import org.example.traveljava.repository.NoteLikeRepository;
 import org.example.traveljava.repository.UserRepository;
 import org.example.traveljava.service.NoteService;
 import org.example.traveljava.util.AuthUtils;
@@ -9,6 +11,7 @@ import org.example.traveljava.util.JwtUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.format.DateTimeFormatter;
@@ -17,6 +20,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/notes")
@@ -27,28 +32,53 @@ public class NoteController {
     private final NoteService noteService;
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
+    private final NoteLikeRepository noteLikeRepository;
 
-    public NoteController(NoteService noteService, JwtUtil jwtUtil, UserRepository userRepository) {
+    public NoteController(NoteService noteService, JwtUtil jwtUtil, UserRepository userRepository,
+                          NoteLikeRepository noteLikeRepository) {
         this.noteService = noteService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
+        this.noteLikeRepository = noteLikeRepository;
     }
 
     /**
-     * 【新增】社区发现页：获取所有用户已发布的游记（无需登录也可浏览）
-     * 附带作者信息（昵称、头像）和当前用户是否已点赞
+     * 社区发现页：分页获取所有用户已发布的游记（无需登录也可浏览）
+     * 附带作者信息（昵称、头像、userId，供前端关注使用）和当前用户是否已点赞
+     * 批量查询作者与点赞，消除 N+1
      */
     @GetMapping
-    public Result<List<Map<String, Object>>> getAllNotes(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public Result<Map<String, Object>> getAllNotes(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
         try {
-            // 提取为方法，确保 final 变量在声明处直接初始化（满足 JLS 确定赋值规则）
             final Long currentUserId = resolveOptionalUserId(authHeader);
+            if (page < 1) page = 1;
+            if (size < 1) size = 10;
+            if (size > 50) size = 50;
 
-            List<Note> notes = noteService.getAllPublishedNotes();
+            Page<Note> notesPage = noteService.getAllPublishedNotes(page, size);
+            List<Note> notes = notesPage.getContent();
+            long total = notesPage.getTotalElements();
 
-            List<Map<String, Object>> result = notes.stream().map(note -> {
+            // 批量作者信息
+            List<Long> authorIds = notes.stream().map(Note::getUserId).distinct().toList();
+            Map<Long, User> authorMap = authorIds.isEmpty() ? Map.of()
+                    : userRepository.findAllById(authorIds).stream()
+                            .collect(Collectors.toMap(User::getId, u -> u));
+
+            // 批量点赞状态
+            List<Long> noteIds = notes.stream().map(Note::getId).toList();
+            Set<Long> likedNoteIds = currentUserId == null || noteIds.isEmpty() ? Set.of()
+                    : noteLikeRepository.findByNoteIdInAndUserId(noteIds, currentUserId).stream()
+                            .map(NoteLike::getNoteId)
+                            .collect(Collectors.toSet());
+
+            List<Map<String, Object>> list = notes.stream().map(note -> {
                 Map<String, Object> item = new HashMap<>();
                 item.put("id", note.getId());
+                item.put("userId", note.getUserId()); // 作者 ID（前端关注用）
                 item.put("title", note.getTitle());
                 item.put("content", note.getContent());
                 item.put("cover", note.getCover());
@@ -61,20 +91,21 @@ public class NoteController {
                 item.put("likes", note.getLikes());
                 item.put("comments", note.getComments());
                 item.put("date", note.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-                // 作者信息
-                userRepository.findById(note.getUserId()).ifPresent(author -> {
+                User author = authorMap.get(note.getUserId());
+                if (author != null) {
                     item.put("authorName", author.getNickname() != null ? author.getNickname() : author.getUsername());
                     item.put("authorAvatar", author.getAvatar());
-                });
-                // 当前用户是否点赞
-                if (currentUserId != null) {
-                    item.put("isLiked", noteService.isLikedByUser(note.getId(), currentUserId));
-                } else {
-                    item.put("isLiked", false);
                 }
+                item.put("isLiked", currentUserId != null && likedNoteIds.contains(note.getId()));
                 return item;
             }).toList();
 
+            Map<String, Object> result = new HashMap<>();
+            result.put("list", list);
+            result.put("total", total);
+            result.put("page", page);
+            result.put("size", size);
+            result.put("hasMore", (long) page * size < total);
             return Result.ok(result);
         } catch (Exception e) {
             log.error("获取游记列表失败", e);
@@ -127,10 +158,11 @@ public class NoteController {
             if (currentUserId == null) {
                 return Result.fail("请先登录");
             }
-            noteService.incrementViews(id);
+            Note viewed = noteService.incrementViews(id);
 
             Map<String, Object> result = new HashMap<>();
             result.put("id", note.getId());
+            result.put("userId", note.getUserId()); // 作者 ID（前端关注用）
             result.put("title", note.getTitle());
             result.put("content", note.getContent());
             result.put("cover", note.getCover());
@@ -140,7 +172,7 @@ public class NoteController {
             } else {
                 result.put("tags", Collections.emptyList());
             }
-            result.put("views", note.getViews());
+            result.put("views", viewed.getViews()); // 原子递增后的浏览量
             result.put("likes", note.getLikes());
             result.put("comments", note.getComments());
             result.put("date", note.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));

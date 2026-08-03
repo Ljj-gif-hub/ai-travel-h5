@@ -1,7 +1,11 @@
 package org.example.traveljava.repository;
 
 import org.example.traveljava.entity.Hotel;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -39,4 +43,17 @@ public interface HotelRepository extends JpaRepository<Hotel, Long> {
      * @return 价格区间内的酒店列表
      */
     List<Hotel> findByCityAndPricePerNightBetween(String city, BigDecimal min, BigDecimal max);
+
+    long countByCity(String city);
+
+    /**
+     * 数据库层过滤 + 分页（district / 价格区间可选，null 时不过滤）
+     */
+    @Query("select h from Hotel h where h.city = :city " +
+            "and (:district is null or h.district = :district) " +
+            "and (:minPrice is null or h.pricePerNight >= :minPrice) " +
+            "and (:maxPrice is null or h.pricePerNight <= :maxPrice)")
+    Page<Hotel> search(@Param("city") String city, @Param("district") String district,
+                       @Param("minPrice") BigDecimal minPrice, @Param("maxPrice") BigDecimal maxPrice,
+                       Pageable pageable);
 }

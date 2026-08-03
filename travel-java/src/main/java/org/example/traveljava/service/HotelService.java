@@ -4,6 +4,8 @@ import org.example.traveljava.entity.Hotel;
 import org.example.traveljava.repository.HotelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -67,7 +69,28 @@ public class HotelService {
         log.info("搜索酒店：city={}, district={}, minPrice={}, maxPrice={}, page={}, size={}",
                 city, district, minPrice, maxPrice, page, size);
 
-        // 获取该城市的所有酒店（优先缓存，其次数据库，最后种子数据）
+        if (page < 0) page = 0;
+        if (size < 1) size = 10;
+        if (size > 50) size = 50;
+
+        // 数据库有该城市数据 → 数据库层过滤+分页，避免全表加载到内存
+        boolean hasDbData = hotelRepository.countByCity(city) > 0;
+        if (hasDbData) {
+            Page<Hotel> pageData = hotelRepository.search(
+                    city,
+                    (district != null && !district.trim().isEmpty()) ? district : null,
+                    minPrice,
+                    maxPrice,
+                    PageRequest.of(page, size)
+            );
+            Map<String, Object> result = new HashMap<>();
+            result.put("list", pageData.getContent());
+            result.put("total", pageData.getTotalElements());
+            log.info("酒店数据库分页搜索结果：total={}, 当前页={}", result.get("total"), pageData.getNumberOfElements());
+            return result;
+        }
+
+        // 数据库无数据 → 内存种子数据兜底（仅北京/上海/巴黎，量小，可接受）
         List<Hotel> cityHotels = getHotelsByCity(city);
 
         // 按区域筛选
