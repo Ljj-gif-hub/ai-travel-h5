@@ -25,6 +25,7 @@
  */
 
 import { reactive, computed, toRefs } from 'vue'
+import { enrichTimeSlotCoords } from '../utils/geocode'
 
 /* ==================== 全局共享响应式状态（单例） ==================== */
 const state = reactive({
@@ -57,6 +58,8 @@ const state = reactive({
   hotelList: [],
   /** 地图标注点列表（景点 + 地铁站） */
   mapMarkers: [],
+  /** 当前行程在 SavedTravelPlan 中的 id（保存/分享用），null 表示尚未保存 */
+  savedPlanId: null,
 
   /* ---------- UI 状态 ---------- */
   /** 抽屉吸附状态：'min' | 'mid' | 'max' */
@@ -96,6 +99,7 @@ function resetState() {
   state.costBreakdown = null
   state.hotelList = []
   state.mapMarkers = []
+  state.savedPlanId = null
   state.drawerState = 'mid'
   state.taskId = null
 
@@ -170,6 +174,14 @@ function setTaskId(taskId) {
 }
 
 /**
+ * 记录当前行程在 SavedTravelPlan 中的 id（保存/分享用）
+ * @param {number|null} id - 保存后的行程 id，null 表示未保存
+ */
+function setSavedPlanId(id) {
+  state.savedPlanId = id
+}
+
+/**
  * 设置用户参数
  * @param {Object} params - { destination, days, people, budget }
  */
@@ -177,6 +189,15 @@ function setParams(params) {
   if (params) {
     Object.assign(state.params, params)
   }
+}
+
+/**
+ * 补齐行程坐标（异步）— 保存前调用，使坐标随 planJson 持久化
+ * 供日历视图 / 分享海报 / 离线地图 / 地图路线复用
+ */
+async function enrichCoordinates() {
+  if (!state.planData) return null
+  return enrichTimeSlotCoords(state.planData, state.mapMarkers)
 }
 
 /* ==================== 导出 ==================== */
@@ -204,6 +225,10 @@ export function useTripStore() {
     setTaskId,
     /** 设置用户参数 */
     setParams,
+    /** 记录当前行程 id（保存/分享用） */
+    setSavedPlanId,
+    /** 补齐行程坐标（异步） */
+    enrichCoordinates,
     /** 是否生成中 */
     isGenerating,
     /** 是否已完成 */

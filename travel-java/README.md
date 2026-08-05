@@ -216,6 +216,19 @@ travel-java/
 
 > 架构：前端 → Spring Boot `:3200`（AgentProxyController）→ Python Agent `:3201`
 
+### 酒店预订 / 支付 / 行程分享
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/hotel/book` | POST | 酒店预订（校验→报价→创建 hotel 订单，需登录） |
+| `/api/payment/create` | POST | 发起支付（返回支付地址，需登录） |
+| `/api/payment/notify` | POST | 支付渠道回调（公开，验签后幂等标记已支付） |
+| `/api/payment/mock-pay` | GET | 模拟支付确认（mock 渠道专用） |
+| `/api/share` | POST | 创建行程分享短链（需登录） |
+| `/api/share/{token}` | GET | 公开读取分享行程（免登录，只读快照） |
+
+> 支付为「可配置对接层」：`payment.provider=mock|alipay|wechat`，未配置商户密钥默认走 mock；填 Key 即切换真实渠道。
+
 ### 地图数据
 
 | 接口 | 方法 | 说明 |
@@ -261,15 +274,16 @@ travel-java/
 - [ ] 完善日志系统和监控指标
 
 ### 中期目标
-- [ ] RAG 知识库整合旅游攻略
-- [ ] 行程分享功能
+- [x] RAG 知识库整合旅游攻略（Agent 内置语料 + 本地向量检索）
+- [x] 行程分享功能（8 位短链 + 公开只读快照）
 - [ ] MySQL/PostgreSQL 多数据库支持
 - [ ] 消息队列异步处理
 
 ### 长期目标
 - [ ] 分布式部署和负载均衡
 - [ ] 智能推荐算法
-- [ ] 接入机票、酒店第三方预订 API
+- [x] 酒店预订对接（`POST /api/hotel/book` 下单 + 可配置对接层）
+- [x] 第三方支付对接层（`PaymentProvider` 接口 + Mock/Real 双实现，`/api/payment/*`）
 
 ## 📄 许可证
 

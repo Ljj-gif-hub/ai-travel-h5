@@ -241,7 +241,7 @@ const cardTitle = (plan) => { const dest = plan.destination || '未知'; const d
 const cardRoute = (plan) => { if (!plan.planData?.dayPlans) return ''; const lines = plan.planData.dayPlans.slice(0, 3).map(day => { const spots = []; day.timeSlots?.forEach(slot => { if (slot.attraction) spots.push(slot.attraction) }); return spots.length > 0 ? `Day${day.day||'?'} ${spots.join(' → ')}` : '' }).filter(Boolean); return lines.join(' | ') + (plan.planData.dayPlans.length > 3 ? ' …' : '') }
 const cardMeta = (plan) => { const days = plan.days || 0; const locationCount = getAttractions(plan).length; const parts = []; if (plan.travelDate) { const start = new Date(plan.travelDate); const end = new Date(start); end.setDate(end.getDate()+days-1); const fmt = d => `${d.getMonth()+1}月${d.getDate()}日`; parts.push(`${fmt(start)}-${fmt(end)}`) } else if (plan.createdAt) { parts.push(`${new Date(plan.createdAt).getMonth()+1}月${new Date(plan.createdAt).getDate()}日`) }; if (days>0) parts.push(`共${days}天`); if (locationCount>0) parts.push(`${locationCount}个地点`); return parts.join('·') }
 const statusLabel = (s) => ({ upcoming:'待出行', doing:'进行中', done:'已完成', draft:'草稿' }[s] || s)
-const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399', draft:'#F59E0B' }[s] || '#94A3B8')
+const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399', draft:'#F59E0B' }[s] || 'var(--text-hint)')
 
 const loadTrips = async () => { isLoading.value = true; loadError.value = false; try { const res = await planApi.getSavedPlans(); if (res.code === 0) trips.value = (res.data || []).map(p => ({ ...p, _status: inferStatus(p) })); else trips.value = [] } catch (e) { trips.value = []; if (e?.response?.status === 502) loadError.value = true } finally { isLoading.value = false } }
 const viewTrip = (plan) => { if (!plan?.destination) { showToast('行程数据异常'); return }; router.push({ path: '/agent-map', query: { savedPlanId: plan.id } }) }
@@ -273,7 +273,7 @@ onUnmounted(() => { stopCarousel() })
     </van-nav-bar>
     <van-popup v-model:show="showMoreMenu" position="top" :style="{ width:'160px', top:'calc(env(safe-area-inset-top,0px)+48px)', right:'8px', borderRadius:'14px' }" overlay-class="no-overlay">
       <div class="more-menu">
-        <div v-for="item in [{key:'import',icon:'down',label:'导入行程'},{key:'batchDelete',icon:'delete-o',label:'批量删除'},{key:'export',icon:'share-o',label:'导出行程'},{key:'settings',icon:'setting-o',label:'行程设置'}]" :key="item.key" class="more-item" @click="handleMoreAction(item.key)"><van-icon :name="item.icon" size="16" color="#64748B" /><span>{{ item.label }}</span></div>
+        <div v-for="item in [{key:'import',icon:'down',label:'导入行程'},{key:'batchDelete',icon:'delete-o',label:'批量删除'},{key:'export',icon:'share-o',label:'导出行程'},{key:'settings',icon:'setting-o',label:'行程设置'}]" :key="item.key" class="more-item" @click="handleMoreAction(item.key)"><van-icon :name="item.icon" size="16" color="var(--text-secondary)" /><span>{{ item.label }}</span></div>
       </div>
     </van-popup>
 
@@ -313,7 +313,7 @@ onUnmounted(() => { stopCarousel() })
               <div id="nearby-map-container" class="nearby-map-box"></div>
               <div class="nearby-map-controls">
                 <button class="nearby-ctrl-btn" @click="relocate" :disabled="locatingUser"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
-                <button class="nearby-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="#64748B" /></button>
+                <button class="nearby-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="var(--text-secondary)" /></button>
               </div>
             </div>
             <div class="nearby-bottom-panel">
@@ -355,7 +355,7 @@ onUnmounted(() => { stopCarousel() })
         <div v-if="hasTrips" class="trips-list-section">
           <div class="page-content">
             <div v-if="isLoading" class="skeleton-list"><div v-for="i in 2" :key="i" class="trip-card-skeleton"><div class="sk-row sk-row-title" /><div class="sk-row sk-row-info" /><div class="sk-row sk-row-attract" /></div></div>
-            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="#94A3B8" /><p class="error-text">加载失败</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">重试</van-button></div>
+            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">加载失败</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">重试</van-button></div>
             <template v-else>
               <div class="guide-zone">
                 <div class="guide-line" />
@@ -408,7 +408,7 @@ onUnmounted(() => { stopCarousel() })
 .trips-scroll { flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
 .trips-inner { max-width:480px; margin:0 auto; padding:0 20px; }
 :deep(.nav-bar) { background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.55) 100%),rgba(255,255,255,0.6) !important; backdrop-filter:blur(22px) saturate(180%); -webkit-backdrop-filter:blur(22px) saturate(180%); border-bottom:0.5px solid rgba(255,255,255,0.55) !important; box-shadow:inset 0 1px 0 rgba(255,255,255,0.65) !important; }
-:deep(.nav-bar .van-nav-bar__title) { color:#1E293B; font-weight:600; }
+:deep(.nav-bar .van-nav-bar__title) { color:var(--text-primary); font-weight:600; }
 .nav-title { font-size:17px; }
 .nav-actions { display:flex; gap:4px; }
 .nav-btn { width:40px; height:40px; min-width:40px; min-height:40px; border-radius:50%; background:rgba(139,92,246,0.08); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s; }
@@ -454,38 +454,38 @@ onUnmounted(() => { stopCarousel() })
 
 .nearby-full-page { display:flex; flex-direction:column; height:100%; width:100%; background:#f5f3fa; }
 .nearby-topbar { flex-shrink:0; display:flex; align-items:center; gap:12px; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top, 0px)); background:#fff; border-bottom:1px solid #f0edf5; }
-.nearby-topbar-title { font-size:17px; font-weight:700; color:#1E293B; flex:1; }
+.nearby-topbar-title { font-size:17px; font-weight:700; color:var(--text-primary); flex:1; }
 .nearby-loc-text { font-size:11px; color:#8B5CF6; font-weight:500; }
 .nearby-map-wrap { flex:1; position:relative; min-height:0; }
-.nearby-locating { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.9); font-size:14px; color:#64748B; }
+.nearby-locating { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.9); font-size:14px; color:var(--text-secondary); }
 .nearby-map-box { width:100%; height:100%; }
 .nearby-map-controls { position:absolute; right:12px; top:12px; z-index:20; display:flex; flex-direction:column; gap:8px; }
 .nearby-ctrl-btn { width:38px; height:38px; border-radius:50%; border:none; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .nearby-ctrl-btn:active { transform:scale(0.92); }
 .nearby-bottom-panel { flex-shrink:0; max-height:40%; background:#fff; border-radius:20px 20px 0 0; box-shadow:0 -4px 20px rgba(0,0,0,0.06); display:flex; flex-direction:column; overflow:hidden; }
 .nearby-radius-bar { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid #f0edf5; }
-.nearby-radius-label { font-size:13px; color:#64748B; font-weight:500; }
+.nearby-radius-label { font-size:13px; color:var(--text-secondary); font-weight:500; }
 .nearby-radius-options { display:flex; gap:8px; }
-.nearby-radius-btn { padding:6px 14px; border-radius:16px; border:1px solid #E2E8F0; background:#fff; font-size:12px; color:#64748B; cursor:pointer; font-weight:500; }
+.nearby-radius-btn { padding:6px 14px; border-radius:16px; border:1px solid #E2E8F0; background:#fff; font-size:12px; color:var(--text-secondary); cursor:pointer; font-weight:500; }
 .nearby-radius-btn.active { background:#8B5CF6; color:#fff; border-color:#8B5CF6; }
-.nearby-loading-row { display:flex; align-items:center; justify-content:center; gap:8px; padding:20px; font-size:13px; color:#94A3B8; }
+.nearby-loading-row { display:flex; align-items:center; justify-content:center; gap:8px; padding:20px; font-size:13px; color:var(--text-hint); }
 .nearby-attraction-list { flex:1; overflow:hidden; display:flex; flex-direction:column; }
 .nearby-list-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 8px; }
-.nearby-list-head span:first-child { font-size:15px; font-weight:700; color:#1E293B; }
+.nearby-list-head span:first-child { font-size:15px; font-weight:700; color:var(--text-primary); }
 .nearby-count { font-size:12px; color:#8B5CF6; font-weight:500; }
-.nearby-empty { display:flex; flex-direction:column; align-items:center; gap:8px; padding:30px; font-size:13px; color:#94A3B8; }
+.nearby-empty { display:flex; flex-direction:column; align-items:center; gap:8px; padding:30px; font-size:13px; color:var(--text-hint); }
 .nearby-scroll-list { flex:1; overflow-y:auto; padding:0 16px 16px; -webkit-overflow-scrolling:touch; }
 .nearby-attr-card { display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:8px; background:#faf8ff; border-radius:14px; cursor:pointer; transition:background 0.15s; }
 .nearby-attr-card:active { background:#f0edfa; }
 .nearby-attr-index { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg, #8B5CF6, #6366F1); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .nearby-attr-info { flex:1; min-width:0; }
-.nearby-attr-name { font-size:14px; font-weight:600; color:#1E293B; margin-bottom:2px; }
-.nearby-attr-addr { font-size:11px; color:#94A3B8; display:flex; align-items:center; gap:3px; margin-bottom:2px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.nearby-attr-name { font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:2px; }
+.nearby-attr-addr { font-size:11px; color:var(--text-hint); display:flex; align-items:center; gap:3px; margin-bottom:2px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .nearby-attr-rating { font-size:11px; color:#F59E0B; }
 :deep(.nearby-leaflet-label) { background:#8B5CF6 !important; border:none !important; border-radius:4px !important; padding:1px 6px !important; font-size:10px !important; color:#fff !important; font-weight:500 !important; box-shadow:0 1px 3px rgba(0,0,0,0.15) !important; }
 
 .sec-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 2px; }
-.sec-title { font-size:16px; font-weight:700; color:#1E293B; }
+.sec-title { font-size:16px; font-weight:700; color:var(--text-primary); }
 .sec-more { font-size:13px; color:#8B5CF6; cursor:pointer; font-weight:500; }
 .sec-more:active { opacity:0.6; }
 .sec-guide-label { font-size:10px; color:#8B5CF6; background:rgba(139,92,246,0.08); padding:2px 8px; border-radius:8px; font-weight:500; margin-left:auto; margin-right:8px; }
@@ -497,7 +497,7 @@ onUnmounted(() => { stopCarousel() })
 .guide-card-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
 .guide-card-img-placeholder { position:absolute; inset:0; z-index:0; display:flex; align-items:center; justify-content:center; background:rgba(139,92,246,0.04); }
 .guide-card-body { padding:10px; }
-.guide-card-name { font-size:13px; font-weight:600; color:#1E293B; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.guide-card-name { font-size:13px; font-weight:600; color:var(--text-primary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .guide-card-meta { font-size:11px; color:#F59E0B; margin-top:2px; }
 
 .templates-section { margin-bottom:18px; }
@@ -515,7 +515,7 @@ onUnmounted(() => { stopCarousel() })
 .page-content { padding:0; }
 
 .error-state { display:flex; flex-direction:column; align-items:center; padding:60px 20px; text-align:center; }
-.error-text { font-size:15px; color:#94A3B8; margin:12px 0 16px; }
+.error-text { font-size:15px; color:var(--text-hint); margin:12px 0 16px; }
 .retry-btn { border-radius:20px !important; color:#7C3AED !important; border-color:#C4B5FD !important; }
 .skeleton-list { padding:12px 0; display:flex; flex-direction:column; gap:12px; }
 .trip-card-skeleton { background:#fff; border-radius:18px; padding:20px; box-shadow:0 4px 18px rgba(0,0,0,0.04); transform:translateZ(0); }
@@ -533,11 +533,11 @@ onUnmounted(() => { stopCarousel() })
 .trip-s-badge { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg, #6366F1, #4F46E5); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .trip-s-badge--home { background:linear-gradient(135deg, #F59E0B, #D97706); }
 .trip-s-letter { color:#fff; font-size:13px; font-weight:700; line-height:1; }
-.trip-card-label { font-size:13px; color:#64748B; font-weight:500; flex:1; }
+.trip-card-label { font-size:13px; color:var(--text-secondary); font-weight:500; flex:1; }
 .trip-status-tag { font-size:11px; padding:2px 10px; border-radius:10px; font-weight:600; flex-shrink:0; }
-.trip-card-title { font-size:16px; font-weight:700; color:#1E293B; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.trip-card-route { font-size:12px; color:#64748B; line-height:1.65; padding:8px 12px; background:#f8f7ff; border-radius:10px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; line-clamp:3; -webkit-box-orient:vertical; }
-.trip-card-meta { font-size:12px; color:#94A3B8; line-height:1.5; }
+.trip-card-title { font-size:16px; font-weight:700; color:var(--text-primary); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.trip-card-route { font-size:12px; color:var(--text-secondary); line-height:1.65; padding:8px 12px; background:#f8f7ff; border-radius:10px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; line-clamp:3; -webkit-box-orient:vertical; }
+.trip-card-meta { font-size:12px; color:var(--text-hint); line-height:1.5; }
 .trip-card-footer { display:flex; justify-content:center; padding-top:4px; }
 .trip-detail-link { font-size:13px; color:#8B5CF6; font-weight:500; cursor:pointer; padding:4px 0; }
 .trip-detail-link:active { opacity:0.6; }
@@ -582,4 +582,15 @@ onUnmounted(() => { stopCarousel() })
   mask-image: linear-gradient(90deg, #000 0%, #000 85%, transparent 100%);
 }
 .h-scroll::-webkit-scrollbar { display: none; }
+
+/* ==================== 深色模式（B4） ==================== */
+html[data-theme='dark'] .nearby-card { background: var(--bg-card-solid); }
+html[data-theme='dark'] .nearby-mini-placeholder { background: linear-gradient(135deg, var(--bg-glass-strong), var(--bg-glass)); }
+html[data-theme='dark'] .nearby-full-page { background: var(--bg-page); }
+html[data-theme='dark'] .nearby-topbar,
+html[data-theme='dark'] .nearby-bottom-panel { background: var(--bg-card-solid); border-color: var(--glass-border); }
+html[data-theme='dark'] .nearby-locating { background: var(--bg-card-solid); }
+html[data-theme='dark'] .nearby-ctrl-btn { background: var(--bg-card-solid); }
+html[data-theme='dark'] .more-item { color: var(--text-secondary); }
+html[data-theme='dark'] .more-item:active { background: var(--bg-card); }
 </style>

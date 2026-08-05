@@ -150,6 +150,24 @@ const routes = [
     meta: { transition: 'slide-left' },
   },
   {
+    path: '/hotel-booking',
+    name: 'HotelBooking',
+    component: () => import('../views/HotelBookingView.vue'),
+    meta: { transition: 'slide-left' },
+  },
+  {
+    path: '/share/:token',
+    name: 'ShareLanding',
+    component: () => import('../views/ShareLandingView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
+  },
+  {
+    path: '/trip-calendar',
+    name: 'TripCalendar',
+    component: () => import('../views/TripCalendarView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
+  },
+  {
     path: '/favorites',
     name: 'Favorites',
     component: () => import('../views/FavoritesView.vue'),
@@ -273,7 +291,8 @@ router.beforeEach((to, from, next) => {
       next()
     }
   } else {
-    if (whiteList.includes(to.path)) {
+    // 分享落地页公开访问（短链 token）
+    if (whiteList.includes(to.path) || to.path.startsWith('/share/')) {
       next()
     } else {
       localStorage.setItem('redirectUrl', to.fullPath)

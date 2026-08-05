@@ -22,8 +22,28 @@ import EmptyState from '../components/EmptyState.vue'
 import { defineAsyncComponent } from 'vue'
 const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
 import { getAllSessions, deleteSession, switchToSession } from '../utils/chatSession'
+import { useTheme } from '../utils/theme'
+import { useI18n } from 'vue-i18n'
+import { setLanguage } from '../i18n'
 
 const router = useRouter()
+
+/* ==================== 深色模式（B4） ==================== */
+const { themeMode, setTheme } = useTheme()
+const themeOptions = [
+  { value: 'system', labelKey: 'themeSystem' },
+  { value: 'light', labelKey: 'themeLight' },
+  { value: 'dark', labelKey: 'themeDark' },
+]
+const changeTheme = (v) => setTheme(v)
+
+/* ==================== 语言切换（B5 i18n） ==================== */
+const { t, locale } = useI18n()
+const langOptions = [
+  { value: 'zh-CN', label: '中文' },
+  { value: 'en-US', label: 'English' },
+]
+const changeLanguage = (v) => setLanguage(v)
 
 /* ==================== 返回 ==================== */
 const goBack = () => { if (window.history.length <= 1) router.push('/'); else router.back() }
@@ -437,6 +457,32 @@ onDeactivated(() => {
         </div>
       </div>
 
+      <!-- ======== 深色模式 ======== -->
+      <div class="settings-card">
+        <div class="settings-title">{{ t('settings.theme') }}</div>
+        <div class="theme-options">
+          <button
+            v-for="opt in themeOptions"
+            :key="opt.value"
+            :class="['theme-opt', { active: themeMode === opt.value }]"
+            @click="changeTheme(opt.value)"
+          >{{ t(`settings.${opt.labelKey}`) }}</button>
+        </div>
+      </div>
+
+      <!-- ======== 语言切换 ======== -->
+      <div class="settings-card">
+        <div class="settings-title">{{ t('settings.language') }}</div>
+        <div class="theme-options">
+          <button
+            v-for="opt in langOptions"
+            :key="opt.value"
+            :class="['theme-opt', { active: locale === opt.value }]"
+            @click="changeLanguage(opt.value)"
+          >{{ opt.label }}</button>
+        </div>
+      </div>
+
       <!-- ======== 退出登录 ======== -->
       <div v-if="isLoggedIn" class="logout-wrap">
         <button class="logout-btn btn-tap-scale" @click="handleLogout">退出登录</button>
@@ -588,7 +634,7 @@ onDeactivated(() => {
   border: 1px solid rgba(255,255,255,0.65);
 }
 .sec-head { margin-bottom: 14px; }
-.sec-title { font-size: 16px; font-weight: 700; color: #1E293B; }
+.sec-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
 
 /* ==================== 快捷操作 ==================== */
 .quick-row { display: flex; justify-content: space-around; }
@@ -619,12 +665,35 @@ onDeactivated(() => {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .svc-text { display: flex; flex-direction: column; }
-.svc-name { font-size: 15px; font-weight: 500; color: #1E293B; }
-.svc-desc { font-size: 12px; color: #94A3B8; margin-top: 2px; }
+.svc-name { font-size: 15px; font-weight: 500; color: var(--text-primary); }
+.svc-desc { font-size: 12px; color: var(--text-hint); margin-top: 2px; }
 .svc-right { display: flex; align-items: center; gap: 8px; }
 
 /* ==================== 退出登录 ==================== */
 .logout-wrap { padding: 4px 0; }
+
+/* 深色模式设置卡 */
+.settings-card {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(16px);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.04);
+}
+.settings-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
+.theme-options { display: flex; gap: 8px; }
+.theme-opt {
+  flex: 1; padding: 8px 0; border: 1px solid #E2E8F0; border-radius: 12px;
+  background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s;
+}
+.theme-opt.active {
+  background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  border-color: transparent; color: #fff; font-weight: 600;
+  box-shadow: 0 4px 12px rgba(139,92,246,0.25);
+}
 .logout-btn {
   width: 100%; padding: 14px; border: none; border-radius: 18px;
   background: linear-gradient(135deg, #FECACA 0%, #FCA5A5 100%);
@@ -649,16 +718,16 @@ onDeactivated(() => {
 
 .invite-pop { padding: 28px 20px 22px; position: relative; background: #fff; border-radius: 22px; }
 .invite-head { text-align: center; margin-bottom: 16px; }
-.invite-head h3 { font-size: 18px; font-weight: 700; color: #1E293B; margin: 10px 0 6px; }
-.invite-head p { font-size: 13px; color: #94A3B8; }
+.invite-head h3 { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 10px 0 6px; }
+.invite-head p { font-size: 13px; color: var(--text-hint); }
 .invite-link-box { background: #F8FAFC; border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; }
-.invite-link { font-size: 12px; color: #64748B; word-break: break-all; flex:1; min-width:0; }
+.invite-link { font-size: 12px; color: var(--text-secondary); word-break: break-all; flex:1; min-width:0; }
 .invite-pop .share-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; }
 .invite-pop .share-option { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
 .invite-pop .share-option:active { transform: scale(0.9); }
 .invite-pop .share-icon-circle { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
 .invite-pop .share-label { font-size: 11px; color: #64748b; }
-.invite-close { position: absolute; top: 14px; right: 14px; cursor: pointer; color: #94A3B8; }
+.invite-close { position: absolute; top: 14px; right: 14px; cursor: pointer; color: var(--text-hint); }
 
 /*
  * ================================================================
@@ -694,16 +763,16 @@ onDeactivated(() => {
 .conv-accent { width:4px; min-width:4px; align-self:stretch; background:linear-gradient(180deg,#A78BFA,#8B5CF6,#6366F1); border-radius:2px 0 0 2px; }
 .conv-info { flex:1; min-width:0; padding:16px 0; cursor:pointer; }
 .conv-top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; }
-.conv-title { font-size:15px; font-weight:600; color:#1E293B; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
-.conv-time { font-size:11px; color:#94A3B8; flex-shrink:0; }
-.conv-preview { font-size:13px; color:#64748B; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.conv-title { font-size:15px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.conv-time { font-size:11px; color:var(--text-hint); flex-shrink:0; }
+.conv-preview { font-size:13px; color:var(--text-secondary); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .conv-actions { display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px 12px 16px 0; flex-shrink:0; }
 .conv-arrow { cursor:pointer; padding:4px; border-radius:50%; }
 .conv-delete { cursor:pointer; padding:4px; border-radius:50%; }
 .empty-conv-wrap { margin:8px 0; }
 .empty-notif { display:flex; flex-direction:column; align-items:center; padding:32px 20px 24px; text-align:center; }
 .empty-notif-title { font-size:16px; font-weight:600; color:#475569; margin:0 0 6px; }
-.empty-notif-hint { font-size:12px; color:#94A3B8; margin:0; }
+.empty-notif-hint { font-size:12px; color:var(--text-hint); margin:0; }
 .notif-list { display:flex; flex-direction:column; gap:10px; }
 .notif-item { display:flex; align-items:flex-start; gap:12px; padding:16px; background:linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.65); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:20px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 2px 10px rgba(0,0,0,0.03); border:1px solid rgba(255,255,255,0.6); cursor:pointer; }
 .notif-item.unread { border-left:3px solid #8B5CF6; }
@@ -712,7 +781,19 @@ onDeactivated(() => {
 .notif-dot { position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#EF4444; border-radius:50%; border:2px solid #fff; }
 .notif-body { flex:1; min-width:0; }
 .notif-top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:8px; }
-.notif-title { font-size:15px; font-weight:600; color:#1E293B; }
-.notif-time { font-size:11px; color:#94A3B8; flex-shrink:0; }
-.notif-preview { font-size:13px; color:#64748B; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.notif-title { font-size:15px; font-weight:600; color:var(--text-primary); }
+.notif-time { font-size:11px; color:var(--text-hint); flex-shrink:0; }
+.notif-preview { font-size:13px; color:var(--text-secondary); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* ==================== 深色模式（B4） ==================== */
+html[data-theme='dark'] .section-card,
+html[data-theme='dark'] .settings-card {
+  background: var(--bg-card);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+html[data-theme='dark'] .svc-item { background: transparent; }
+html[data-theme='dark'] .svc-name { color: var(--text-primary); }
+html[data-theme='dark'] .svc-desc { color: var(--text-secondary); }
+html[data-theme='dark'] .quick-block-label { color: var(--text-secondary); }
+html[data-theme='dark'] .theme-opt:not(.active) { color: var(--text-secondary); border-color: var(--glass-border); background: var(--bg-card); }
 </style>

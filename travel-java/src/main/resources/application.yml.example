@@ -68,6 +68,26 @@ ai:
     api-key: ${AI_IMAGE_API_KEY:}
     timeout: ${AI_IMAGE_TIMEOUT:30000}
 
+# 第三方支付对接层（可配置 + 模拟实现）
+payment:
+  provider: ${PAYMENT_PROVIDER:mock}
+  mock:
+    secret: ${PAYMENT_MOCK_SECRET:dev-mock-secret}
+  alipay:
+    app-id: ${ALIPAY_APP_ID:}
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    public-key: ${ALIPAY_PUBLIC_KEY:}
+    notify-url: ${ALIPAY_NOTIFY_URL:}
+  wechat:
+    app-id: ${WECHAT_APP_ID:}
+    mch-id: ${WECHAT_MCH_ID:}
+    api-key: ${WECHAT_API_KEY:}
+    notify-url: ${WECHAT_NOTIFY_URL:}
+
+# 酒店预订配置
+hotel:
+  mock-full: ${HOTEL_MOCK_FULL:false}
+
 # ============================================
 # 环境变量配置说明
 # ============================================

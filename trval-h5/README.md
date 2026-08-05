@@ -182,7 +182,9 @@ trval-h5/
 │   │   ├── security.js               # XSS 防护
 │   │   ├── streamRequest.js          # SSE 流式请求
 │   │   ├── tabBarHide.js             # Tab 栏全局显隐控制
-│   │   └── userAccountStorage.js     # 多账户数据隔离
+│   │   ├── userAccountStorage.js     # 多账户数据隔离
+│   │   ├── theme.js                  # 🆕 深色模式主题管理（跟随系统/手动）
+│   │   └── geocode.js                # 🆕 行程坐标补齐（marker→缓存→地理编码）
 │   ├── views/                        # 页面组件
 │   │   ├── HomeView.vue              # 首页（山水 Banner + AI 规划 + 信息流）
 │   │   ├── CommunityView.vue         # 社区（山水 Banner + 图片网格 + 视频内联）
@@ -226,19 +228,19 @@ Tab 3: 我的 (/profile)      — 山水 Banner、统计、AI 对话记录、服
 - [x] 统一滑动指示器（登录/收藏/订单）
 - [x] 底部弹窗浮层化
 - [x] GPU 性能优化
-- [ ] 深色模式
-- [ ] PWA 离线支持
+- [x] 深色模式（跟随系统/手动切换，主路径已适配）
+- [x] PWA 离线支持（manifest 修正 + 离线兜底页 + API/瓦片缓存）
 
 ### 中期目标
-- [ ] RAG 知识库整合旅游攻略
-- [ ] 酒店预订对接
-- [ ] 行程日历视图
-- [ ] 行程分享功能
+- [x] RAG 知识库整合旅游攻略（Agent 内置语料 + 本地向量检索）
+- [x] 酒店预订对接（可配置对接层 + 模拟实现）
+- [x] 行程日历视图（按天日程卡 + 日期条）
+- [x] 行程分享功能（短链 + 落地页 + Canvas 海报）
 
 ### 长期目标
-- [ ] 多语言国际化
-- [ ] 接入第三方支付
-- [ ] 离线地图功能
+- [x] 多语言国际化（vue-i18n + 中/英 + 切换入口，核心界面已抽取）
+- [x] 接入第三方支付（统一 PaymentProvider + Mock/Real 双实现）
+- [x] 离线地图功能（workbox 瓦片缓存 + 离线开关强制 Leaflet）
 
 ## 📄 许可证
 

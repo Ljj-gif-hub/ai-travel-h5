@@ -130,3 +130,27 @@ map:
   amap:
     web-key: ${AMAP_WEB_KEY:}                                          # 高德 Web 服务 API Key（通过环境变量注入，未设置则地图不可用）
     js-key: ${AMAP_JS_KEY:}        # 高德 JS API v2.0 Key（前端加载地图用，为空则回退到 web-key）
+
+# ================================================================
+# 第三方支付对接层（可配置 + 模拟实现）
+#   provider: mock | alipay | wechat
+#   未配置真实商户密钥时默认走 mock（模拟支付），填 Key 后改 provider 即切换真实渠道
+# ================================================================
+payment:
+  provider: ${PAYMENT_PROVIDER:mock}
+  mock:
+    secret: ${PAYMENT_MOCK_SECRET:dev-mock-secret}
+  alipay:
+    app-id: ${ALIPAY_APP_ID:}
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    public-key: ${ALIPAY_PUBLIC_KEY:}
+    notify-url: ${ALIPAY_NOTIFY_URL:}
+  wechat:
+    app-id: ${WECHAT_APP_ID:}
+    mch-id: ${WECHAT_MCH_ID:}
+    api-key: ${WECHAT_API_KEY:}
+    notify-url: ${WECHAT_NOTIFY_URL:}
+
+# 酒店预订配置
+hotel:
+  mock-full: ${HOTEL_MOCK_FULL:false}

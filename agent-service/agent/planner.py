@@ -24,6 +24,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 from .schemas import TripPlanOutput, AgentEvent
+from .knowledge import create_knowledge_provider
 
 
 def _to_int(value, default=0) -> int:
@@ -105,6 +106,8 @@ class TravelAgentPlanner:
         self.plan_data: Optional[Dict[str, Any]] = None
         self.budget_ok = True
         self._has_llm = bool(os.getenv("LLM_API_KEY", ""))
+        # RAG 知识库检索器（内置攻略 / 未来外部语料库）
+        self.knowledge = create_knowledge_provider()
 
     # ==================== 流式主循环 ====================
 
@@ -693,8 +696,10 @@ class TravelAgentPlanner:
         research_text = research.get("summary", "")
         # 记忆层上下文（长期偏好 + 会话记忆）注入规划 prompt
         context_memory = (context or {}).get("memory_block", "")
+        # RAG 攻略知识注入：内置知识库按目的地检索，未命中则为空串，不影响主流程
+        guide_context = self.knowledge.build_context(destination, query=" ".join(styles) if styles else "")
 
-        plan_prompt = f"""{context_memory}你是携程旅行资深规划师，为用户生成可直接展示的深度旅行方案。
+        plan_prompt = f"""{context_memory}{guide_context}你是携程旅行资深规划师，为用户生成可直接展示的深度旅行方案。
 
 ## 调研信息
 {research_text}
@@ -954,6 +959,10 @@ class TravelAgentPlanner:
                 f"酒店价格参考 {datetime.now().strftime('%Y年%m月')} 市场行情",
                 "门票价格为参考价，以景区当日公示为准",
             ]
+        # 追加本地攻略来源说明（RAG 知识库）
+        knowledge_src = getattr(self.knowledge, "source_name", "")
+        if knowledge_src:
+            plan["research_notes"].append(f"攻略参考：{knowledge_src}（{destination} 本地攻略）")
 
         return plan
 

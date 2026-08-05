@@ -105,7 +105,7 @@ const handlePeopleBlur = (e) => {
 const quickEntries = [
   { name: 'AI对话', icon: 'chat-o', color: '#8B5CF6', path: '/messages' },
   { name: '机票预订', icon: 'plane-o', color: '#34D399', path: '/orders' },
-  { name: '酒店预订', icon: 'hotel-o', color: '#F59E0B', path: '/orders' },
+  { name: '酒店预订', icon: 'hotel-o', color: '#F59E0B', path: '/hotel-booking' },
   { name: '景点门票', icon: 'orders-o', color: '#FB7185', path: '/orders' },
   { name: '美食攻略', icon: 'star-o', color: '#F97316', path: '/destinations' },
   { name: '游记社区', icon: 'file-text-o', color: '#3B82F6', path: '/notes' },
@@ -1010,7 +1010,7 @@ onUnmounted(() => {
           </div>
           <span class="more-products-text">更多产品和服务</span>
         </div>
-        <van-icon name="arrow" size="14" color="#94A3B8" />
+        <van-icon name="arrow" size="14" color="var(--text-hint)" />
       </div>
     </div>
 
@@ -1121,7 +1121,7 @@ onUnmounted(() => {
                     <span>{{ note.author.nickname }}</span>
                   </div>
                   <div class="ctrip-card-views">
-                    <van-icon name="eye-o" size="12" color="#94A3B8" />
+                    <van-icon name="eye-o" size="12" color="var(--text-hint)" />
                     <span>{{ formatNumber(note.viewCount) }}阅读</span>
                   </div>
                 </div>
@@ -1185,7 +1185,7 @@ onUnmounted(() => {
                     <span>{{ note.author.nickname }}</span>
                   </div>
                   <div class="ctrip-card-views">
-                    <van-icon name="eye-o" size="12" color="#94A3B8" />
+                    <van-icon name="eye-o" size="12" color="var(--text-hint)" />
                     <span>{{ formatNumber(note.viewCount) }}阅读</span>
                   </div>
                 </div>
@@ -1243,7 +1243,7 @@ onUnmounted(() => {
     <van-popup v-model:show="showMoreProducts" position="bottom" round safe-area-inset-bottom :style="{ maxHeight: '60vh' }">
       <div class="more-popup-header">
         <span class="more-popup-title">更多产品</span>
-        <van-icon name="cross" size="20" color="#94A3B8" @click="showMoreProducts = false" />
+        <van-icon name="cross" size="20" color="var(--text-hint)" @click="showMoreProducts = false" />
       </div>
       <div class="more-popup-grid">
         <div
@@ -1273,9 +1273,9 @@ onUnmounted(() => {
   --primary: #8B5CF6;
   --primary-2: #6366F1;
   --primary-3: #5B8DEF;
-  --text-primary: #1E293B;
-  --text-secondary: #64748B;
-  --text-hint: #94A3B8;
+  --text-primary: var(--text-primary);
+  --text-secondary: var(--text-secondary);
+  --text-hint: var(--text-hint);
   --card-bg: rgba(255, 255, 255, 0.58);
   --card-radius: 18px;
   --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
@@ -1466,7 +1466,7 @@ onUnmounted(() => {
   margin-right: -4px;
   border: 2px solid #fff;
 }
-.more-products-text { font-size: 12px; color: #94A3B8; font-weight: 500; }
+.more-products-text { font-size: 12px; color: var(--text-hint); font-weight: 500; }
 
 /* ==================== 横向滚动容器 ==================== */
 .h-scroll {
@@ -1610,12 +1610,12 @@ onUnmounted(() => {
 .plan-title {
   font-size: 17px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--text-primary);
   line-height: 1.3;
 }
 .plan-subtitle {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--text-hint);
   margin-top: 1px;
 }
 
@@ -1658,10 +1658,10 @@ onUnmounted(() => {
 }
 .plan-search-wrap :deep(.edge-inp) {
   font-size: 14px;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 .plan-search-wrap :deep(.edge-inp::placeholder) {
-  color: #94A3B8;
+  color: var(--text-hint);
 }
 .plan-loc-btn {
   flex-shrink: 0;
@@ -1692,7 +1692,7 @@ onUnmounted(() => {
   border: 1px solid rgba(255,255,255,0.55);
   border-radius: 14px;
   font-size: 12px;
-  color: #64748B;
+  color: var(--text-secondary);
   cursor: pointer;
   font-weight: 500;
   transition: all 0.2s;
@@ -1740,7 +1740,7 @@ onUnmounted(() => {
 }
 .plan-meta-label {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--text-hint);
   flex-shrink: 0;
 }
 .plan-meta-input {
@@ -1750,7 +1750,7 @@ onUnmounted(() => {
   background: transparent;
   font-size: 15px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--text-primary);
   text-align: center;
   padding: 0;
 }
@@ -1761,7 +1761,7 @@ onUnmounted(() => {
 }
 .plan-meta-unit {
   font-size: 11px;
-  color: #94A3B8;
+  color: var(--text-hint);
   font-weight: 500;
 }
 
@@ -1788,8 +1788,8 @@ onUnmounted(() => {
 
 /* ==================== 通用区块头 ==================== */
 .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.sec-title { font-size: 16px; font-weight: 700; color: #1E293B; }
-.sec-more { font-size: 12px; color: #94A3B8; cursor: pointer; display: flex; align-items: center; gap: 2px; }
+.sec-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.sec-more { font-size: 12px; color: var(--text-hint); cursor: pointer; display: flex; align-items: center; gap: 2px; }
 .sec-more:active { opacity: 0.6; }
 
 /* ==================== 热门目的地卡片 ==================== */
@@ -1872,11 +1872,11 @@ onUnmounted(() => {
 .ctrip-section-title {
   font-size: 18px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 .ctrip-section-more {
   font-size: 13px;
-  color: #64748B;
+  color: var(--text-secondary);
 }
 
 /* 导航筛选栏 */
@@ -1895,14 +1895,14 @@ onUnmounted(() => {
 }
 
 .ctrip-nav-filter .ctrip-city-selector:active { transform: scale(0.96); background: #f1f5f9; }
-.ctrip-nav-filter .ctrip-city-text { font-size: 13px; font-weight: 600; color: #1E293B; }
+.ctrip-nav-filter .ctrip-city-text { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .ctrip-nav-filter .ctrip-center-tabs {
   flex: 1; display: flex; justify-content: center; gap: 6px;
   background: #f8fafc; border-radius: 16px; padding: 4px;
 }
 .ctrip-nav-filter .ctrip-tab-chip {
   flex: 1; text-align: center; padding: 6px 0; border-radius: 13px;
-  font-size: 13px; font-weight: 500; color: #64748B;
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
   cursor: pointer; transition: all 0.3s ease; user-select: none;
 }
 .ctrip-nav-filter .ctrip-tab-chip.active {
@@ -2100,7 +2100,7 @@ onUnmounted(() => {
 }
 .ctrip-card-title {
   font-size: 13px;
-  color: #1E293B;
+  color: var(--text-primary);
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -2127,7 +2127,7 @@ onUnmounted(() => {
 }
 .ctrip-card-author span {
   font-size: 11px;
-  color: #64748B;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2142,16 +2142,16 @@ onUnmounted(() => {
 }
 .ctrip-card-views span {
   font-size: 10px;
-  color: #94A3B8;
+  color: var(--text-hint);
 }
 
 /* 加载更多 */
-.ctrip-loading-more, .ctrip-no-more { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 20px 0; font-size: 13px; color: #94A3B8; }
+.ctrip-loading-more, .ctrip-no-more { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 20px 0; font-size: 13px; color: var(--text-hint); }
 .ctrip-no-more { font-size: 12px; }
 
 /* Vant 组件覆盖 */
 .ctrip-comment-field :deep(.van-field__control) { font-size: 13px; color: #334155; }
-.ctrip-comment-field :deep(.van-field__control::placeholder) { color: #94A3B8; }
+.ctrip-comment-field :deep(.van-field__control::placeholder) { color: var(--text-hint); }
 .ctrip-comment-field :deep(.van-cell) { padding: 0 !important; }
 .ctrip-skeleton-card :deep(.van-skeleton) { padding: 6px 0; }
 
@@ -2210,7 +2210,7 @@ onUnmounted(() => {
 .more-popup-title {
   font-size: 18px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 .more-popup-grid {
@@ -2367,4 +2367,21 @@ onUnmounted(() => {
     max-width: 180px;
   }
 }
+/* ==================== 深色模式（B4） ==================== */
+html[data-theme='dark'] .section-card,
+html[data-theme='dark'] .plan-card {
+  background: var(--bg-card);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+html[data-theme='dark'] .ctrip-note-card {
+  background: var(--bg-card-solid);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+html[data-theme='dark'] .ctrip-card-title { color: var(--text-primary); }
+html[data-theme='dark'] .ctrip-card-views,
+html[data-theme='dark'] .event-title { color: var(--text-secondary); }
+html[data-theme='dark'] .quick-item,
+html[data-theme='dark'] .dest-card { background: var(--bg-card); }
 </style>

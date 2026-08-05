@@ -101,6 +101,39 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.2 — 2026-08-05）
+
+### 🏨 酒店预订对接（可配置对接层）
+- 后端 `POST /api/hotel/book`：校验酒店/日期 → 报价 → 创建 hotel 订单（pending）
+- 前端「酒店预订」页（`/hotel-booking`）：城市切换 + 酒店列表 + 入住/晚数/间数
+- 配置 `hotel.mock-full` 模拟满房校验；后续可扩展真实房态对接
+
+### 💳 第三方支付对接层（Mock / Real 双实现）
+- `PaymentProvider` 接口 + `MockPaymentProvider`（默认）/ `RealPaymentProvider`（支付宝/微信骨架）
+- `POST /api/payment/create`、`POST /api/payment/notify`（幂等回调）、`GET /api/payment/mock-pay`
+- Order 新增 `payChannel / payTradeNo / paidAt` 三字段；填商户密钥改 `payment.provider` 即切真实渠道
+
+### 🧭 Agent RAG 知识库（agent-service）
+- 内置 6 城旅游攻略语料（`agent/knowledge/*.md`）+ 纯 Python 字符级 bigram TF-IDF 检索（零新依赖）
+- 规划 Prompt 注入「本地攻略参考」，`research_notes` 追加来源
+- `KnowledgeProvider` 接口 + `KNOWLEDGE_SOURCE=builtin|remote`，预留外部语料库接入
+
+### 📅 行程日历视图 + 🔗 行程分享闭环
+- 日历视图（`/trip-calendar`）：按天日程卡 + 日期条，入口在行程地图顶栏
+- 分享闭环：后端 8 位短链 + 公开只读快照 → 前端 `navigator.share` / 复制链接 + Canvas 海报 + 免登录落地页（`/share/:token`）
+
+### 🌙 深色模式
+- 全局 token 体系 + `[data-theme]` 覆盖 + 跟随系统/手动切换（`Profile` 设置）
+- Vant 组件 `van-config-provider theme="dark"` 接管；主路径视图（4 Tab + 行程 + 聊天）已适配
+
+### 🌐 多语言国际化 + 📡 PWA 离线 + 🗺️ 离线地图
+- i18n：vue-i18n + 中/英文案 + 切换入口（核心界面已抽取，Vant 文案联动）
+- PWA：manifest `start_url/scope` 修正为相对路径 + 离线兜底页 `offline.html` + navigateFallback
+- 离线地图：workbox OSM 瓦片 CacheFirst 缓存 + Leaflet 本地打包 + 地图页「离线」开关强制 Leaflet
+
+### 🔧 其他
+- 行程坐标补齐：保存前自动地理编码（marker→缓存→高德 geocode），随 planJson 持久化
+
 ## 🆕 最近更新（v4.1 — 2026-08-05）
 
 ### 🤖 Agent 记忆层（agent-service）

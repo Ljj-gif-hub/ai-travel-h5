@@ -2,13 +2,19 @@ package org.example.traveljava.controller;
 
 import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.entity.Hotel;
+import org.example.traveljava.entity.Order;
 import org.example.traveljava.service.HotelService;
+import org.example.traveljava.service.OrderService;
+import org.example.traveljava.util.AuthUtils;
+import org.example.traveljava.util.JwtUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,9 +30,13 @@ public class HotelController {
     private static final Logger log = LoggerFactory.getLogger(HotelController.class);
 
     private final HotelService hotelService;
+    private final OrderService orderService;
+    private final JwtUtil jwtUtil;
 
-    public HotelController(HotelService hotelService) {
+    public HotelController(HotelService hotelService, OrderService orderService, JwtUtil jwtUtil) {
         this.hotelService = hotelService;
+        this.orderService = orderService;
+        this.jwtUtil = jwtUtil;
     }
 
     /**
@@ -114,6 +124,61 @@ public class HotelController {
         } catch (Exception e) {
             log.error("酒店详情查询异常：id={}", id, e);
             return Result.fail("获取酒店详情失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 酒店预订接口（需登录）
+     * 校验酒店与日期 → 计算报价 → 创建 hotel 类型订单（pending）
+     *
+     * @param body {hotelId, checkIn(yyyy-MM-dd), checkOut(yyyy-MM-dd), rooms}
+     * @return 订单摘要
+     */
+    @PostMapping("/book")
+    @RateLimit(max = 10, duration = 60, key = "hotel_book")
+    public Result<Map<String, Object>> book(@RequestHeader("Authorization") String authHeader,
+                                            @RequestBody Map<String, Object> body) {
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        try {
+            Object hotelIdObj = body.get("hotelId");
+            if (hotelIdObj == null) {
+                return Result.fail("缺少酒店ID");
+            }
+            Long hotelId = ((Number) hotelIdObj).longValue();
+            LocalDate checkIn = LocalDate.parse((String) body.get("checkIn"));
+            LocalDate checkOut = LocalDate.parse((String) body.get("checkOut"));
+            int rooms = body.get("rooms") == null ? 1 : ((Number) body.get("rooms")).intValue();
+
+            Map<String, Object> quote = hotelService.bookHotel(hotelId, checkIn, checkOut, rooms);
+            Hotel hotel = (Hotel) quote.get("hotel");
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("type", "hotel");
+            params.put("hotelName", hotel.getName());
+            params.put("checkInTime", checkIn.atStartOfDay());
+            params.put("checkOutTime", checkOut.atStartOfDay());
+            params.put("price", quote.get("totalPrice"));
+            params.put("quantity", rooms);
+            Order order = orderService.createOrder(userId, params);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("orderId", order.getId());
+            result.put("orderNo", order.getOrderNo());
+            result.put("status", order.getStatus());
+            result.put("price", order.getPrice());
+            result.put("hotelName", hotel.getName());
+            result.put("nights", quote.get("nights"));
+            result.put("rooms", quote.get("rooms"));
+            log.info("酒店预订成功：userId={}, hotel={}, orderNo={}", userId, hotel.getName(), order.getOrderNo());
+            return Result.ok(result);
+        } catch (IllegalArgumentException e) {
+            log.warn("酒店预订失败：{}", e.getMessage());
+            return Result.fail(e.getMessage());
+        } catch (AuthUtils.AuthException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("酒店预订异常", e);
+            return Result.fail("预订失败，请稍后重试");
         }
     }
 }

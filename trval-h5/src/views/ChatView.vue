@@ -413,7 +413,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
       <div class="input-row">
         <div class="input-glass">
           <button class="input-action" @click="toggleVoiceInput" :class="{ listening: isListening }">
-            <van-icon :name="isListening ? 'volume' : 'volume-o'" size="20" :color="isListening ? '#8B5CF6' : '#94A3B8'" />
+            <van-icon :name="isListening ? 'volume' : 'volume-o'" size="20" :color="isListening ? '#8B5CF6' : 'var(--text-hint)'" />
           </button>
           <input
             v-model="inputText"
@@ -494,8 +494,8 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
   padding-top: 40px; text-align: center;
 }
 .guide-illustration { margin-bottom: 20px; }
-.guide-heading { font-size: 20px; font-weight: 700; color: #1E293B; margin: 0 0 8px; }
-.guide-hint { font-size: 13px; color: #94A3B8; margin: 0 0 24px; }
+.guide-heading { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px; }
+.guide-hint { font-size: 13px; color: var(--text-hint); margin: 0 0 24px; }
 .guide-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 340px; }
 .guide-chip {
   padding: 10px 18px; background: rgba(255,255,255,0.55); backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%); border: 1px solid rgba(255,255,255,0.4);
@@ -569,7 +569,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 }
 .think-dot:nth-child(2) { animation-delay: 0.16s; }
 .think-dot:nth-child(3) { animation-delay: 0.32s; }
-.think-text { font-size: 13px; color: #94A3B8; }
+.think-text { font-size: 13px; color: var(--text-hint); }
 @keyframes thinkBounce {
   0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
@@ -582,10 +582,10 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 .md-body :deep(p code) { background: rgba(139,92,246,0.08); padding: 2px 6px; border-radius: 6px; color: #7C3AED; }
 .md-body :deep(table) { border-collapse: collapse; width: 100%; margin: 14px 0; border-radius: 12px; overflow: hidden; border: 1px solid rgba(139,92,246,0.08); display: block; overflow-x: auto; }
 .md-body :deep(th), .md-body :deep(td) { border-bottom: 1px solid rgba(139,92,246,0.06); padding: 9px 12px; text-align: left; font-size: 13px; }
-.md-body :deep(th) { background: rgba(139,92,246,0.04); font-weight: 600; color: #1E293B; }
+.md-body :deep(th) { background: rgba(139,92,246,0.04); font-weight: 600; color: var(--text-primary); }
 .md-body :deep(tr:nth-child(even)) { background: rgba(139,92,246,0.02); }
 .md-body :deep(blockquote) { margin: 14px 0; padding: 12px 16px; border-left: 4px solid #A78BFA; background: rgba(139,92,246,0.04); border-radius: 0 12px 12px 0; }
-.md-body :deep(h2), .md-body :deep(h3) { margin: 16px 0 8px; font-weight: 600; color: #1E293B; }
+.md-body :deep(h2), .md-body :deep(h3) { margin: 16px 0 8px; font-weight: 600; color: var(--text-primary); }
 .md-body :deep(h2) { font-size: 1.2em; }
 .md-body :deep(h3) { font-size: 1.1em; }
 .md-body :deep(ul), .md-body :deep(ol) { padding-left: 20px; margin: 8px 0; }
@@ -675,10 +675,10 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 .msg-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent;
   font-size: 16px; /* 16px 防止 iOS 自动缩放 */
-  color: #1E293B; padding: 10px 0;
+  color: var(--text-primary); padding: 10px 0;
 }
-.msg-input::placeholder { color: #94A3B8; opacity: 1; }
-.msg-input::-webkit-input-placeholder { color: #94A3B8; opacity: 1; }
+.msg-input::placeholder { color: var(--text-hint); opacity: 1; }
+.msg-input::-webkit-input-placeholder { color: var(--text-hint); opacity: 1; }
 
 .send-btn {
   width: 38px; height: 38px; border-radius: 50%; border: none;
@@ -706,4 +706,14 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
   .chat-footer { padding: 4px 10px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
   .input-glass { padding: 4px 4px 4px 12px; }
 }
+/* ==================== 深色模式（B4） ==================== */
+html[data-theme='dark'] .ai-bubble {
+  background: var(--bg-card);
+  border-color: var(--glass-border);
+}
+html[data-theme='dark'] .sys-msg { color: var(--text-hint); }
+html[data-theme='dark'] .quick-bar,
+html[data-theme='dark'] .quick-chip:not(.active) { background: var(--bg-glass); border-color: var(--glass-border); }
+html[data-theme='dark'] .chat-footer,
+html[data-theme='dark'] .input-row { background: var(--bg-glass); border-color: var(--glass-border); }
 </style>

@@ -25,8 +25,14 @@
         <van-icon name="arrow-left" size="22" color="#fff" />
       </div>
       <div class="top-title">{{ store.state.params.destination || '行程规划' }}</div>
-      <div class="top-btn share-btn" @click="handleShare">
-        <van-icon name="share-o" size="20" color="#fff" />
+      <div class="top-actions">
+        <div class="top-btn" @click="goCalendar">
+          <van-icon name="calendar-o" size="20" color="#fff" />
+        </div>
+        <div class="top-btn" @click="handleShare">
+          <van-icon name="share-o" size="20" color="#fff" />
+        </div>
+        <div class="offline-pill" :class="{ on: offlineMapMode }" @click="toggleOfflineMap">离线</div>
       </div>
     </div>
 
@@ -94,6 +100,9 @@ import VoiceInput from '../components/VoiceInput.vue'
 // 导入共享状态和 API
 import { useTripStore } from '../stores/trip.js'
 import { tripNewApi } from '../api/tripNew.js'
+// B5 离线地图：本地打包 Leaflet，断网也可用（瓦片由 Service Worker 缓存）
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 const router = useRouter()
 const route = useRoute()
@@ -108,6 +117,8 @@ let mapMarkers = []      // 当前地图上的标记集合
 let mapProvider = null   // 'baidu' | 'amap' | 'leaflet' — 当前使用的地图引擎
 let leafletLoaded = false
 let amapLoaded = false
+// B5 离线地图模式：true 时强制 Leaflet + OSM（瓦片已被 Service Worker 缓存）
+const offlineMapMode = ref(false)
 
 /**
  * 从后端获取地图配置，确定使用哪个地图引擎
@@ -173,6 +184,8 @@ const loadBaiduMapSDK = () => {
  */
 const loadLeaflet = () => {
   return new Promise((resolve) => {
+    // B5: 优先使用本地打包的 Leaflet（离线可用，不依赖 CDN）
+    if (L) { leafletLoaded = true; resolve(L); return }
     if (leafletLoaded && window.L) { resolve(window.L); return }
     if (window.L) { leafletLoaded = true; resolve(window.L); return }
     const script = document.createElement('script')
@@ -241,6 +254,16 @@ const loadAmapSDK = () => {
  * 初始化地图 — 按配置优先级：后端配置提供商 → 百度 → 高德 → Leaflet
  */
 const initMap = async (centerCity) => {
+  // B5 离线地图模式：跳过 SDK 加载，直接使用本地 Leaflet + SW 缓存的 OSM 瓦片
+  if (offlineMapMode.value) {
+    console.log('[地图] 离线模式：Leaflet + OpenStreetMap 缓存瓦片')
+    mapProvider = 'leaflet'
+    const Lf = await loadLeaflet()
+    if (Lf) await initLeafletMap(centerCity, Lf)
+    else showToast('地图加载失败')
+    return
+  }
+
   // 先获取后端配置的提供商
   const configProvider = await fetchMapProvider()
   console.log('[地图] 后端配置提供商:', configProvider)
@@ -894,19 +917,71 @@ const onVoiceResult = (text) => {
 
 /* ==================== 操作按钮逻辑 ==================== */
 
-const handleShare = () => {
+const goCalendar = () => {
+  if (!store.state.planData) {
+    showToast('暂无行程可查看')
+    return
+  }
+  router.push('/trip-calendar')
+}
+
+/* 离线地图开关（B5）：强制 Leaflet + 缓存 OSM 瓦片 */
+const toggleOfflineMap = async () => {
+  offlineMapMode.value = !offlineMapMode.value
+  showToast(offlineMapMode.value ? '已开启离线地图（缓存瓦片）' : '已关闭离线地图')
+  const dest = store.state.params.destination
+  if (dest) initMap(dest)
+}
+
+const handleShare = async () => {
   if (!store.state.planData) {
     showToast('暂无行程可分享')
     return
   }
-  // 复制行程摘要到剪贴板
-  const dest = store.state.params.destination
-  const days = store.state.params.days
-  const cost = store.state.costBreakdown?.totalCost || '--'
-  const text = `【${dest}${days}天旅行规划】预估总价 ¥${cost}\n来自 AI 智能旅游助手`
-  navigator.clipboard?.writeText(text).then(() => {
-    showToast('行程摘要已复制，去分享给好友吧！')
-  }).catch(() => showToast('分享失败'))
+  try {
+    // 1) 确保行程已保存（拿 planId；未保存则先保存并补齐坐标）
+    let planId = store.state.savedPlanId
+    if (!planId) {
+      const { planApi } = await import('../api/index.js')
+      const planData = (await store.enrichCoordinates()) || store.state.planData
+      const saveRes = await planApi.savePlan({
+        destination: store.state.params.destination,
+        days: store.state.params.days,
+        budget: store.state.params.budget,
+        people: store.state.params.people,
+        planData,
+        source: 'trip',
+      })
+      if (saveRes.code !== 0) { showToast(saveRes.message || '保存失败，无法分享'); return }
+      planId = saveRes.data.id
+      store.setSavedPlanId(planId)
+    }
+
+    // 2) 生成分享短链
+    const { shareApi } = await import('../api/index.js')
+    const shareRes = await shareApi.createShare(planId)
+    if (shareRes.code !== 0) { showToast(shareRes.message || '生成分享链接失败'); return }
+    const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${shareRes.data.token}`
+    const dest = store.state.params.destination || ''
+    const days = store.state.params.days || 3
+
+    // 3) 优先 Web Share API，不支持则复制链接
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `我的${dest}${days}天旅行规划`, text: `看看我的${dest}${days}天旅行规划`, url: shareUrl })
+        return
+      } catch (e) { /* 用户取消/失败 → 回退复制 */ }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      showToast('分享链接已复制')
+    } catch (e) {
+      showToast('分享失败')
+    }
+  } catch (e) {
+    console.error('分享失败:', e)
+    showToast('分享失败')
+  }
 }
 
 const handleLike = () => {
@@ -925,16 +1000,19 @@ const handleSavePlan = async () => {
   try {
     // 复用已有 planApi 保存逻辑
     const { planApi } = await import('../api/index.js')
+    // B2: 保存前补齐行程坐标（匹配 marker → 本地缓存 → 地理编码），随 planJson 持久化
+    const planData = (await store.enrichCoordinates()) || store.state.planData
     const result = await planApi.savePlan({
       destination: store.state.params.destination,
       days: store.state.params.days,
       budget: store.state.params.budget,
       people: store.state.params.people,
-      planData: store.state.planData,
+      planData,
       source: 'trip',
     })
     if (result.code === 0) {
       showSuccessToast('行程已保存')
+      if (result.data?.id) store.setSavedPlanId(result.data.id)
     } else {
       showToast(result.message || '保存失败')
     }
@@ -981,6 +1059,7 @@ const loadSavedPlan = async (planId) => {
       }
       store.state.phase = 'completed'
       store.state.drawerState = 'mid'
+      store.setSavedPlanId(planId)
       showSuccessToast('已加载保存的行程')
       initMap(data.destination || '北京')
       loadMapMarkers(data.destination || '北京')
@@ -1087,6 +1166,22 @@ onUnmounted(() => {
   padding: 12px 16px;
   padding-top: calc(12px + env(safe-area-inset-top, 0px));
   background: linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.1) 80%, transparent 100%);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.offline-pill {
+  padding: 5px 10px; border-radius: 14px; font-size: 12px; font-weight: 600;
+  color: rgba(255,255,255,0.9); background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px); cursor: pointer; transition: all 0.2s;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.offline-pill.on {
+  color: #fff; background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  border-color: transparent; box-shadow: 0 2px 10px rgba(139,92,246,0.4);
 }
 
 .top-btn {

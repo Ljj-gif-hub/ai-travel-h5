@@ -56,6 +56,18 @@ public class Order {
     @Column(name = "ticket_date")
     private LocalDateTime ticketDate;
 
+    /** 支付渠道：mock / alipay / wechat */
+    @Column(name = "pay_channel", length = 20)
+    private String payChannel;
+
+    /** 支付渠道交易号 */
+    @Column(name = "pay_trade_no", length = 64)
+    private String payTradeNo;
+
+    /** 支付完成时间 */
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
     @Column(name = "quantity")
     private Integer quantity = 1;
 
@@ -229,5 +241,29 @@ public class Order {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getPayChannel() {
+        return payChannel;
+    }
+
+    public void setPayChannel(String payChannel) {
+        this.payChannel = payChannel;
+    }
+
+    public String getPayTradeNo() {
+        return payTradeNo;
+    }
+
+    public void setPayTradeNo(String payTradeNo) {
+        this.payTradeNo = payTradeNo;
+    }
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
     }
 }

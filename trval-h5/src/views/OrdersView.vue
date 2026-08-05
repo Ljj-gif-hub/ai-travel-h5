@@ -5,22 +5,24 @@
  */
 import { ref, onMounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
-import { orderApi } from '../api'
+import { orderApi, paymentApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const goBack = () => { router.back() }
 
 /* ==================== 分类 Tab ==================== */
 const activeTab = ref('all')
 const tabs = [
-  { name: '全部', key: 'all' },
-  { name: '机票', key: 'flight' },
-  { name: '酒店', key: 'hotel' },
-  { name: '门票', key: 'ticket' },
+  { nameKey: 'all', key: 'all' },
+  { nameKey: 'flight', key: 'flight' },
+  { nameKey: 'hotel', key: 'hotel' },
+  { nameKey: 'ticket', key: 'ticket' },
 ]
 
 /* ==================== 列表数据 ==================== */
@@ -56,13 +58,20 @@ const handleTabChange = (key) => {
 /* ==================== 操作 ==================== */
 const handlePay = async (order) => {
   try {
-    const response = await orderApi.updateOrderStatus(order.id, 'paid')
-    if (response.code === 0) {
-      showToast('支付成功')
-      loadOrders(activeTab.value === 'all' ? '' : activeTab.value)
+    // 走支付对接层：先发起支付拿到渠道支付地址，再完成支付
+    const res = await paymentApi.createPayment(order.id)
+    if (res.code === 0) {
+      // 模拟渠道：跳转 mock 支付地址即完成支付（真实渠道此处跳第三方收银台）
+      const mock = await paymentApi.mockPay(res.data.orderNo)
+      if (mock.code === 0) {
+        showToast('模拟支付成功')
+      } else {
+        showToast(mock.message || '支付失败')
+      }
     } else {
-      showToast(response.message || '支付失败')
+      showToast(res.message || '支付失败')
     }
+    loadOrders(activeTab.value === 'all' ? '' : activeTab.value)
   } catch (error) { showToast('支付失败') }
 }
 
@@ -79,7 +88,7 @@ const handleCancel = async (order) => {
 }
 
 const getStatusText = (status) => {
-  const map = { pending: '待支付', paid: '已支付', completed: '已完成', cancelled: '已取消', refunded: '已退款' }
+  const map = { pending: t('orders.pending'), paid: t('orders.paid'), completed: t('orders.completed'), cancelled: t('orders.cancelled'), refunded: '已退款' }
   return map[status] || status
 }
 
@@ -104,7 +113,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 <template>
   <div class="page-shell animate-fade-in">
     <!-- 顶部导航 -->
-    <van-nav-bar title="订单中心" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('orders.title')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <!-- 分类 Tab -->
     <div class="filter-tabs">
@@ -113,7 +122,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
         v-for="tab in tabs" :key="tab.key"
         :class="['filter-tab', { active: activeTab === tab.key }]"
         @click="handleTabChange(tab.key)"
-      >{{ tab.name }}</button>
+      >{{ t(`orders.${tab.nameKey}`) }}</button>
     </div>
 
     <div class="page-content">
@@ -151,7 +160,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 
               <div class="order-body">
                 <template v-if="order.type === 'flight'">
-                  <div class="type-badge badge-flight">机票</div>
+                  <div class="type-badge badge-flight">{{ t('orders.flight') }}</div>
                   <div class="flight-route">
                     <span class="route-city">{{ order.fromCity }}</span>
                     <van-icon name="arrow" size="20" color="#94A3B8" />
@@ -163,12 +172,12 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
                   </div>
                 </template>
                 <template v-else-if="order.type === 'hotel'">
-                  <div class="type-badge badge-hotel">酒店</div>
+                  <div class="type-badge badge-hotel">{{ t('orders.hotel') }}</div>
                   <div class="info-name">{{ order.hotelName }}</div>
                   <div class="info-date">入住：{{ order.checkIn }} — 离店：{{ order.checkOut }}</div>
                 </template>
                 <template v-else-if="order.type === 'ticket'">
-                  <div class="type-badge badge-ticket">门票</div>
+                  <div class="type-badge badge-ticket">{{ t('orders.ticket') }}</div>
                   <div class="info-name">{{ order.scenicName }}</div>
                   <div class="info-date">游玩日期：{{ order.date }}</div>
                 </template>
@@ -177,8 +186,8 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
               <div class="order-footer">
                 <div class="order-price">¥{{ order.price }}</div>
                 <div class="order-actions">
-                  <van-button v-if="order.status === 'pending'" size="small" class="pay-btn" @click="handlePay(order)">立即支付</van-button>
-                  <van-button v-if="order.status === 'pending'" size="small" plain type="danger" class="cancel-btn" @click="handleCancel(order)">取消</van-button>
+                  <van-button v-if="order.status === 'pending'" size="small" class="pay-btn" @click="handlePay(order)">{{ t('orders.payNow') }}</van-button>
+                  <van-button v-if="order.status === 'pending'" size="small" plain type="danger" class="cancel-btn" @click="handleCancel(order)">{{ t('orders.cancelOrder') }}</van-button>
                 </div>
               </div>
             </div>

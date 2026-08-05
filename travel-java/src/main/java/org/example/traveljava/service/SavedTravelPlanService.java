@@ -70,6 +70,16 @@ public class SavedTravelPlanService {
         return plan;
     }
 
+    /**
+     * 分享专用：按 id 只读返回行程摘要（绕过属主校验）— 仅用于分享链接公开访问
+     * 返回只读快照（不含 userId），不暴露属主信息
+     */
+    public Map<String, Object> getPlanPublic(Long id) {
+        SavedTravelPlan plan = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("规划不存在，id=" + id));
+        return toResponseMap(plan);
+    }
+
     public void deletePlan(Long userId, Long id) {
         if (userId == null) {
             throw new IllegalArgumentException("请先登录");

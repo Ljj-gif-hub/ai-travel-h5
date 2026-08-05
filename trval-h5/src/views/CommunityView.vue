@@ -586,7 +586,7 @@ onBeforeUnmount(() => {
       <div class="city-selector" @click="showCityPicker = true">
         <van-icon name="location-o" size="14" color="#8B5CF6" />
         <span class="city-text">{{ currentCity }}</span>
-        <van-icon name="arrow-down" size="10" color="#94A3B8" />
+        <van-icon name="arrow-down" size="10" color="var(--text-hint)" />
       </div>
 
       <!-- 中间 Tab -->
@@ -605,7 +605,7 @@ onBeforeUnmount(() => {
 
       <!-- 搜索按钮 -->
       <div class="search-btn" @click="handleSearch">
-        <van-icon name="search" size="18" color="#64748B" />
+        <van-icon name="search" size="18" color="var(--text-secondary)" />
       </div>
     </div>
 
@@ -891,7 +891,7 @@ onBeforeUnmount(() => {
 .city-text {
   font-size: 13px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
 }
 
 .center-tabs {
@@ -919,7 +919,7 @@ onBeforeUnmount(() => {
   border-radius: 13px;
   font-size: 13px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.3s ease;
   user-select: none;
@@ -1046,7 +1046,7 @@ onBeforeUnmount(() => {
 .author-nickname {
   font-size: 14px;
   font-weight: 600;
-  color: #1E293B;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1063,7 +1063,7 @@ onBeforeUnmount(() => {
 
 .author-meta {
   font-size: 11px;
-  color: #94A3B8;
+  color: var(--text-hint);
 }
 
 /* --- 关注按钮 --- */
@@ -1269,7 +1269,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: #94A3B8;
+  color: var(--text-hint);
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
@@ -1299,7 +1299,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 20px 0;
   font-size: 13px;
-  color: #94A3B8;
+  color: var(--text-hint);
 }
 .no-more {
   font-size: 12px;
@@ -1335,7 +1335,7 @@ onBeforeUnmount(() => {
   color: #334155;
 }
 :deep(.van-field__control::placeholder) {
-  color: #94A3B8;
+  color: var(--text-hint);
 }
 :deep(.van-cell) {
   padding: 0 !important;
@@ -1358,4 +1358,18 @@ onBeforeUnmount(() => {
 .note-card:active { transform: scale(0.98); }
 .action-btn:active :deep(.van-icon) { animation: elasticBounce 0.5s cubic-bezier(0.4,0,0.2,1); }
 .fab-publish { animation: pulseGlow 2.5s ease-in-out infinite; }
+/* ==================== 深色模式（B4） ==================== */
+html[data-theme='dark'] .note-card {
+  background: var(--bg-card);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+html[data-theme='dark'] .card-content { color: var(--text-primary); }
+html[data-theme='dark'] .author-nickname { color: var(--text-primary); }
+html[data-theme='dark'] .author-meta,
+html[data-theme='dark'] .follow-btn:not(:hover) { color: var(--text-hint); }
+html[data-theme='dark'] .nav-filter,
+html[data-theme='dark'] .city-selector,
+html[data-theme='dark'] .center-tabs,
+html[data-theme='dark'] .tab-chip:not(.active) { background: var(--bg-glass); border-color: var(--glass-border); }
 </style>

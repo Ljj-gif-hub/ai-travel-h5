@@ -64,6 +64,15 @@
 - 调研缓存为内存 TTL（默认 1 小时），不落盘
 - 行程调整：`adjustment` 参数携带新的调整需求（如「放慢节奏」），Agent 局部增量重规划
 
+### 🧭 知识库（RAG 旅游攻略检索）
+
+| 项 | 说明 |
+|------|------|
+| 语料 | `agent/knowledge/<city>.md`（北京/上海/广州/成都/西安/杭州，可版本控制） |
+| 检索 | 纯 Python 字符级 bigram + TF-IDF + 加权匹配（零新依赖） |
+| 注入 | `_phase_plan` 在规划 Prompt 中注入「## 本地攻略参考」，`research_notes` 追加来源 |
+| 预留 | `KnowledgeProvider` 接口 + `KNOWLEDGE_SOURCE=builtin\|remote`，未来外部语料库实现同接口即接入 |
+
 ### Demo 模式
 
 未配置 LLM API Key 时自动启用，内置 8 城真实数据（成都/北京/上海/杭州/大理/三亚/西安/重庆），零依赖即可完整体验 5 阶段流程。

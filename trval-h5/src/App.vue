@@ -11,7 +11,12 @@
  */
 import { useRoute, useRouter } from 'vue-router'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { initTabBarHide, destroyTabBarHide } from './utils/tabBarHide'
+import { useTheme } from './utils/theme'
+
+const { theme, setTheme } = useTheme()
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -59,10 +64,10 @@ const tabIcons = {
 }
 
 const tabs = [
-  { path: '/', name: '首页', icon: 'home' },
-  { path: '/community', name: '社区', icon: 'community' },
-  { path: '/trips', name: '行程', icon: 'trips' },
-  { path: '/profile', name: '我的', icon: 'profile' },
+  { path: '/', nameKey: 'home', icon: 'home' },
+  { path: '/community', nameKey: 'community', icon: 'community' },
+  { path: '/trips', nameKey: 'trips', icon: 'trips' },
+  { path: '/profile', nameKey: 'profile', icon: 'profile' },
 ]
 
 const hideTabBar = computed(() => {
@@ -112,39 +117,41 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
 </script>
 
 <template>
-  <div class="app">
-    <!--
-      路由过渡动画容器
-      - keep-alive 缓存 Tab 页面，切换不销毁
-      - 过渡只用 transform，不用 absolute，不破坏文档流
-    -->
-    <router-view v-slot="{ Component }">
-      <transition :name="transitionName" :duration="300">
-        <keep-alive :include="CACHED_VIEWS" :max="5">
-          <component :is="Component" :key="route.path" />
-        </keep-alive>
-      </transition>
-    </router-view>
+  <van-config-provider :theme="theme">
+    <div class="app">
+      <!--
+        路由过渡动画容器
+        - keep-alive 缓存 Tab 页面，切换不销毁
+        - 过渡只用 transform，不用 absolute，不破坏文档流
+      -->
+      <router-view v-slot="{ Component }">
+        <transition :name="transitionName" :duration="300">
+          <keep-alive :include="CACHED_VIEWS" :max="5">
+            <component :is="Component" :key="route.path" />
+          </keep-alive>
+        </transition>
+      </router-view>
 
-    <!-- 底部悬浮椭圆 Tab 导航 -->
-    <div class="custom-tabbar" :class="{ 'tab-hidden': hideTabBar }">
-      <div
-        v-show="isTabActive"
-        class="tab-indicator"
-        :style="{ left: `calc(4px + (100% - 8px) / 4 * ${activeIndex})` }"
-      />
-      <div
-        v-for="(tab, index) in tabs"
-        :key="index"
-        class="tab-item"
-        :class="{ active: isActive(tab.path) }"
-        @click="handleTabClick(tab.path)"
-      >
-        <svg class="tab-icon" :viewBox="tabIcons[tab.icon].viewBox" v-html="tabIcons[tab.icon].body" />
-        <span class="tab-text">{{ tab.name }}</span>
+      <!-- 底部悬浮椭圆 Tab 导航 -->
+      <div class="custom-tabbar" :class="{ 'tab-hidden': hideTabBar }">
+        <div
+          v-show="isTabActive"
+          class="tab-indicator"
+          :style="{ left: `calc(4px + (100% - 8px) / 4 * ${activeIndex})` }"
+        />
+        <div
+          v-for="(tab, index) in tabs"
+          :key="index"
+          class="tab-item"
+          :class="{ active: isActive(tab.path) }"
+          @click="handleTabClick(tab.path)"
+        >
+          <svg class="tab-icon" :viewBox="tabIcons[tab.icon].viewBox" v-html="tabIcons[tab.icon].body" />
+          <span class="tab-text">{{ t(`app.tabs.${tab.nameKey}`) }}</span>
+        </div>
       </div>
     </div>
-  </div>
+  </van-config-provider>
 </template>
 
 <style>
@@ -191,6 +198,28 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
   border: 1px solid rgba(255,255,255,0.5);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.5) !important;
   color: #323233 !important;
+}
+
+/* ==================== 深色模式 — Vant 玻璃覆盖适配 ==================== */
+html[data-theme='dark'] .van-nav-bar {
+  background:
+    linear-gradient(160deg, rgba(30,33,47,0.92) 0%, rgba(24,27,40,0.86) 50%, rgba(30,33,47,0.92) 100%) !important;
+  border-bottom: 0.5px solid rgba(255,255,255,0.06) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+html[data-theme='dark'] .van-nav-bar__title,
+html[data-theme='dark'] .van-nav-bar__text { color: #E2E8F0 !important; }
+html[data-theme='dark'] .van-nav-bar .van-icon { color: #94A3B8 !important; }
+html[data-theme='dark'] .van-popup {
+  background:
+    linear-gradient(160deg, rgba(30,33,47,0.96) 0%, rgba(24,27,40,0.92) 40%, rgba(30,33,47,0.96) 100%) !important;
+}
+html[data-theme='dark'] .van-dialog {
+  background:
+    linear-gradient(160deg, rgba(30,33,47,0.98) 0%, rgba(24,27,40,0.95) 40%, rgba(30,33,47,0.98) 100%) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+  color: #E2E8F0 !important;
 }
 
 /* ==================== 全局滚动条隐藏 ==================== */
@@ -340,5 +369,19 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
   height: 19px;
   fill: currentColor;
   display: block;
+}
+
+/* ==================== 深色模式 — 底部 Tab 栏 ==================== */
+html[data-theme='dark'] .custom-tabbar {
+  background:
+    linear-gradient(160deg, rgba(30,33,47,0.94) 0%, rgba(24,27,40,0.86) 35%, rgba(30,33,47,0.92) 100%) !important;
+  border: 0.5px solid rgba(255,255,255,0.10) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 14px rgba(0,0,0,0.35) !important;
+}
+html[data-theme='dark'] .tab-item { color: #64748B; }
+html[data-theme='dark'] .tab-item.active { color: #A78BFA; }
+html[data-theme='dark'] .tab-indicator {
+  background: linear-gradient(160deg, rgba(139,92,246,0.30) 0%, rgba(139,92,246,0.12) 50%, rgba(139,92,246,0.25) 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08) !important;
 }
 </style>

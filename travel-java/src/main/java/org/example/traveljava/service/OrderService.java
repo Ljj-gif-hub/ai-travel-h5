@@ -53,6 +53,39 @@ public class OrderService {
         return orderRepository.countByUserIdAndStatus(userId, status);
     }
 
+    /**
+     * 校验订单属主并返回（支付发起前校验）
+     */
+    public Order getOwnedOrder(Long userId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
+        if (!order.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("无权操作该订单");
+        }
+        return order;
+    }
+
+    /**
+     * 支付回调标记已支付（幂等）— 公开回调路径，不校验属主（由支付渠道验签保证真实性）
+     * pending→paid；已 paid 直接返回（幂等）；其余状态不可支付
+     */
+    @Transactional
+    public void markOrderPaid(String orderNo) {
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new IllegalArgumentException("订单不存在: " + orderNo));
+        if ("paid".equals(order.getStatus())) {
+            log.info("订单已支付（幂等忽略）：orderNo={}", orderNo);
+            return;
+        }
+        if (!"pending".equals(order.getStatus())) {
+            throw new IllegalArgumentException("订单当前状态不可支付: " + order.getStatus());
+        }
+        order.setStatus("paid");
+        order.setPaidAt(LocalDateTime.now());
+        orderRepository.save(order);
+        log.info("订单支付成功：orderNo={}", orderNo);
+    }
+
     @Transactional
     public Order createOrder(Long userId, Map<String, Object> params) {
         Order order = new Order();

@@ -4,13 +4,16 @@ import org.example.traveljava.entity.Hotel;
 import org.example.traveljava.repository.HotelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -186,6 +189,53 @@ public class HotelService {
         }
 
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** 模拟满房开关：true 时所有预订被拒绝（演示库存校验） */
+    @Value("${hotel.mock-full:false}")
+    private boolean mockFull;
+
+    /**
+     * 酒店预订 — 校验酒店与日期，计算报价快照（下单金额以此为准）
+     *
+     * @param hotelId 酒店ID
+     * @param checkIn 入住日期
+     * @param checkOut 离店日期
+     * @param rooms 房间数
+     * @return {hotel, nights, rooms, totalPrice} 报价快照
+     */
+    public Map<String, Object> bookHotel(Long hotelId, LocalDate checkIn, LocalDate checkOut, int rooms) {
+        if (mockFull) {
+            throw new IllegalArgumentException("该酒店当前已满房，请更换日期或选择其他酒店");
+        }
+        Hotel hotel = getHotelById(hotelId);
+        if (checkIn == null || checkOut == null) {
+            throw new IllegalArgumentException("请选择入住和离店日期");
+        }
+        if (!checkOut.isAfter(checkIn)) {
+            throw new IllegalArgumentException("离店日期必须晚于入住日期");
+        }
+        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        if (nights < 1) {
+            throw new IllegalArgumentException("至少入住1晚");
+        }
+        if (rooms < 1) {
+            rooms = 1;
+        }
+        if (hotel.getPricePerNight() == null) {
+            throw new IllegalArgumentException("该酒店暂无可预订价格");
+        }
+        BigDecimal total = hotel.getPricePerNight()
+                .multiply(BigDecimal.valueOf(nights))
+                .multiply(BigDecimal.valueOf(rooms))
+                .setScale(0, RoundingMode.HALF_UP);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("hotel", hotel);
+        result.put("nights", nights);
+        result.put("rooms", rooms);
+        result.put("totalPrice", total.longValue());
+        return result;
     }
 
     /**

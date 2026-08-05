@@ -9,6 +9,11 @@ import './style.css'
 import 'vant/lib/index.css'
 import App from './App.vue'
 import router from './router'
+import i18n from './i18n'
+import { initTheme } from './utils/theme'
+
+// 深色模式：挂载前应用初始主题，避免深色首屏闪烁
+initTheme()
 
 function setRootFontSize() {
   const maxWidth = 500
@@ -19,4 +24,4 @@ function setRootFontSize() {
 setRootFontSize()
 window.addEventListener('resize', setRootFontSize)
 
-createApp(App).use(router).mount('#app')
+createApp(App).use(router).use(i18n).mount('#app')

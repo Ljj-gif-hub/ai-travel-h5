@@ -208,13 +208,13 @@ html, body {
   color: #fff !important;
 }
 
-/* 【兜底】确保 Vant Dialog 弹窗内容可见 */
+/* 【兜底】确保 Vant Dialog 弹窗内容可见（深色模式由 ConfigProvider 的 --van-* 变量接管） */
 .van-dialog {
-  background: #fff !important;
-  color: #323233 !important;
+  background: var(--van-dialog-background, #fff) !important;
+  color: var(--van-dialog-color, #323233) !important;
 }
 .van-dialog__message {
-  color: #646566 !important;
+  color: var(--van-dialog-message-color, #646566) !important;
 }
 
 /* ==================== 滚动条隐藏 ==================== */
@@ -540,4 +540,72 @@ html, body {
 }
 .hero-avatar .van-image img {
   background: linear-gradient(135deg, #c4b5fd, #a78bfa) !important;
+}
+
+/* ================================================================
+   深色模式（B4）
+   - 由 <html data-theme="dark"> 激活，切换逻辑见 main.js initTheme()
+   - 复用现有 :root token 体系：覆盖语义 token 值即可让用 var() 的组件自动适配
+   - Vant 组件深色由 App.vue 的 <van-config-provider theme="dark"> 接管（--van-* 变量）
+   ================================================================ */
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* 背景 — 磨砂玻璃 → 深色玻璃 */
+  --bg-page: #12141c;
+  --bg-card: rgba(28, 31, 46, 0.82);
+  --bg-card-solid: #1d2030;
+  --bg-glass: rgba(24, 27, 40, 0.72);
+  --bg-glass-strong: rgba(30, 34, 50, 0.86);
+  --bg-elevated: #252a3f;
+
+  /* 玻璃边框/描边 → 弱化 */
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --border-light: rgba(255, 255, 255, 0.10);
+  --border-card: rgba(255, 255, 255, 0.12);
+
+  /* 文字 */
+  --text-primary: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-hint: #64748B;
+
+  /* 阴影 → 加深以匹配深色背景 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.45);
+
+  --gradient-page: linear-gradient(180deg, #151825 0%, #12141c 100%);
+}
+
+/* 页面背景 — 深色渐变 */
+html[data-theme='dark'] body {
+  background: linear-gradient(175deg, #0f1118 0%, #131722 25%, #171b28 55%, #12141c 100%);
+  background-attachment: fixed;
+}
+
+/* 顶部/底部装饰光晕 — 深色下减弱 */
+html[data-theme='dark'] #app::before {
+  background: radial-gradient(circle, rgba(139,92,246,0.14) 0%, rgba(99,102,241,0.07) 40%, transparent 75%);
+}
+html[data-theme='dark'] #app::after {
+  background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, rgba(52,211,153,0.05) 45%, transparent 75%);
+}
+
+/* 通用玻璃卡片 — 深色下替换白色高光渐变 */
+html[data-theme='dark'] .card-macaron,
+html[data-theme='dark'] .card-glass {
+  background: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.04) 100%), var(--bg-card);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), var(--shadow-md);
+}
+
+/* 图片骨架占位 — 深色适配 */
+html[data-theme='dark'] .image-placeholder {
+  background: #1d2030;
+}
+
+/* 全局文字默认色 — 兜底未用 var() 的裸文字元素 */
+html[data-theme='dark'] {
+  color: var(--text-primary);
 }

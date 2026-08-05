@@ -115,15 +115,34 @@ export const orderApi = {
     return request(url);
   },
   createOrder: (data) => request('/orders', { method: 'POST', body: JSON.stringify(data) }),
-  updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { 
-    method: 'PUT', 
-    body: JSON.stringify({ status }) 
+  updateOrderStatus: (id, status) => request(`/orders/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status })
   }),
   cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: 'POST' }),
   getOrderCount: (status) => {
     const url = status ? `/orders/count?status=${status}` : '/orders/count';
     return request(url);
   },
+};
+
+export const paymentApi = {
+  /** 发起支付 → { orderNo, payUrl, providerTradeNo, channel } */
+  createPayment: (orderId) => request('/payment/create', { method: 'POST', body: JSON.stringify({ orderId }) }),
+  /** 模拟渠道确认支付（mock 专用，orderNo 完成支付） */
+  mockPay: (orderNo) => request(`/payment/mock-pay?orderNo=${encodeURIComponent(orderNo)}`),
+  /** 支付渠道回调（真实渠道由渠道服务器回调，前端一般不用） */
+  notify: (params) => request('/payment/notify', { method: 'POST', body: JSON.stringify(params) }),
+};
+
+export const hotelApi = {
+  searchHotels: (city, params = {}) => {
+    const qs = new URLSearchParams({ city, ...params }).toString();
+    return request(`/hotel/search?${qs}`);
+  },
+  getHotel: (id) => request(`/hotel/${id}`),
+  /** 预订酒店 → 创建 hotel 订单 {hotelId, checkIn, checkOut, rooms} */
+  bookHotel: (data) => request('/hotel/book', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 export const noteApi = {
@@ -232,6 +251,14 @@ export const chatApi = {
 
 export const mapApi = {
   getSuggestion: (keyword) => request(`/map/suggestion?keyword=${encodeURIComponent(keyword)}`),
+  geocode: (address) => request(`/map/geocode?address=${encodeURIComponent(address)}`),
+};
+
+export const shareApi = {
+  /** 创建行程分享链接（需登录）→ { token, shareUrl, destination } */
+  createShare: (planId) => request('/share', { method: 'POST', body: JSON.stringify({ planId }) }),
+  /** 公开读取分享行程（免登录，只读快照） */
+  getSharedPlan: (token) => request(`/share/${encodeURIComponent(token)}`),
 };
 
 export const authApi = {

@@ -23,11 +23,12 @@ export default defineConfig(({ mode }) => ({
         background_color: '#F8F7FF',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
-        scope: '/',
+        // 相对路径，跟随部署 base（/ai-travel-h5/ 等），避免指向站点根目录
+        start_url: './',
+        scope: './',
         icons: [
           {
-            src: '/favicon.svg',
+            src: './favicon.svg',
             sizes: '48x48 72x72 96x96 128x128 144x144 192x192 256x256 512x512',
             type: 'image/svg+xml',
             purpose: 'any maskable',
@@ -38,11 +39,34 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,json}'],
         globIgnores: ['**/demos/**'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // 离线兜底页：断网导航时返回 offline.html
+        navigateFallback: `${mode === 'production' ? '/ai-travel-h5/' : '/'}offline.html`,
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/.*/i,
             handler: 'NetworkFirst',
             options: { cacheName: 'api-cache', expiration: { maxEntries: 50, maxAgeSeconds: 300 } },
+          },
+          // 离线地图（B5）：OSM 瓦片 CacheFirst（Leaflet 离线底图载体）
+          {
+            urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'osm-tiles',
+              expiration: { maxEntries: 2000, maxAgeSeconds: 30 * 24 * 3600 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // 高德瓦片/资源：best-effort 缓存（带鉴权参数，缓存失败静默降级）
+          {
+            urlPattern: /^https:\/\/.*\.(amap|gaode)\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'amap-assets',
+              expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 3600 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
           },
         ],
       },

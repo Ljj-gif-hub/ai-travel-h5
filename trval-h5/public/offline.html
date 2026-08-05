@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>网络连接不可用</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(175deg, #12141c 0%, #171b28 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      color: #E2E8F0;
+    }
+    .wrap { text-align: center; padding: 40px 28px; max-width: 360px; }
+    .icon { font-size: 56px; margin-bottom: 20px; }
+    h1 { font-size: 20px; margin-bottom: 12px; }
+    p { font-size: 14px; color: #94A3B8; line-height: 1.7; margin-bottom: 28px; }
+    button {
+      border: none; border-radius: 22px; padding: 12px 32px;
+      background: linear-gradient(135deg, #8B5CF6, #6366F1); color: #fff;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(139,92,246,0.3);
+    }
+    button:active { transform: scale(0.96); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="icon">📡</div>
+    <h1>网络连接不可用</h1>
+    <p>当前处于离线状态，已缓存的内容仍可查看。恢复网络后点击下方按钮重试。</p>
+    <button onclick="location.reload()">重新加载</button>
+  </div>
+</body>
+</html>
