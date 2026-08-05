@@ -105,7 +105,7 @@ ai:
       temperature: 0.7
     # ---- 自定�?代理 API（任何兼�?OpenAI 协议的接口） ----
     custom:
-      api-key: ${CUSTOM_AI_KEY:YOUR_KEY_HERE}
+      api-key: ${CUSTOM_AI_KEY:}
       base-url: ${CUSTOM_AI_URL:https://apihub.agnes-ai.com/v1}
       model: ${CUSTOM_AI_MODEL:agnes-2.0-flash}
       max-tokens: 4096

@@ -38,6 +38,22 @@ public class FileUploadController {
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
         ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
     );
+    /** MIME → 落盘标准扩展名（落盘扩展名一律由服务端决定，绝不沿用客户端可控的原始扩展名，防存储型 XSS） */
+    private static final Map<String, String> MIME_TO_EXT = Map.of(
+        "image/jpeg", ".jpg",
+        "image/png", ".png",
+        "image/gif", ".gif",
+        "image/webp", ".webp",
+        "image/bmp", ".bmp",
+        "video/mp4", ".mp4",
+        "video/webm", ".webm",
+        "video/quicktime", ".mov"
+    );
+    /** 可执行/脚本类类型，即使被伪装成图片 MIME 也直接拒绝 */
+    private static final Set<String> DANGEROUS_TYPES = Set.of(
+        "text/html", "image/svg+xml", "application/xhtml+xml",
+        "application/xml", "text/xml", "application/javascript", "text/javascript"
+    );
     private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024;
     private static final long MAX_VIDEO_SIZE = 1024L * 1024 * 1024;
 
@@ -69,6 +85,11 @@ public class FileUploadController {
         String contentType = file.getContentType();
         long size = file.getSize();
 
+        // 直接拒绝可执行/脚本类类型（即使客户端把 MIME 伪装成图片）
+        if (contentType != null && DANGEROUS_TYPES.contains(contentType.toLowerCase())) {
+            return Result.fail("不支持的文件类型");
+        }
+
         // 先通过 MIME 类型判断，再通过扩展名兜底（部分环境 MIME 可能为 application/octet-stream）
         String originalName = file.getOriginalFilename();
         String ext = "";
@@ -99,7 +120,9 @@ public class FileUploadController {
         }
 
         try {
-            String newName = UUID.randomUUID().toString() + ext;
+            // 落盘扩展名由服务端按校验后的类型决定，绝不沿用客户端可控的原始扩展名
+            String storedExt = MIME_TO_EXT.getOrDefault(contentType, isImage ? ".jpg" : ".mp4");
+            String newName = UUID.randomUUID().toString() + storedExt;
 
             Path targetPath = uploadDir.resolve(newName);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);

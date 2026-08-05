@@ -227,11 +227,22 @@ async def generate_plan_stream_raw(request: Request):
     except Exception:
         return EventSourceResponse(_error_stream("请求体必须是合法 JSON"))
 
+    if not isinstance(body, dict):
+        return EventSourceResponse(_error_stream("请求体必须是 JSON 对象"))
+
     destination = body.get("destination", "")
     if not destination:
         return EventSourceResponse(_error_stream("请提供目的地"))
 
-    days = body.get("days", 3)
+    # days 校验：非法/越界时回退到 3，避免字符串/负数/超大值进入生成器抛异常
+    try:
+        days = int(body.get("days", 3))
+    except (TypeError, ValueError):
+        days = 3
+    if not (1 <= days <= 14):
+        days = 3
+    body["days"] = days
+
     demo_mode = os.getenv("DEMO_MODE", "").lower() == "true" or not os.getenv("LLM_API_KEY")
     logger.info(f"{'🔶 Demo' if demo_mode else ''}原始SSE规划: {destination} {days}天")
 

@@ -76,7 +76,8 @@ public class HotelController {
 
             @SuppressWarnings("unchecked")
             List<Hotel> list = (List<Hotel>) result.get("list");
-            Integer total = (Integer) result.get("total");
+            // DB 分页路径返回 Long，内存种子路径返回 Integer，统一按 Number 处理避免 ClassCastException
+            Number total = (Number) result.get("total");
 
             log.info("酒店搜索成功：city={}, total={}, 当前页={}", city, total, list.size());
             return Result.ok(result);

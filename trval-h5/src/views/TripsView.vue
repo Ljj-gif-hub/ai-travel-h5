@@ -170,10 +170,14 @@ const initMiniNearbyMap = async () => {
   await locateUser(); const center = userLocation.value || { lat: 39.915, lng: 116.404 }
   loadNearbyAttractions()
   const loaded = await loadAmapForNearby()
+  // 异步加载 AMap 期间容器可能被 v-if 卸载/重建，重新检查，避免 Map container div not exist
+  if (!document.getElementById('nearby-mini-map') || miniMapInstance) return
   if (loaded && window.AMap) {
-    miniMapInstance = new window.AMap.Map('nearby-mini-map', { center: [center.lng, center.lat], zoom: 13, viewMode: '2D', resizeEnable: false, dragEnable: true, zoomEnable: true, scrollWheel: true, doubleClickZoom: false, touchZoom: true, keyboard: false })
-    new window.AMap.Marker({ position: [center.lng, center.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(14, 14), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><circle cx="7" cy="7" r="5" fill="#3B82F6" stroke="#fff" stroke-width="2"/></svg>'), imageSize: new window.AMap.Size(14, 14) }), offset: new window.AMap.Pixel(-7, -7), zIndex: 10 }).addTo(miniMapInstance)
-    miniMapReady.value = true; nearbyMapProvider.value = 'amap'
+    try {
+      miniMapInstance = new window.AMap.Map('nearby-mini-map', { center: [center.lng, center.lat], zoom: 13, viewMode: '2D', resizeEnable: false, dragEnable: true, zoomEnable: true, scrollWheel: true, doubleClickZoom: false, touchZoom: true, keyboard: false })
+      new window.AMap.Marker({ position: [center.lng, center.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(14, 14), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><circle cx="7" cy="7" r="5" fill="#3B82F6" stroke="#fff" stroke-width="2"/></svg>'), imageSize: new window.AMap.Size(14, 14) }), offset: new window.AMap.Pixel(-7, -7), zIndex: 10 }).addTo(miniMapInstance)
+      miniMapReady.value = true; nearbyMapProvider.value = 'amap'
+    } catch (e) { console.warn('迷你地图初始化失败:', e); miniMapInstance = null }
   }
 }
 
@@ -202,7 +206,7 @@ const inferStatus = (plan) => {
   return 'upcoming'
 }
 
-const tripPlans = computed(() => trips.value.filter(t => (t.source || 'trip') === 'trip'))
+const tripPlans = computed(() => trips.value.filter(t => (t.source || 'trip') !== 'home'))
 const homePlans = computed(() => trips.value.filter(t => t.source === 'home'))
 const hasTrips = computed(() => trips.value.length > 0)
 
@@ -240,7 +244,7 @@ const statusLabel = (s) => ({ upcoming:'待出行', doing:'进行中', done:'已
 const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399', draft:'#F59E0B' }[s] || '#94A3B8')
 
 const loadTrips = async () => { isLoading.value = true; loadError.value = false; try { const res = await planApi.getSavedPlans(); if (res.code === 0) trips.value = (res.data || []).map(p => ({ ...p, _status: inferStatus(p) })); else trips.value = [] } catch (e) { trips.value = []; if (e?.response?.status === 502) loadError.value = true } finally { isLoading.value = false } }
-const viewTrip = (plan) => { if (!plan?.destination) { showToast('行程数据异常'); return }; router.push({ path: '/trip-map', query: { savedPlanId: plan.id } }) }
+const viewTrip = (plan) => { if (!plan?.destination) { showToast('行程数据异常'); return }; router.push({ path: '/agent-map', query: { savedPlanId: plan.id } }) }
 const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = true }
 const goToAgentPlanner = () => { router.push('/agent-planner') }
 const onPlanSaved = () => { showAIChat.value = false; showToast('行程已保存'); loadTrips() }

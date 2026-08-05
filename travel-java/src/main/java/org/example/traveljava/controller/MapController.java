@@ -31,9 +31,10 @@ public class MapController {
 
     @GetMapping("/suggestion")
     @RateLimit(max = 60, duration = 60, key = "map_suggestion")
-    public Result<List<POISuggestionDTO>> getSuggestions(@RequestParam(required = false) String keyword) {
-        log.info("获取地点联想请求: keyword={}", keyword);
-        
+    public Result<List<POISuggestionDTO>> getSuggestions(@RequestParam(required = false) String keyword,
+                                                         @RequestParam(required = false) String city) {
+        log.info("获取地点联想请求: keyword={}, city={}", keyword, city);
+
         if (keyword == null || keyword.trim().isEmpty()) {
             return Result.fail("请输入搜索关键词");
         }
@@ -43,7 +44,7 @@ public class MapController {
         }
 
         try {
-            List<POISuggestionDTO> suggestions = mapService.getSuggestions(keyword);
+            List<POISuggestionDTO> suggestions = mapService.getSuggestions(keyword, city);
             if (suggestions.isEmpty()) {
                 return Result.ok("未找到相关地点", suggestions);
             }

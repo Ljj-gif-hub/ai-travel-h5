@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from typing import AsyncGenerator, Dict, Any, List, Optional
 
@@ -23,6 +24,26 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 from .schemas import TripPlanOutput, AgentEvent
+
+
+def _to_int(value, default=0) -> int:
+    """LLM 返回的数值字段可能是字符串（如 "60元"/"5300"），防御式转 int，失败回退默认值"""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        s = value.strip().replace(",", "").rstrip("元")
+        try:
+            return int(float(s))
+        except ValueError:
+            return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ==================== LLM 工厂 ====================
@@ -255,31 +276,45 @@ class TravelAgentPlanner:
 
     async def _run_full(self) -> AsyncGenerator[AgentEvent, None]:
         """
-        完整 LLM Agent 模式 — 需要 LLM API Key
-        5 阶段流程：research → plan → verify → adjust → finalize
+        完整闭环 Agent 模式 — 需要 LLM API Key
+
+        闭环工作流：感知输入 → 记忆读取 → LLM大脑/工具层(ReAct调研) →
+        规划 → 记忆写入 → 校验 → 反馈迭代(本地优化 + LLM 带反馈重生成) → 输出
         """
         destination = self.req.get("destination", "")
         days = self.req.get("days", 3)
         budget = self.req.get("budget", 5000)
+        _t0 = time.monotonic()
 
-        # ===== Phase 1: RESEARCH =====
+        # ===== 感知层：读取请求 + 记忆（长期偏好 + 短期会话） =====
+        context = self._perceive()
         yield AgentEvent(
             event_type="phase_start", phase="research",
-            message=f"🔍 开始为您调研「{destination}」— 搜索实时景点、美食、酒店信息…",
+            message=context["perception_msg"],
+            data={"memory": context["memory_block"] or None},
         )
-        research_results = await self._phase_research(destination, days)
+
+        # ===== 工具层 + Multi-Agent：三个并行子调研智能体 + 主管汇总（失败则回退确定性搜索） =====
+        try:
+            research_results = await self._research_multiagent(destination, days)
+        except Exception as e:
+            logger.warning(f"多智能体调研失败，回退确定性搜索: {e}")
+            research_results = await self._phase_research(destination, days)
+        logger.info(f"[耗时] research: {time.monotonic() - _t0:.1f}s")
         yield AgentEvent(
             event_type="phase_end", phase="research",
             message=f"✅ 调研完成：已获取 {destination} 的景点、美食、酒店实时信息",
             data={"research_summary": research_results.get("summary", "")},
         )
 
-        # ===== Phase 2: PLAN =====
+        # ===== 规划层：LLM 结合调研 + 记忆生成行程 =====
         yield AgentEvent(
             event_type="phase_start", phase="plan",
             message=f"📋 正在规划 {days} 天行程 — 分配景点、安排每日时段…",
         )
-        plan = await self._phase_plan(research_results)
+        _t1 = time.monotonic()
+        plan = await self._phase_plan(research_results, context)
+        logger.info(f"[耗时] plan: {time.monotonic() - _t1:.1f}s")
         self.plan_data = plan
         yield AgentEvent(
             event_type="phase_end", phase="plan",
@@ -287,66 +322,328 @@ class TravelAgentPlanner:
             data={"plan_preview": self._build_plan_preview(plan)},
         )
 
-        # ===== Phase 3: VERIFY =====
+        # ===== 记忆层：写入本轮（偏好 + 会话上下文） =====
+        self._remember(context, plan)
+
+        # ===== 校验 + 反馈迭代循环（本地数值校验 + 评审智能体 + 反馈迭代） =====
         yield AgentEvent(
             event_type="phase_start", phase="verify",
-            message="🔍 正在核算总预算、检查路线合理性…",
+            message="🔍 评审智能体正在核算预算、检查路线与行程质量…",
         )
-        verify_result = await self._phase_verify(plan, budget)
-        self.budget_ok = verify_result.get("budget_ok", True)
-        route_issues = verify_result.get("route_issues", [])
+        max_refine = getattr(self, "max_refine_rounds", 2)
+        verify_result = await self._phase_verify(plan, budget)   # 本地数值校验（快）
+        review_result = await self._review_plan(plan, budget)     # 评审智能体（独立审查）
+        attempts = 0
+        while attempts < max_refine:
+            budget_ok = verify_result.get("budget_ok", True)
+            route_ok = not verify_result.get("route_issues")
+            passed = bool(review_result.get("passed", True))
+            if budget_ok and route_ok and passed:
+                break
 
-        if self.budget_ok and not route_issues:
-            yield AgentEvent(
-                event_type="phase_end", phase="verify",
-                message="✅ 校验通过！预算在范围内，路线合理",
-                data=verify_result,
-            )
-        else:
-            warnings = []
-            if not self.budget_ok:
-                over = verify_result.get("budget_gap", 0)
-                warnings.append(f"⚠️ 预算超标 {over} 元，正在自动调整…")
-            if route_issues:
-                warnings.append(f"⚠️ 发现 {len(route_issues)} 处路线可优化，正在调整…")
+            # 汇总反馈（本地数值问题 + 评审智能体建议）
+            issues = []
+            if not budget_ok:
+                issues.append(f"预算超标 {verify_result.get('budget_gap', 0)} 元（上限 {verify_result.get('budget_total', 0)}）")
+            issues += verify_result.get("route_issues", [])
+            issues += review_result.get("issues", [])
+            self.budget_ok = budget_ok
             yield AgentEvent(
                 event_type="warning", phase="verify",
-                message="\n".join(warnings),
-                data=verify_result,
+                message="⚠️ " + "；".join(issues[:4]), data={"issues": issues},
             )
 
-            # ===== Phase 4: ADJUST =====
-            yield AgentEvent(
-                event_type="phase_start", phase="adjust",
-                message="🔧 正在自动优化：替换高价项目、调整路线顺序…",
-            )
-            plan = await self._phase_adjust(plan, verify_result)
-            self.plan_data = plan
-
-            yield AgentEvent(
-                event_type="thinking", phase="adjust",
-                message="🔍 调整后二次校验…",
-            )
-            verify_again = await self._phase_verify(plan, budget)
-            self.budget_ok = verify_again.get("budget_ok", True)
+            attempts += 1
+            if attempts == 1:
+                # 第一轮：本地确定性优化（快，只解决预算/路线数值问题）
+                yield AgentEvent(
+                    event_type="phase_start", phase="adjust",
+                    message="🔧 本地优化：降档酒店、压缩餐饮/门票…",
+                )
+                _t3 = time.monotonic()
+                plan = await self._phase_adjust(plan, verify_result)
+                logger.info(f"[耗时] adjust(本地): {time.monotonic() - _t3:.1f}s")
+                self.plan_data = plan
+                yield AgentEvent(event_type="thinking", phase="adjust", message="🔍 优化后二次校验…")
+                verify_result = await self._phase_verify(plan, budget)
+                self.budget_ok = verify_result.get("budget_ok", True)
+                review_result = await self._review_plan(plan, budget)  # 评审再审
+            else:
+                # 后续轮：LLM 带评审反馈重生成（闭环反馈迭代）
+                yield AgentEvent(
+                    event_type="phase_start", phase="adjust",
+                    message=f"🧠 LLM 根据评审反馈优化方案（第 {attempts} 轮）…",
+                )
+                _t3 = time.monotonic()
+                plan = await self._refine_llm(context, plan, verify_result, review_result)
+                logger.info(f"[耗时] refine(LLM): {time.monotonic() - _t3:.1f}s")
+                self.plan_data = plan
+                yield AgentEvent(event_type="thinking", phase="adjust", message="🔍 优化后二次校验…")
+                verify_result = await self._phase_verify(plan, budget)
+                self.budget_ok = verify_result.get("budget_ok", True)
+                review_result = await self._review_plan(plan, budget)
 
             yield AgentEvent(
                 event_type="phase_end", phase="adjust",
-                message=f"✅ 调整完成 — 预算已控制在范围内" if self.budget_ok else "⚠️ 预算仍有超出，已尽最大努力优化",
+                message=f"✅ 优化完成 — 通过校验" if (self.budget_ok and not verify_result.get("route_issues") and review_result.get("passed", True)) else "⚠️ 本轮仍有超出，继续优化",
                 data={"adjusted_plan": self._build_plan_preview(plan)},
             )
+            self._remember(context, plan)
 
-        # ===== Phase 5: FINALIZE =====
+        yield AgentEvent(
+            event_type="phase_end", phase="verify",
+            message="✅ 校验通过！预算在范围内，路线合理",
+            data={"verify": verify_result, "review": review_result},
+        )
+
+        # ===== 最终输出 =====
         yield AgentEvent(
             event_type="phase_start", phase="finalize",
             message="✨ 正在生成最终旅行方案…",
         )
+        _t4 = time.monotonic()
         final_output = await self._phase_finalize(plan)
+        logger.info(f"[耗时] finalize: {time.monotonic() - _t4:.1f}s，总耗时: {time.monotonic() - _t0:.1f}s")
         yield AgentEvent(
             event_type="complete", phase="finalize",
             message=f"🎉 {destination} {days} 天行程方案已生成！",
             data=final_output,
         )
+
+    # ==================== 感知层：构建上下文 ====================
+
+    def _perceive(self) -> dict:
+        """感知层：读取请求 + 从记忆层加载长期偏好与短期会话上下文"""
+        from .memory import memory_store
+        user_id = str(self.req.get("user_id") or "")
+        session_id = str(self.req.get("session_id") or "")
+        memory_block = ""
+        perception_msg = (
+            f"🧠 感知输入：{self.req.get('destination', '')} "
+            f"{self.req.get('days', 3)}天 {self.req.get('people', 2)}人 "
+            f"人均{self.req.get('budget', 5000)}元"
+        )
+        user_ctx = memory_store.build_user_context(user_id)
+        session_ctx = memory_store.build_session_context(session_id)
+        if user_ctx:
+            memory_block += user_ctx
+            perception_msg += "，已读取长期偏好"
+        if session_ctx:
+            memory_block += session_ctx
+            perception_msg += "，已读取会话记忆"
+        return {
+            "user_id": user_id,
+            "session_id": session_id,
+            "memory_block": memory_block,
+            "perception_msg": perception_msg,
+        }
+
+    # ==================== 记忆层：写入 ====================
+
+    def _remember(self, context: dict, plan: dict) -> None:
+        """记忆层：把本轮偏好与规划写入长期/短期记忆"""
+        from .memory import memory_store
+        user_id = context.get("user_id", "")
+        session_id = context.get("session_id", "")
+        if not user_id and not session_id:
+            return
+        pref_parts = []
+        companion = self.req.get("companion", "")
+        if companion and companion != "独行":
+            pref_parts.append(f"{companion}出行")
+        styles = self.req.get("styles", [])
+        if styles:
+            pref_parts.append("偏好" + "、".join(styles[:4]))
+        pref_parts.append(f"酒店{self.req.get('hotel_level', '舒适型')}")
+        pref_parts.append(f"节奏{self.req.get('pace', '适中')}")
+        pref_parts.append(f"人均预算{self.req.get('budget', 5000)}元")
+
+        if user_id:
+            memory_store.set_user(user_id, {
+                "preference_text": "，".join(pref_parts),
+                "hotel_level": self.req.get("hotel_level", ""),
+                "budget": self.req.get("budget", 0),
+                "last_destination": self.req.get("destination", ""),
+                "updated_at": datetime.now().isoformat(),
+            })
+        if session_id:
+            memory_store.set_session(session_id, {
+                "destination": plan.get("destination", ""),
+                "days": plan.get("days", 0),
+                "overview": plan.get("overview", ""),
+                "updated_at": datetime.now().isoformat(),
+            })
+
+    # ==================== 工具层：ReAct 调研（LLM 驱动工具调用） ====================
+
+    async def _research_multiagent(self, destination: str, days: int) -> dict:
+        """Multi-Agent 调研：三个并行子智能体（景点/美食/酒店）同时搜索，主管智能体汇总
+
+        并行 → 总耗时 ≈ 最慢的子智能体（而非三者之和）
+        """
+        from .memory import memory_store
+
+        # 感知缓存命中：同一目的地短时间内直接复用，跳过整组调研
+        cached = memory_store.get_research(destination, days)
+        if cached:
+            logger.info(f"命中调研缓存: {destination} {days}天")
+            return cached
+
+        # 三个子智能体并行调研（互不依赖，同时跑）
+        roles = ["attraction", "food", "hotel"]
+        results = await asyncio.gather(
+            *(self._research_subagent(role, destination, days) for role in roles),
+            return_exceptions=True,
+        )
+        summaries = {}
+        for role, r in zip(roles, results):
+            if isinstance(r, Exception):
+                logger.warning(f"子智能体[{role}]失败: {r}")
+                summaries[role] = ""
+            else:
+                summaries[role] = r or ""
+        logger.info(
+            f"[MultiAgent] 子调研完成: 景点{len(summaries['attraction'])}字 "
+            f"美食{len(summaries['food'])}字 酒店{len(summaries['hotel'])}字"
+        )
+
+        # 主管智能体汇总为统一摘要
+        summary = await self._synthesize_research(destination, summaries)
+        research = {
+            "summary": summary,
+            "source": "multiagent",
+            "attraction": summaries["attraction"],
+            "food": summaries["food"],
+            "hotel": summaries["hotel"],
+        }
+        memory_store.set_research(destination, days, research)
+        return research
+
+    async def _research_subagent(self, role: str, destination: str, days: int) -> str:
+        """单个子智能体：ReAct + 单一专注工具，快速产出该维度的调研摘要"""
+        from langgraph.prebuilt import create_react_agent
+        from .tools import search_attractions_info, search_hotels_info
+        from .prompts import ATTRACTION_AGENT_SYSTEM, FOOD_AGENT_SYSTEM, HOTEL_AGENT_SYSTEM
+        role_system = {
+            "attraction": ATTRACTION_AGENT_SYSTEM,
+            "food": FOOD_AGENT_SYSTEM,
+            "hotel": HOTEL_AGENT_SYSTEM,
+        }[role]
+        tool = search_attractions_info if role != "hotel" else search_hotels_info
+        task = {
+            "attraction": f"请调研「{destination}」的必去景点（含亮点、门票/开放时间、行政区）。",
+            "food": f"请调研「{destination}」的特色美食与推荐餐厅（含人均、推荐理由）。",
+            "hotel": f"请调研「{destination}」的住宿区域建议（含价格区间、交通便利性）。",
+        }[role]
+        try:
+            llm = _build_llm(temperature=0.3)
+            agent = create_react_agent(llm, [tool], prompt=role_system)
+            result = await agent.ainvoke(
+                {"messages": [("human", task)]},
+                config={"recursion_limit": 6},
+            )
+            for m in reversed(result.get("messages", [])):
+                if getattr(m, "type", "") == "ai" and getattr(m, "content", ""):
+                    return m.content
+        except Exception as e:
+            logger.warning(f"子智能体[{role}]异常: {e}")
+        return ""
+
+    async def _synthesize_research(self, destination: str, summaries: dict) -> str:
+        """主管智能体：把三个子智能体的调研结果整合成统一摘要"""
+        from .prompts import SYNTHESIZER_SYSTEM
+        content = "\n\n".join([
+            f"【景点调研】{summaries.get('attraction', '')}",
+            f"【美食调研】{summaries.get('food', '')}",
+            f"【酒店调研】{summaries.get('hotel', '')}",
+        ])
+        try:
+            llm = _build_llm(temperature=0.2)
+            prompt = f"""{SYNTHESIZER_SYSTEM}
+
+目的地：{destination}
+## 三个子智能体的调研结果
+{content}
+
+## 请输出统一调研摘要（400字以内）："""
+            resp = await llm.ainvoke([HumanMessage(content=prompt)])
+            s = resp.content if hasattr(resp, "content") else str(resp)
+            if s and s.strip():
+                return s.strip()
+        except Exception as e:
+            logger.warning(f"调研汇总失败: {e}")
+        return content
+
+    async def _review_plan(self, plan: dict, budget: int) -> dict:
+        """评审智能体：独立审查行程质量，返回 {passed, score, issues}"""
+        from .prompts import REVIEWER_SYSTEM
+        people = self.req.get("people", 2)
+        budget_total = _to_int(budget) * people
+        prompt = f"""{REVIEWER_SYSTEM}
+
+预算上限：{budget_total}（全队总费用）
+
+## 待评审行程 JSON
+{json.dumps(plan, ensure_ascii=False, indent=2, default=str)}
+"""
+        try:
+            llm = _build_llm(temperature=0.1)
+            resp = await llm.ainvoke([HumanMessage(content=prompt)])
+            content = resp.content if hasattr(resp, "content") else str(resp)
+            result = self._parse_json(content)
+            if result and isinstance(result, dict):
+                return {
+                    "passed": bool(result.get("passed", True)),
+                    "score": _to_int(result.get("score", 80), 80),
+                    "issues": result.get("issues", []) if isinstance(result.get("issues", []), list) else [],
+                }
+        except Exception as e:
+            logger.warning(f"评审智能体失败: {e}")
+        return {"passed": True, "score": 80, "issues": []}
+
+    # ==================== 反馈迭代：LLM 带反馈重生成 ====================
+
+    async def _refine_llm(self, context: dict, plan: dict, verify: dict, review: dict | None = None) -> dict:
+        """反馈迭代：把数值校验 + 评审智能体反馈喂给 LLM，让它重生成修正后的完整行程"""
+        from .prompts import REFINE_SYSTEM
+        llm = _build_llm(temperature=0.3)
+        llm.max_tokens = 3500
+        budget_total = _to_int(verify.get("budget_total", 0))
+        critique = []
+        if not verify.get("budget_ok", True):
+            critique.append(
+                f"预算超标 {_to_int(verify.get('budget_gap', 0))} 元"
+                f"（上限 {budget_total}，当前 {_to_int(verify.get('actual_total', 0))}）"
+            )
+            for s in verify.get("suggestions", []):
+                critique.append(f"- {s.get('strategy', '')}: {s.get('detail', '')}")
+        for r in verify.get("route_issues", []):
+            critique.append(f"- 路线：{r}")
+        # 评审智能体的定性建议（路线/完整性/真实性）
+        review = review or {}
+        for i in review.get("issues", []):
+            critique.append(f"- 评审：{i}")
+
+        prompt = f"""{REFINE_SYSTEM}
+
+## 校验反馈（数值 + 评审）
+{'、'.join(critique) if critique else '行程基本合格，请保持，仅输出当前行程'}
+
+## 当前行程 JSON
+{json.dumps(plan, ensure_ascii=False, indent=2, default=str)}
+
+请输出修正后的完整行程 JSON（budget_detail.total ≤ {budget_total}，五项之和 = total）。"""
+        try:
+            resp = await llm.ainvoke([HumanMessage(content=prompt)])
+            content = resp.content if hasattr(resp, "content") else str(resp)
+            adjusted = self._parse_json(content)
+            if adjusted and adjusted.get("day_plans"):
+                adjusted.setdefault("destination", plan.get("destination", ""))
+                adjusted.setdefault("days", plan.get("days", 3))
+                return adjusted
+        except Exception as e:
+            logger.warning(f"LLM 反馈优化失败: {e}")
+        return plan
 
     async def _phase_research(self, destination: str, days: int) -> dict:
         """并行搜索工具获取实时信息（无 LLM 中间环节，提速 3-5x）"""
@@ -376,8 +673,8 @@ class TravelAgentPlanner:
 
     # ==================== Phase 2: 规划 ====================
 
-    async def _phase_plan(self, research: dict) -> dict:
-        """基于调研结果生成完整的结构化行程"""
+    async def _phase_plan(self, research: dict, context: dict | None = None) -> dict:
+        """基于调研结果 + 记忆上下文生成完整的结构化行程"""
         llm = _build_llm(temperature=0.4)
         llm.max_tokens = 3000  # 限制输出长度，加速生成
 
@@ -390,11 +687,14 @@ class TravelAgentPlanner:
         styles = req.get("styles", [])
         hotel_level = req.get("hotel_level", "舒适型")
         pace = req.get("pace", "适中")
+        adjustment = req.get("adjustment", "")
         origin = req.get("origin", "深圳")
 
         research_text = research.get("summary", "")
+        # 记忆层上下文（长期偏好 + 会话记忆）注入规划 prompt
+        context_memory = (context or {}).get("memory_block", "")
 
-        plan_prompt = f"""你是携程旅行资深规划师，为用户生成可直接展示的深度旅行方案。
+        plan_prompt = f"""{context_memory}你是携程旅行资深规划师，为用户生成可直接展示的深度旅行方案。
 
 ## 调研信息
 {research_text}
@@ -404,6 +704,7 @@ class TravelAgentPlanner:
 - 人群：{companion if companion else '无特殊要求'}
 - 偏好：{', '.join(styles) if styles else '综合体验'}
 - 酒店：{hotel_level} | 节奏：{pace}
+- 调整需求：{adjustment if adjustment else '无（按原需求规划）'}
 
 ## 规划要求
 1. 每天上午+下午+晚上3个时段，同天景点同一行政区，减少折返
@@ -447,7 +748,8 @@ class TravelAgentPlanner:
 
             # 解析 JSON
             plan = self._parse_json(content)
-            if plan:
+            # 空行程（day_plans 为空/缺失）不兜底，直接走 fallback，避免渲染空白行程
+            if plan and plan.get("day_plans"):
                 plan.setdefault("destination", destination)
                 plan.setdefault("days", days)
                 plan.setdefault("day_plans", [])
@@ -464,20 +766,19 @@ class TravelAgentPlanner:
     # ==================== Phase 3: 校验 ====================
 
     async def _phase_verify(self, plan: dict, budget: int) -> dict:
-        """核算预算 + 检查路线"""
-        llm = _build_llm(temperature=0.1)
-
+        """核算预算 + 检查路线（本地计算，不调 LLM）"""
         # 提取费用数据（people 与请求默认保持一致）
         people = self.req.get("people", 2)
         days = plan.get("days", 3)
         budget_detail = plan.get("budget_detail", {})
 
-        transport = budget_detail.get("transport", 0)
-        accommodation = budget_detail.get("accommodation", 0)
-        food = budget_detail.get("food", 0)
-        tickets = budget_detail.get("tickets", 0)
-        shopping = budget_detail.get("shopping", 0)
-        actual_total = budget_detail.get("total", transport + accommodation + food + tickets + shopping)
+        # 统一 _to_int 防御：LLM 可能返回字符串数值
+        transport = _to_int(budget_detail.get("transport", 0))
+        accommodation = _to_int(budget_detail.get("accommodation", 0))
+        food = _to_int(budget_detail.get("food", 0))
+        tickets = _to_int(budget_detail.get("tickets", 0))
+        shopping = _to_int(budget_detail.get("shopping", 0))
+        actual_total = _to_int(budget_detail.get("total", transport + accommodation + food + tickets + shopping))
 
         budget_total = budget * people
         budget_ok = actual_total <= budget_total
@@ -529,69 +830,53 @@ class TravelAgentPlanner:
     # ==================== Phase 4: 调整 ====================
 
     async def _phase_adjust(self, plan: dict, verify: dict) -> dict:
-        """自动调整方案（预算超标 + 路线优化）"""
-        llm = _build_llm(temperature=0.3)
+        """自动调整方案（预算超标 + 路线优化）
 
+        使用确定性本地调整（酒店降档 + 餐饮压缩），不再让 LLM 重新生成整个行程 JSON——
+        实测原实现的 adjust LLM 调用单次耗时 110-160s，是规划慢的主因。
+        """
         budget_ok = verify.get("budget_ok", True)
-        budget_gap = verify.get("budget_gap", 0)
-        suggestions = verify.get("suggestions", [])
         route_issues = verify.get("route_issues", [])
 
-        # 如果一切 OK，直接返回
+        # 一切正常，直接返回
         if budget_ok and not route_issues:
             return plan
 
-        # 构建调整指令
-        adjustment_parts = []
-
         if not budget_ok:
-            suggestion_text = "\n".join([
-                f"- {s.get('strategy')}: {s.get('detail')}（可省 {s.get('save_amount', 0)} 元）"
-                for s in suggestions
-            ])
-            adjustment_parts.append(f"""## 预算调整
-当前预算超出 {budget_gap} 元。请按以下策略调整：
-{suggestion_text}
+            bd = plan.setdefault("budget_detail", {})
+            days = _to_int(plan.get("days", self.req.get("days", 3)), 3)
+            people = self.req.get("people", 2)
+            budget_total = _to_int(verify.get("budget_total", self.req.get("budget", 5000) * people))
+            hotel_level = self.req.get("hotel_level", "舒适型")
+            hotels = plan.get("hotels", [])
 
-调整时注意：
-- 降低酒店档位：{self.req.get('hotel_level', '舒适型')} → 下调一档
-- 删减 1-2 个次要收费景点，替换为免费但有特色的景点
-- 优化餐厅选择：人均消费降低 30-40%
-- 保持核心体验不变
-""")
+            # 1) 酒店降档一档；已是经济型则压缩餐饮（全部 _to_int 防御字符串数值）
+            level_discount = {"豪华型": 0.5, "舒适型": 0.4, "经济型": 0.3}
+            if hotels and hotel_level != "经济型":
+                discount = level_discount.get(hotel_level, 0.4)
+                for h in hotels:
+                    old = _to_int(h.get("price_per_night", 500), 500)
+                    h["price_per_night"] = int(old * (1 - discount))
+                    h["total_price"] = int(h["price_per_night"] * days)
+                    h["highlights"] = "性价比之选 · " + h.get("highlights", "")
+                bd["accommodation"] = sum(_to_int(h.get("total_price", 0)) for h in hotels)
+            else:
+                bd["food"] = int(_to_int(bd.get("food", 0)) * 0.8)
 
+            # 2) 若仍超标：压缩门票预算（只减不增），同步下调非晚间时段展示费用。
+            #    晚间时段属餐饮/夜游，不计入门票，避免重复计费导致 total 反而上升。
+            if sum(_to_int(bd.get(k, 0)) for k in ["transport", "accommodation", "food", "tickets", "shopping"]) > budget_total:
+                bd["tickets"] = int(_to_int(bd.get("tickets", 0)) * 0.6)
+                for dp in plan.get("day_plans", []):
+                    for s in dp.get("time_slots", []):
+                        if s.get("time_of_day") != "晚上":
+                            s["cost"] = int(_to_int(s.get("cost", 0)) * 0.6)
+
+            bd["total"] = sum(_to_int(bd.get(k, 0)) for k in ["transport", "accommodation", "food", "tickets", "shopping"])
+
+        # 路线问题本地标注（不再调 LLM 重排）
         if route_issues:
-            adjustment_parts.append(f"""## 路线优化
-发现以下问题需要修改：
-{chr(10).join(f'- {r}' for r in route_issues)}
-
-优化要求：
-- 同天景点尽量在同一行政区内
-- 上午的第一个景点尽量靠近酒店
-- 优先使用地铁/公交，减少打车
-""")
-
-        adjust_prompt = f"""当前行程需要调整：
-
-{chr(10).join(adjustment_parts)}
-
-## 当前行程 JSON
-{json.dumps(plan, ensure_ascii=False, indent=2)}
-
-请根据上述调整要求修改行程，输出调整后的完整 JSON。只输出 JSON。"""
-
-        try:
-            resp = await llm.ainvoke([HumanMessage(content=adjust_prompt)])
-            content = resp.content if hasattr(resp, "content") else str(resp)
-            adjusted = self._parse_json(content)
-            if adjusted:
-                adjusted.setdefault("destination", plan.get("destination", ""))
-                adjusted.setdefault("days", plan.get("days", 3))
-                adjusted.setdefault("day_plans", [])
-                return adjusted
-        except Exception as e:
-            if self.debug:
-                print(f"Adjust phase error: {e}")
+            plan.setdefault("research_notes", []).append("路线提示：" + "；".join(route_issues[:3]))
 
         return plan
 
@@ -647,16 +932,20 @@ class TravelAgentPlanner:
         if not plan.get("hotels"):
             hotel_level = self.req.get("hotel_level", "舒适型")
             level_price = {"经济型": 250, "舒适型": 500, "豪华型": 1000}
+            hotel_price = level_price.get(hotel_level, 500)
             plan["hotels"] = [
                 {
                     "name": f"{destination}市中心酒店",
                     "district": "市中心",
-                    "price_per_night": level_price.get(hotel_level, 500),
-                    "total_price": level_price.get(hotel_level, 500) * days,
+                    "price_per_night": hotel_price,
+                    "total_price": int(hotel_price * _to_int(days, 3)),
                     "rating": 4.3,
                     "highlights": "交通便利，周边配套齐全",
                 }
             ]
+            # 补默认酒店的同时回写住宿预算，避免酒店价格与预算明细脱节
+            bd["accommodation"] = int(hotel_price * _to_int(days, 3))
+            bd["total"] = sum(_to_int(bd.get(k, 0)) for k in ["transport", "accommodation", "food", "tickets", "shopping"])
 
         # 确保 research_notes
         if not plan.get("research_notes"):

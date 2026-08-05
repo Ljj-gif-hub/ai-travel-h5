@@ -62,11 +62,8 @@ const saveProfile = async () => {
     }
   } catch (error) {
     closeToast();
-    // 【多账号隔离】离线保存到当前账号
-    setMyData('userInfo', { ...userInfo })
-    localStorage.setItem('userInfo', JSON.stringify(userInfo));
-    showToast({ message: '已保存到本地', position: 'middle' });
-    setTimeout(() => { router.back(); }, 1000);
+    // 保存失败：不写本地、不回退，提示重试（避免误报"已保存到本地"导致数据丢失）
+    showToast({ message: '保存失败，请重试', position: 'middle' });
   } finally {
     isLoading.value = false;
   }

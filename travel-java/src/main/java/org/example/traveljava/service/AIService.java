@@ -158,7 +158,8 @@ public class AIService {
                     JsonNode msg = choices.get(0).get("message");
                     if (msg != null) {
                         JsonNode c = msg.get("content");
-                        if (c != null && !c.asText().isEmpty()) {
+                        // isTextual() 拦截 JSON null，避免 asText() 返回 "null" 字符串
+                        if (c != null && c.isTextual() && !c.asText().isEmpty()) {
                             onChunk.accept(c.asText());
                             full.append(c.asText());
                             count[0]++;
@@ -167,7 +168,8 @@ public class AIService {
                     return;
                 }
                 JsonNode content = delta.get("content");
-                if (content != null && !content.asText().isEmpty()) {
+                // 推理型模型的 reasoning 分片 content 为 JSON null，跳过而非发送 "null"
+                if (content != null && content.isTextual() && !content.asText().isEmpty()) {
                     String text = content.asText();
                     onChunk.accept(text);
                     full.append(text);
@@ -397,7 +399,8 @@ public class AIService {
                         JsonNode node = objectMapper.readTree(data);
                         if (node.has("choices") && node.get("choices").isArray() && node.get("choices").has(0)) {
                             JsonNode delta = node.get("choices").get(0).get("delta");
-                            if (delta != null && delta.has("content")) {
+                            if (delta != null && delta.has("content") && delta.get("content").isTextual()) {
+                                // isTextual() 拦截 JSON null，防止推理分片把 "null" 推给前端
                                 String content = delta.get("content").asText();
                                 if (content != null && !content.isEmpty()) {
                                     return Flux.just(content);
@@ -672,7 +675,8 @@ public class AIService {
                         JsonNode choices = node.get("choices");
                         if (choices != null && choices.isArray() && choices.has(0)) {
                             JsonNode delta = choices.get(0).get("delta");
-                            if (delta != null && delta.has("content")) {
+                            if (delta != null && delta.has("content") && delta.get("content").isTextual()) {
+                                // isTextual() 拦截 JSON null，防止推理分片把 "null" 推给前端
                                 String raw = delta.get("content").asText();
                                 if (raw != null && !raw.isEmpty()) {
                                     // 【后端脏文本清洗】

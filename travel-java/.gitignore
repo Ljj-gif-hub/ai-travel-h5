@@ -32,11 +32,16 @@ build/
 ### VS Code ###
 .vscode/
 
-### Uploaded Videos ###
+### Uploaded content ###
 uploads/*.mp4
 uploads/*.avi
 uploads/*.mov
 uploads/*.flv
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+uploads/*.webp
+uploads/*.gif
 
 ### Application Configuration ###
 src/main/resources/application.yml

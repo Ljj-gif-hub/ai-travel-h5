@@ -16,6 +16,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -121,7 +122,7 @@ public class AmapService implements MapService {
     // ==================== 输入提示 ====================
 
     @Override
-    public List<POISuggestionDTO> getSuggestions(String keyword) {
+    public List<POISuggestionDTO> getSuggestions(String keyword, String city) {
         if (keyword == null || keyword.trim().isEmpty()) {
             log.warn("keyword为空，直接返回空列表");
             return Collections.emptyList();
@@ -132,16 +133,20 @@ public class AmapService implements MapService {
             return getMockSuggestions();
         }
 
-        log.info("调用高德地图Input Tips API, keyword={}", keyword);
+        log.info("调用高德地图Input Tips API, keyword={}, city={}", keyword, city);
         rateLimit();
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(INPUT_TIPS_URL)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(INPUT_TIPS_URL)
                     .queryParam("keywords", keyword.trim())
                     .queryParam("key", key)
-                    .queryParam("datatype", "all")
-                    .toUriString();
-
-            String response = restTemplate.getForObject(url, String.class);
+                    .queryParam("datatype", "all");
+            // 限定城市，避免"西湖""岳麓山"这类歧义词在全国范围搜到无关地点
+            if (city != null && !city.isBlank()) {
+                builder.queryParam("city", city.trim());
+            }
+            // 用 URI 对象（而非 String）传给 RestTemplate，避免对已编码中文二次编码导致 city 参数失效
+            URI uri = builder.build().encode().toUri();
+            String response = restTemplate.getForObject(uri, String.class);
             return parseSuggestionResponse(response);
         } catch (RestClientException e) {
             log.error("调用高德地图Input Tips API失败", e);

@@ -278,16 +278,13 @@ const sendMessage = async () => {
         if (!trimmedEvt.startsWith('data:')) continue
         try {
           const dataLines = trimmedEvt.split('\n')
+          // 所有行都保留：首行剥掉 data: 前缀，续行原样保留（含真实换行的分帧内容不再丢失）
           let content = dataLines
-            .map((line) => {
-              const t = line.trim()
-              if (t.startsWith('data: ')) return t.slice(6)
-              if (t.startsWith('data:')) return t.slice(5)
-              return ''
-            })
+            .map((line) => line.replace(/^data:\s?/, ''))
             .join('\n')
-          if (content && content !== '[DONE]') {
+          if (content && content !== '[DONE]' && content.trim().toLowerCase() !== 'null') {
             if (isThinking.value) isThinking.value = false
+            // 防御：过滤可能残留的 "null" 分片
             messages.value[aiMsgIndex].content += content
             scrollToBottom()
           }
@@ -336,8 +333,8 @@ const savePlan = async () => {
     isSavingPlan.value = true
     await planApi.savePlan({
       destination: destination || '未指定',
-      budget: budget || '',
-      days: days || '',
+      budget: Number(budget) || null,
+      days: Number(days) || null,
       // 后端 SavedPlanRequest 只有 planData 字段，content 会被丢弃 → 内容放进 planData
       planData: { content: lastAI.content },
       source: 'home',
@@ -368,6 +365,10 @@ const closeDialog = () => {
 }
 
 /* ==================== Init Messages ==================== */
+/* 清洗历史消息里遗留的 "nullnullnull..."（旧版后端推理分片产生的脏数据） */
+const stripLeadingNulls = (content) =>
+  typeof content === 'string' ? content.replace(/^(null\s*)+/i, '') : content || ''
+
 const initMessages = () => {
   // 【修复】优先从持久存储加载当前会话消息
   const saved = getCurrentSessionMessages()
@@ -376,8 +377,8 @@ const initMessages = () => {
   if (props.initialMessages && props.initialMessages.length > 0) {
     messages.value = [...props.initialMessages]
   } else if (saved.length > 1) {
-    // 有历史会话记录 → 恢复
-    messages.value = [...saved]
+    // 有历史会话记录 → 恢复（清洗旧 AI 消息里遗留的 null 前缀）
+    messages.value = saved.map((m) => (m.type === 'ai' ? { ...m, content: stripLeadingNulls(m.content) } : m))
   } else {
     // 全新会话 → 种子消息
     messages.value = [{ id: genMsgId(), type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' }]

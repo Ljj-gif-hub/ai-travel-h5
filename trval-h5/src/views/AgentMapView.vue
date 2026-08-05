@@ -3,11 +3,12 @@
  * AgentMapView.vue — Agent 行程规划地图页 v5
  * 可拖拽抽屉 + 百度地图 + 景点图片 + 携程同款动画
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { agentPlanStream } from '../api/agent'
-import { sceneApi } from '../api/index.js'
+import { sceneApi, planApi } from '../api/index.js'
+import { getToken } from '../utils/auth'
 
 defineOptions({ name: 'AgentMapView' })
 const router = useRouter()
@@ -26,9 +27,46 @@ const planData = ref(null)
 const costBreakdown = ref(null)
 const hotelList = ref([])
 const attractionImages = ref({})
+const markerPositions = ref({}) // 景点名 → {lat,lng}，点击卡片定位用
+const markerEls = ref({})        // 景点名 → 标记 DOM，高亮用
+const activeSpot = ref('')       // 当前选中的景点
+const adjustText = ref('')       // 调整行程输入
+const markdownContent = ref('')  // 旧版 markdown 型保存行程的兜底展示
 const budgetLabels = { transport:'交通', accommodation:'住宿', food:'餐饮', tickets:'门票', shopping:'购物', total:'总计' }
 
 let streamAbort = null
+const isSaving = ref(false)
+
+/** 保存当前 Agent 规划到「我的行程」 */
+async function savePlan() {
+  if (isSaving.value || !planData.value) return
+  isSaving.value = true
+  try {
+    const res = await planApi.savePlan({
+      destination: destCity.value,
+      days: tripDays.value,
+      budget: Number(route.query.budget) || 5000,
+      people: tripPeople.value,
+      planData: {
+        ...planData.value,
+        hotels: hotelList.value,
+        budgetDetail: costBreakdown.value,
+        totalBudget: Number(route.query.budget) || 5000,
+      },
+      source: 'agent',
+    })
+    if (res.code === 0) {
+      showToast('行程已保存，可在「我的行程」查看')
+    } else {
+      showToast(res.message || '保存失败')
+    }
+  } catch (e) {
+    showToast('保存失败，请稍后重试')
+  } finally {
+    isSaving.value = false
+  }
+}
+
 const stepList = ref([
   { name: '分析目的地特色', status: 'wait' },
   { name: '智能规划每日行程', status: 'wait' },
@@ -47,9 +85,36 @@ const totalCost = computed(() => {
   }
   return s
 })
+// 抽屉拉到最底部（收起）时隐藏调整胶囊
+const showAdjustBar = computed(() => phase.value === 'completed' && !!planData.value && drawerPct.value > 40)
+
+// ====== 简略预览：抽屉收起时展示行程/住宿/天数摘要（携程同款） ======
+const PREVIEW_MAX_PCT = 36 // 抽屉位置低于此值（接近收起）时显示简略预览
+const showCollapsedPreview = computed(() =>
+  phase.value === 'completed' && !!planData.value && drawerPct.value <= PREVIEW_MAX_PCT
+)
+const spotCount = computed(() => {
+  if (!planData.value) return 0
+  const set = new Set()
+  for (const dp of planData.value.dayPlans || []) for (const s of dp.timeSlots || []) if (s.attraction) set.add(s.attraction)
+  return set.size
+})
+const itinPreview = computed(() => {
+  if (!planData.value) return ''
+  const days = planData.value.days || tripDays.value
+  return `${destCity.value} · ${days}天${Math.max(days - 1, 0)}晚 · ${spotCount.value}个景点`
+})
+const hotelPreview = computed(() => {
+  if (!hotelList.value.length) return '暂无住宿推荐'
+  const first = hotelList.value[0]
+  const extra = hotelList.value.length > 1 ? ` 等${hotelList.value.length}家` : ''
+  const price = first.pricePerNight ? ` · ¥${first.pricePerNight}起` : ''
+  return `${first.name}${extra}${price}`
+})
+function expandFromPreview() { snapTo(MID) }
 
 // ====== 可拖拽抽屉（仅手柄区域可拖拽，内容区自由滚动） ======
-const MIN = 12, MID = 55, MAX = 85
+const MIN = 26, MID = 55, MAX = 92
 const drawerPct = ref(MID)
 const isDragging = ref(false)
 let handleTouchId = null, hStartY = 0, hStartPct = 0, hDragOn = false
@@ -59,6 +124,7 @@ function snapTo(target) {
 }
 
 function onHandleTouchStart(e) {
+  cancelMapZoom() // 用户再次按住抽屉时，中止未完成的缩放动画
   handleTouchId = e.changedTouches[0].identifier
   hStartY = e.changedTouches[0].clientY
   hStartPct = drawerPct.value
@@ -93,12 +159,69 @@ function onHandleTouchEnd(e) {
     if (dMin < dMid && dMin < dMax) snapTo(MIN)
     else if (dMax < dMid) snapTo(MAX)
     else snapTo(MID)
+    // 落点可能与最后一次拖动位置相同（drawerPct 没变、watch 不触发），松手必须显式缩放，否则会"缩放失效"
+    fireDrawerZoom(drawerPct.value)
   }
   hDragOn = false
 }
 
+// ====== 抽屉 ↔ 地图互动：识别当前缩放做相对增量（抽屉上滑=放大、下滑=缩小，不受当前级别影响） ======
+// 拖动中不连续缩放；抽屉快停止运动（收尾滑动/吸附）时沿缓动曲线平滑缩放，更从容灵动
+const ZOOM_RANGE = 2.5          // 抽屉 MIN→MAX 全程对应放大 2.5 级
+const MIN_PCT = MIN, MAX_PCT = MAX
+const SNAP_DURATION_MS = 720    // 收尾缩放总时长（ms）：稍慢 + 缓动曲线，避免生硬
+let lastPct = drawerPct.value   // 上次应用缩放时的抽屉位置
+let zoomRafId = null            // 缓动缩放中的 rAF 句柄（新缩放/拖动/卸载时取消）
+
+/** 缓动曲线：easeOutCubic（先快后慢，收尾优雅减速，更灵动） */
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3) }
+
+/** 取消进行中的缩放动画（避免与新的手势/缩放打架） */
+function cancelMapZoom() {
+  if (zoomRafId) { cancelAnimationFrame(zoomRafId); zoomRafId = null }
+}
+
+/** 灵动缩放：rAF 每帧沿缓动曲线 setZoom 到当前插值级别（AMap 连续缩放支持小数级别），
+ *  60fps 平滑无极；只持续 SNAP_DURATION_MS 一次、帧数有界，不会像持续拖动那样压垮渲染进程 */
+function animateMapZoom(target, duration = SNAP_DURATION_MS) {
+  if (!mapInstance || !window.AMap) return
+  const start = mapInstance.getZoom()
+  if (Math.abs(start - target) < 0.02) return
+  cancelMapZoom() // 仅当确实要缩放时才打断上一次动画，no-op 不打断
+  const t0 = performance.now()
+  const tick = (ts) => {
+    if (!mapInstance || !window.AMap) return
+    const t = Math.min((ts - t0) / duration, 1)
+    const zoom = start + (target - start) * easeOutCubic(t)
+    if (Math.abs(mapInstance.getZoom() - zoom) > 0.001) mapInstance.setZoom(zoom, true) // 立即渲染到小数级别
+    if (t < 1) zoomRafId = requestAnimationFrame(tick)
+    else zoomRafId = null
+  }
+  zoomRafId = requestAnimationFrame(tick)
+}
+
+/** 抽屉快停止运动时，执行一次相对缩放（delta 相对上次实际应用的位置） */
+function fireDrawerZoom(pct) {
+  if (!mapInstance || !window.AMap || pct == null) return
+  // 识别当前真实缩放（含用户手动缩放过的高级别），只做相对增量
+  const currentZoom = mapInstance.getZoom()
+  const deltaPct = pct - lastPct
+  const deltaZoom = (deltaPct / (MAX_PCT - MIN_PCT)) * ZOOM_RANGE
+  const target = currentZoom + deltaZoom
+  lastPct = pct
+  animateMapZoom(target, SNAP_DURATION_MS)
+}
+
+watch(drawerPct, (val) => {
+  // 拖动中不缩放；抽屉停止/吸附（快停止运动）时才缩放
+  if (isDragging.value) return
+  fireDrawerZoom(val)
+})
+
 // ====== 地图 ======
 let mapInstance = null
+let markerInstances = [] // 已添加的地图标记实例（重新生成时清除）
+const markerByName = {}  // 景点名 → AMap.Marker 实例（扇形展开用）
 const cityCoords = {
   北京:[39.915,116.404],上海:[31.23,121.474],成都:[30.573,104.067],杭州:[30.274,120.155],
   大理:[25.607,100.233],三亚:[18.253,109.504],西安:[34.263,108.948],重庆:[29.565,106.551],
@@ -137,24 +260,147 @@ async function initAmapMap() {
     center: [center.lng, center.lat], zoom: 13,
     viewMode: '2D', resizeEnable: true,
   })
-  // 城市标签
+  // 缩放/平移后重排标记，防重叠
+  mapInstance.on('moveend', scheduleDeclutter)
+  mapInstance.on('zoomend', scheduleDeclutter)
+  // 城市标签（自定义样式，替代丑的默认 label）
+  const cityEl = document.createElement('div')
+  cityEl.className = 'city-marker'
+  cityEl.textContent = destCity.value
   const marker = new window.AMap.Marker({
     position: [center.lng, center.lat],
-    label: { content: destCity.value, direction: 'top', offset: [0, -20] },
+    content: cityEl,
+    anchor: 'center',
     zIndex: 100,
   })
   mapInstance.add(marker)
 }
 
-function addMarkers(markers) {
+/** 地理编码：把景点名解析为真实坐标（带 city 参数提高准确度；兜底用城市中心附近小偏移） */
+async function geocodeName(name) {
+  try {
+    // 传 city 让高德限定在城市内搜索，避免"西湖"这类歧义词搜到别处
+    const r = await fetch(`/api/map/suggestion?keyword=${encodeURIComponent(name)}&city=${encodeURIComponent(destCity.value)}`).then(r => r.json())
+    if (r.code === 0 && r.data && r.data[0] && r.data[0].lat != null && r.data[0].lng != null) {
+      return { lat: r.data[0].lat, lng: r.data[0].lng }
+    }
+  } catch {}
+  const center = await getCenter(destCity.value)
+  return { lat: center.lat + (Math.random() - .5) * .02, lng: center.lng + (Math.random() - .5) * .02 }
+}
+
+async function addMarkers(names) {
   if (!mapInstance || !window.AMap) return
+  // 并行地理编码真实坐标，避免全部随机堆在市中心
+  const markers = await Promise.all(names.map(async (name) => {
+    const c = await geocodeName(name)
+    return { name, lat: c.lat, lng: c.lng }
+  }))
   markers.forEach(m => {
+    // 标准定位针图标（teardrop pin）+ 干净文字气泡
+    const el = document.createElement('div')
+    el.className = 'spot-marker'
+    el.innerHTML =
+      '<span class="spot-marker-name"></span>' +
+      '<svg class="spot-marker-pin" viewBox="0 0 24 36" width="18" height="27" aria-hidden="true">' +
+        '<path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#7C3AED" stroke="#fff" stroke-width="1.6"/>' +
+        '<circle cx="12" cy="11.5" r="5.2" fill="#fff"/>' +
+      '</svg>'
+    el.querySelector('.spot-marker-name').textContent = m.name
+    markerPositions.value[m.name] = { lat: m.lat, lng: m.lng }
+    markerEls.value[m.name] = el
     const mk = new window.AMap.Marker({
       position: [m.lng, m.lat],
-      label: { content: m.name, direction: 'right', offset: [10, 0] },
+      content: el,
+      anchor: 'bottom-center',
+      offset: new window.AMap.Pixel(0, -2),
+      zIndex: 60,
     })
     mapInstance.add(mk)
+    markerInstances.push(mk)
+    markerByName[m.name] = mk
   })
+  // 地图渲染稳定后执行扇形展开（防重叠）
+  setTimeout(declutterMarkers, 350)
+}
+
+/** 上下排列：重叠的景点标记竖向堆叠（不挤成一团），全部可见可点 */
+const OVERLAP_PX = 48     // 屏幕像素：间距小于此值视为重叠
+const STACK_STEP = 46     // 上下排列的垂直间距（px）
+let declutterTimer = null
+
+function declutterMarkers() {
+  if (!mapInstance || !window.AMap || Object.keys(markerPositions.value).length < 2) return
+  try {
+    const names = Object.keys(markerPositions.value)
+    // 原始坐标 → 当前屏幕像素；地图视图未就绪/正在变换时可能返回 NaN，跳过本轮
+    const screen = {}
+    for (const n of names) {
+      const p = markerPositions.value[n]
+      const px = mapInstance.lngLatToContainer([p.lng, p.lat])
+      if (!px || !isFinite(px.x) || !isFinite(px.y)) return
+      screen[n] = { x: px.x, y: px.y }
+    }
+    // 贪心分组：互相在阈值内的归为一组
+    const assigned = new Set()
+    const groups = []
+    names.forEach(n => {
+      if (assigned.has(n)) return
+      const group = [n]
+      assigned.add(n)
+      names.forEach(m => {
+        if (assigned.has(m)) return
+        const dx = screen[n].x - screen[m].x
+        const dy = screen[n].y - screen[m].y
+        if (Math.sqrt(dx * dx + dy * dy) < OVERLAP_PX) { group.push(m); assigned.add(m) }
+      })
+      groups.push(group)
+    })
+    // 单点归位到精确坐标；重叠组上下排列（竖向堆叠）
+    groups.forEach(group => {
+      if (group.length === 1) {
+        const p = markerPositions.value[group[0]]
+        if (isFinite(p.lat) && isFinite(p.lng)) markerByName[group[0]]?.setPosition([p.lng, p.lat])
+        return
+      }
+      const cx = group.reduce((s, n) => s + screen[n].x, 0) / group.length
+      const cy = group.reduce((s, n) => s + screen[n].y, 0) / group.length
+      group.forEach((n, i) => {
+        // 围绕中心垂直堆叠：第 i 个放在 cy - 偏移（居中分布），同 x
+        const offsetY = (i - (group.length - 1) / 2) * STACK_STEP
+        const ll = mapInstance.containerToLngLat(cx, cy + offsetY)
+        if (ll && isFinite(ll.lng) && isFinite(ll.lat)) {
+          markerByName[n]?.setPosition([ll.lng, ll.lat])
+        }
+      })
+    })
+  } catch (e) {
+    // 地图视图未就绪（containerToLngLat 可能抛 LngLat(NaN)），静默跳过本轮，等 moveend/zoomend 稳定后再排
+  }
+}
+
+/** 缩放/平移结束后防抖重排，保证不重叠 */
+function scheduleDeclutter() {
+  clearTimeout(declutterTimer)
+  declutterTimer = setTimeout(declutterMarkers, 150)
+}
+
+/** 高亮地图上的指定景点标记 */
+function highlightMarker(name) {
+  activeSpot.value = name
+  Object.values(markerEls.value).forEach(el => el && el.classList.remove('active'))
+  const el = markerEls.value[name]
+  if (el) el.classList.add('active')
+}
+
+/** 点击行程卡片：定位到该景点的精确坐标（居中 + 放大 + 高亮标记） */
+function goToSpot(name) {
+  const pos = markerPositions.value[name]
+  if (!pos || !mapInstance || !window.AMap) return
+  mapInstance.setCenter([pos.lng, pos.lat])
+  // 放大到至少 16 级，看清精确位置（若已更近则保持）
+  animateMapZoom(Math.max(mapInstance.getZoom(), 16))
+  highlightMarker(name)
 }
 
 async function loadImages(dayPlans) {
@@ -165,8 +411,46 @@ async function loadImages(dayPlans) {
   }
 }
 
+// ====== 记忆层标识：长期偏好(user_id) + 会话上下文(session_id) ======
+function getUserShortId() {
+  try {
+    const token = getToken()
+    if (!token) return ''
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')
+    const u = JSON.parse(atob(padded))
+    return u.userId ? String(u.userId) : ''
+  } catch { return '' }
+}
+function getSessionId() {
+  let sid = localStorage.getItem('agent_session_id')
+  if (!sid) {
+    sid = 'sess_' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+    localStorage.setItem('agent_session_id', sid)
+  }
+  return sid
+}
+
 // ====== SSE 流式生成 ======
-async function startGeneration() {
+/** 提交调整需求：带新需求重新生成行程 */
+function submitAdjust() {
+  const text = adjustText.value.trim()
+  if (!text) { showToast('请输入调整需求，如「放慢节奏」'); return }
+  adjustText.value = ''
+  phase.value = 'generating'
+  startGeneration(text)
+}
+
+async function startGeneration(adjustment = '') {
+  // 重新生成前清空旧标记与旧方案
+  if (mapInstance && window.AMap) {
+    markerInstances.forEach(mk => { try { mapInstance.remove(mk) } catch {} })
+  }
+  markerInstances = []
+  markerPositions.value = {}
+  markerEls.value = {}
+  activeSpot.value = ''
+  planData.value = null
   const steps = stepList.value
   steps.forEach(s => s.status = 'wait')
   agentLogs.value = []
@@ -179,6 +463,10 @@ async function startGeneration() {
     companion: route.query.companion || '',
     styles: route.query.styles ? route.query.styles.split(',') : [],
     hotel_level: route.query.hotel_level || '舒适型', pace: route.query.pace || '适中',
+    // 记忆层标识：Agent 据此读取长期偏好 + 会话上下文
+    user_id: getUserShortId(), session_id: getSessionId(),
+    // 行程调整需求：Agent 在规划时应用
+    adjustment: adjustment || undefined,
   }, {
     onProgress(event) {
       const idx = phaseIdx[event.phase] ?? -1
@@ -217,19 +505,107 @@ async function startGeneration() {
       hotelList.value = (d.hotels || []).map(h => ({
         name: h.name, district: h.district, pricePerNight: h.price_per_night, rating: h.rating, highlights: h.highlights,
       }))
-      const center = await getCenter(destCity.value)
-      const markers = []; (d.day_plans || []).forEach(dp => { (dp.time_slots || []).forEach(s => { if (s.attraction) markers.push({ name: s.attraction, lat: s.lat || center.lat + (Math.random() - .5) * .03, lng: s.lng || center.lng + (Math.random() - .5) * .03 }) }) })
-      addMarkers(markers); loadImages(d.day_plans || [])
+      const markerNames = []
+      ;(d.day_plans || []).forEach(dp => { (dp.time_slots || []).forEach(s => { if (s.attraction && !markerNames.includes(s.attraction)) markerNames.push(s.attraction) }) })
+      addMarkers(markerNames); loadImages(d.day_plans || [])
       phase.value = 'completed'; snapTo(MAX)
     },
-    onError(msg) { showToast(msg || '规划失败'); router.replace('/agent-planner') },
+    onError(msg) { showToast(msg || '规划失败'); goBackToPrev() },
   })
 }
 
-onMounted(() => { if(!destCity.value){router.replace('/agent-planner');return}; initMap(); startGeneration() })
-onBeforeUnmount(() => { if (streamAbort) streamAbort() })
-function goBack() { router.replace('/agent-planner') }
-function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-planner') }
+/** 加载已保存的行程（兼容旧/新结构；任何异常都不重定向，保证能打开） */
+async function loadSavedPlan(planId) {
+  try {
+    const result = await planApi.getPlanById(planId)
+    if (result.code !== 0 || !result.data) { showToast('加载失败'); return }
+    const data = result.data
+    destCity.value = data.destination || ''
+    tripDays.value = data.days || 3
+    tripPeople.value = data.people || 2
+
+    let pd = data.planData || data.planJson
+    if (typeof pd === 'string') { try { pd = JSON.parse(pd) } catch { pd = null } }
+
+    const isObj = !!pd && typeof pd === 'object'
+    const dayPlansArr = isObj && Array.isArray(pd.dayPlans) ? pd.dayPlans : []
+    const hasContent = isObj && typeof pd.content === 'string' && pd.content.trim().length > 0
+
+    if (dayPlansArr.length > 0) {
+      // 结构化方案（新 Agent / 旧结构化）
+      planData.value = {
+        destination: pd.destination || destCity.value,
+        days: pd.days || tripDays.value,
+        people: pd.people || tripPeople.value,
+        overview: pd.overview || '',
+        dayPlans: dayPlansArr.map((dpItem) => {
+          const dp = dpItem || {}
+          return {
+            day: dp.day,
+            dayTitle: dp.day_title || dp.dayTitle || '',
+            timeSlots: (dp.time_slots || dp.timeSlots || []).map((sItem) => {
+              const s = sItem || {}
+              return {
+                timeOfDay: s.time_of_day || s.timeOfDay || '',
+                time: s.time || '',
+                attraction: s.attraction || '',
+                activity: s.activity || '',
+                duration: s.duration || '',
+                cost: s.cost != null ? `${s.cost}元` : '0元',
+                transport: s.transport || '',
+                tips: s.tips || '',
+                hours: s.hours || '',
+              }
+            }),
+            meals: dp.meals || [],
+          }
+        }),
+        tips: pd.tips || [],
+      }
+      hotelList.value = Array.isArray(pd.hotels) ? pd.hotels : []
+      costBreakdown.value = pd.budgetDetail || pd.budget_detail || null
+      markdownContent.value = ''
+    } else {
+      // markdown 型旧方案（聊天保存 / 旧文本流，dayPlans 为空但有 content）
+      const md = hasContent ? pd.content : ''
+      planData.value = null
+      hotelList.value = []
+      costBreakdown.value = null
+      markdownContent.value = md || (isObj ? JSON.stringify(pd, null, 2) : '（该行程无内容）')
+    }
+
+    // 先让内容显示出来，地图后台初始化（不阻塞）
+    phase.value = 'completed'
+    agentProgress.value = 100
+    stepList.value.forEach(s => s.status = 'done')
+    snapTo(MAX)
+    showToast('已加载保存的行程')
+    initMap().then(() => {
+      if (planData.value) {
+        const names = []
+        ;(planData.value.dayPlans || []).forEach(dp => (dp.timeSlots || []).forEach(s => { if (s.attraction && !names.includes(s.attraction)) names.push(s.attraction) }))
+        addMarkers(names)
+      }
+    })
+  } catch (e) {
+    console.error('加载保存规划失败:', e)
+    showToast('行程打开失败')
+  }
+}
+
+onMounted(() => {
+  const savedId = route.query.savedPlanId
+  if (!savedId && !destCity.value) { router.replace('/trips'); return }
+  if (savedId) { loadSavedPlan(savedId) } else { initMap(); startGeneration() }
+})
+onBeforeUnmount(() => { if (streamAbort) streamAbort(); cancelMapZoom(); if (declutterTimer) clearTimeout(declutterTimer) })
+/** 回退到上一个界面（无历史时兜底回 /trips，避免空白页） */
+function goBackToPrev() {
+  if (window.history.length <= 1) router.replace('/trips')
+  else router.back()
+}
+function goBack() { goBackToPrev() }
+function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 </script>
 
 <template>
@@ -256,15 +632,41 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
       <span class="top-title">{{ destCity }} · {{ tripDays }}天</span>
     </div>
 
+    <!-- 悬浮保存：抽屉外，地图上方，生成完成后显示 -->
+    <div class="save-float" v-if="phase==='completed'&&planData" :class="{ saving: isSaving }" @click="savePlan">
+      <span class="save-float-icon">💾</span><span>{{ isSaving ? '保存中…' : '保存行程' }}</span>
+    </div>
+
     <!-- 可拖拽抽屉 -->
     <div class="drawer"
-      :style="{transform:`translateY(${100-drawerPct}%)`,transition:isDragging?'none':'transform 0.35s cubic-bezier(0.4,0,0.2,1)'}">
+      :style="{transform:`translateY(${100-drawerPct}%)`,transition:isDragging?'none':'transform 0.5s cubic-bezier(0.34,1.56,0.64,1)'}">
       <div class="handle" @click="snapTo(drawerPct>50?MIN:MAX)"
         @touchstart.passive="onHandleTouchStart" @touchmove="onHandleTouchMove"
         @touchend="onHandleTouchEnd" @touchcancel="onHandleTouchEnd">
         <div class="bar"></div>
       </div>
       <div class="body">
+
+        <!-- 简略预览：抽屉拉到底部（收起）时显示行程/住宿/天数摘要，点击或上滑展开（携程同款） -->
+        <transition name="cp">
+          <div class="collapsed-preview" v-if="showCollapsedPreview" @click="expandFromPreview"
+            @touchstart.passive="onHandleTouchStart" @touchmove="onHandleTouchMove"
+            @touchend="onHandleTouchEnd" @touchcancel="onHandleTouchEnd">
+            <div class="cp-row">
+              <span class="cp-ico">🗺️</span>
+              <span class="cp-txt">{{ itinPreview }}</span>
+              <span class="cp-arrow">↑ 上滑</span>
+            </div>
+            <div class="cp-row">
+              <span class="cp-ico">🏨</span>
+              <span class="cp-txt">{{ hotelPreview }}</span>
+            </div>
+            <div class="cp-days">
+              <span v-for="dp in planData.dayPlans" :key="dp.day" class="cp-day">D{{ dp.day }}</span>
+              <span class="cp-days-hint">共 {{ planData.days || tripDays }} 天</span>
+            </div>
+          </div>
+        </transition>
 
         <!-- 携程同款生成动画 -->
         <div v-if="phase==='generating'" class="gen">
@@ -298,6 +700,12 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
           <button class="stop-btn" @click="handleStop">停止生成</button>
         </div>
 
+        <!-- 旧版 markdown 保存行程兜底展示 -->
+        <div v-else-if="phase==='completed' && markdownContent" class="done">
+          <div class="md-title">📄 行程内容</div>
+          <div class="md-content">{{ markdownContent }}</div>
+        </div>
+
         <!-- 完成 -->
         <div v-else-if="phase==='completed'&&planData" class="done">
           <!-- 双 Tab -->
@@ -310,14 +718,19 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
           <template v-if="activeTab==='plan'">
             <div class="day-tabs">
               <div v-for="(dp, idx) in planData.dayPlans" :key="dp.day"
-                   class="day-tab" :class="{on:activeDay===idx}" @click="activeDay=idx">
+                   class="day-tab" :class="{on:activeDay===idx}" @click="activeDay=idx"
+                   :style="{ animationDelay: (idx * 0.06) + 's' }">
                 <span class="dt-num">Day{{dp.day}}</span>
                 <span class="dt-title">{{dp.dayTitle?.replace('第'+dp.day+'天：','').replace('第'+dp.day+'天:','')}}</span>
               </div>
             </div>
 
-            <template v-if="planData.dayPlans[activeDay]">
-              <div v-for="(slot, si) in planData.dayPlans[activeDay].timeSlots" :key="si" class="spot-card">
+            <transition name="day-switch" mode="out-in">
+              <div v-if="planData.dayPlans[activeDay]" :key="activeDay" class="day-content">
+              <div v-for="(slot, si) in planData.dayPlans[activeDay].timeSlots" :key="si" class="spot-card"
+                   :class="{ active: activeSpot === slot.attraction }"
+                   @click="goToSpot(slot.attraction)"
+                   :style="{ animationDelay: (si * 0.06) + 's' }">
                 <div class="spot-header">
                   <span class="spot-num">{{si+1}}</span>
                   <div class="spot-title-row">
@@ -351,11 +764,12 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
                   <span class="spot-cost">💰 {{slot.cost}}</span>
                 </div>
               </div>
-              <div class="meals-bar" v-if="planData.dayPlans[activeDay].meals?.length">
-                <span class="meals-tag">🍽</span>
-                <span v-for="m in planData.dayPlans[activeDay].meals" :key="m" class="meal">{{m}}</span>
+                <div class="meals-bar" v-if="planData.dayPlans[activeDay].meals?.length">
+                  <span class="meals-tag">🍽</span>
+                  <span v-for="(m, mi) in planData.dayPlans[activeDay].meals" :key="m" class="meal" :style="{ animationDelay: (mi * 0.06) + 's' }">{{m}}</span>
+                </div>
               </div>
-            </template>
+            </transition>
           </template>
 
           <!-- 住宿 Tab -->
@@ -385,15 +799,19 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
               </div>
             </div>
           </template>
-
-          <!-- 底部栏 -->
-          <div class="bottom-bar">
-            <div class="ai-input" @click="showToast('功能开发中')"><span>💬 调整行程，如「放慢节奏」...</span></div>
-            <div class="hotel-bar" @click="activeTab='hotel'"><span>🏨 住宿</span></div>
-          </div>
         </div>
       </div>
     </div>
+
+    <!-- 调整行程：固定在视口底部，不随抽屉/页面滑动；抽屉拉到底部时滑出隐藏 -->
+    <transition name="adjust-fade">
+      <div class="bottom-bar" v-if="showAdjustBar">
+        <div class="adjust-bar">
+          <input v-model="adjustText" placeholder="💬 调整行程..." @keyup.enter="submitAdjust" />
+          <div class="adjust-btn" @click="submitAdjust">调整</div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -425,8 +843,26 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 /* 抽屉 */
 .drawer { position:absolute; bottom:0; left:0; right:0; z-index:20; height:88%; background:rgba(245,245,247,0.97); backdrop-filter:blur(20px); border-radius:20px 20px 0 0; display:flex; flex-direction:column; box-shadow:0 -6px 30px rgba(0,0,0,0.12); will-change:transform; }
 .handle { height:36px; min-height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:none; }
-.bar { width:36px; height:5px; background:#d1d5db; border-radius:3px; }
+.bar { width:36px; height:5px; background:#d1d5db; border-radius:3px; transition:transform .2s cubic-bezier(.34,1.56,.64,1), background .2s; }
+.handle:active .bar { transform:scaleX(1.5); background:#a5b4fc; }
 .body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 16px 120px; }
+
+/* 简略预览：抽屉收起时的行程/住宿/天数摘要（携程同款） */
+.collapsed-preview { padding:9px 0 10px; cursor:pointer; touch-action:none; }
+.cp-row { display:flex; align-items:center; gap:7px; font-size:12.5px; color:#333; line-height:1.45; }
+.cp-row + .cp-row { margin-top:5px; }
+.cp-ico { font-size:14px; }
+.cp-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cp-arrow { flex-shrink:0; color:#8b5cf6; font-size:11px; font-weight:600; }
+.cp-days { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.cp-day { padding:2px 9px; border-radius:8px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:10.5px; font-weight:600; }
+.cp-days-hint { margin-left:auto; font-size:11px; color:#999; }
+
+/* 摘要卡出现/消失动画：淡入 + 从下方上滑 */
+.cp-enter-active { transition: opacity .3s ease, transform .3s ease; }
+.cp-leave-active { transition: opacity .2s ease, transform .2s ease; }
+.cp-enter-from { opacity: 0; transform: translateY(18px); }
+.cp-leave-to { opacity: 0; transform: translateY(18px); }
 
 /* 生成动画 — 携程同款 Shimmer 骨架屏 */
 .gen { padding:0; }
@@ -442,7 +878,7 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 /* 骨架卡片 */
 .skeleton-list { display:flex; flex-direction:column; gap:10px; }
 .sk-card { background:#fff; border-radius:16px; padding:16px; animation:cardIn .4s ease-out both; }
-@keyframes cardIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cardIn { from{opacity:0;transform:translateY(14px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
 
 /* Shimmer 动效 */
 .sk-row { height:14px; border-radius:7px; background:linear-gradient(90deg, #f0f0f5 25%, #e8e8f0 50%, #f0f0f5 75%); background-size:200% 100%; animation:shimmer 1.8s ease-in-out infinite; }
@@ -465,24 +901,35 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 .stop-btn { display:block; margin:16px auto; padding:10px 40px; border:1px solid #e2e8f0; border-radius:22px; background:#fff; color:#94a3b8; font-size:13px; cursor:pointer; }
 
 /* 完成 */
-.done { padding:12px 0 160px; }
+.done { padding:12px 0 160px; animation:fadeUp .45s ease-out both; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+
+/* 旧版 markdown 保存行程兜底 */
+.md-title { font-size:15px; font-weight:700; color:#1a1a2e; margin-bottom:10px; }
+.md-content { white-space:pre-wrap; word-break:break-word; line-height:1.8; font-size:13px; color:#444; background:#fff; border-radius:12px; padding:14px; }
+
+/* 地图标记（自定义样式替代默认 label） */
 
 /* 双Tab */
 .tab-row { display:flex; gap:0; background:#fff; border-radius:20px; padding:4px; margin-bottom:12px; }
-.tab { flex:1; text-align:center; padding:10px; border-radius:16px; font-size:14px; font-weight:500; color:#888; cursor:pointer; transition:all .25s; }
+.tab { flex:1; text-align:center; padding:10px; border-radius:16px; font-size:14px; font-weight:500; color:#888; cursor:pointer; transition:all .25s cubic-bezier(.34,1.56,.64,1); }
+.tab:active { transform:scale(.95); }
 .tab.on { background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-weight:600; box-shadow:0 2px 8px rgba(139,92,246,0.3); }
 
 /* 天数标签栏 */
 .day-tabs { display:flex; gap:8px; padding:0 0 12px; overflow-x:auto; scrollbar-width:none; }
 .day-tabs::-webkit-scrollbar { display:none; }
-.day-tab { flex-shrink:0; padding:8px 14px; border-radius:14px; background:#fff; cursor:pointer; text-align:center; min-width:72px; transition:all .25s; }
+.day-tab { flex-shrink:0; padding:8px 14px; border-radius:14px; background:#fff; cursor:pointer; text-align:center; min-width:72px; transition:all .25s; animation:cardIn .4s ease both; }
+.day-tab:active { transform:scale(.94); }
 .day-tab.on { background:#1a1a2e; }
 .day-tab.on .dt-num, .day-tab.on .dt-title { color:#fff; }
 .dt-num { display:block; font-size:12px; font-weight:600; color:#8b5cf6; }
 .dt-title { display:block; font-size:10px; color:#888; margin-top:2px; white-space:nowrap; }
 
 /* 景点卡片 */
-.spot-card { background:#fff; border-radius:16px; margin-bottom:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+.spot-card { background:#fff; border-radius:16px; margin-bottom:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.04); animation:cardIn .45s ease both; cursor:pointer; }
+.spot-card.active { box-shadow:0 0 0 2px rgba(124,58,237,.55), 0 6px 16px rgba(124,58,237,.15); }
+.spot-card.active .spot-title { color:#7c3aed; }
 .spot-header { display:flex; align-items:center; gap:10px; padding:14px 14px 0; }
 .spot-num { width:28px; height:28px; border-radius:50%; background:#8b5cf6; color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; }
 .spot-title-row { flex:1; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -507,13 +954,13 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 .spot-cost { color:#10b981; font-weight:600; margin-left:auto; }
 
 /* 美食 */
-.meals-bar { padding:10px 14px; margin-bottom:12px; background:#fff; border-radius:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.meals-bar { padding:10px 14px; margin-bottom:12px; background:#fff; border-radius:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; animation:cardIn .45s ease both; }
 .meals-tag { font-size:14px; }
 .meal { padding:4px 10px; background:rgba(245,158,11,0.1); color:#d97706; border-radius:10px; font-size:11px; }
 
 /* 住宿 */
 .hotels-section { padding-bottom:20px; }
-.hotel-card { display:flex; gap:12px; background:#fff; border-radius:16px; padding:12px; margin-bottom:10px; }
+.hotel-card { display:flex; gap:12px; background:#fff; border-radius:16px; padding:12px; margin-bottom:10px; animation:cardIn .45s ease both; }
 .hotel-img-plc { width:100px; height:70px; border-radius:10px; overflow:hidden; flex-shrink:0; }
 .hotel-img-plc svg { width:100%; height:100%; }
 .hotel-info { flex:1; min-width:0; }
@@ -526,7 +973,7 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 .hotel-total { font-size:11px; color:#888; margin-left:8px; }
 
 /* 预算 */
-.budget-card { background:#fff; border-radius:16px; padding:16px; margin-top:8px; }
+.budget-card { background:#fff; border-radius:16px; padding:16px; margin-top:8px; animation:cardIn .45s ease both; }
 .budget-card h3 { margin:0 0 10px; font-size:15px; }
 .budget-rows { display:flex; flex-direction:column; gap:6px; }
 .budget-row { display:flex; justify-content:space-between; padding:10px 14px; background:#f8f9fa; border-radius:10px; font-size:13px; color:#555; }
@@ -534,8 +981,61 @@ function handleStop() { if (streamAbort) streamAbort(); router.replace('/agent-p
 .budget-row.total span, .budget-row.total b { color:#fff; }
 .budget-row b { font-size:14px; color:#1a1a2e; }
 
-/* 底部栏 */
-.bottom-bar { position:fixed; bottom:0; left:0; right:0; z-index:30; display:flex; gap:8px; padding:10px 16px calc(env(safe-area-inset-bottom)+10px); background:rgba(255,255,255,0.9); backdrop-filter:blur(20px); border-top:1px solid rgba(0,0,0,0.05); }
-.ai-input { flex:1; padding:12px 16px; background:#f5f5f7; border-radius:22px; font-size:13px; color:#aaa; cursor:pointer; }
-.hotel-bar { padding:12px 18px; background:#8b5cf6; border-radius:22px; color:#fff; font-size:13px; font-weight:500; cursor:pointer; white-space:nowrap; }
+/* 底部：独立悬浮的调整胶囊（窄、高、离底悬浮） */
+.bottom-bar { position:fixed; bottom:0; left:0; right:0; z-index:30; display:flex; justify-content:center; padding:8px 14px calc(env(safe-area-inset-bottom) + 26px); background:transparent; pointer-events:none; }
+.adjust-bar { pointer-events:auto; flex:1; max-width:280px; display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.9); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-radius:26px; padding:7px 6px 7px 16px; box-sizing:border-box; box-shadow:0 8px 26px rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.6); overflow:hidden; transition:box-shadow .2s; }
+.adjust-bar:focus-within { box-shadow:0 8px 26px rgba(0,0,0,0.2), 0 0 0 2px rgba(139,92,246,.25); }
+.adjust-bar input { flex:1; min-width:0; appearance:none; -webkit-appearance:none; border:none !important; outline:none; background:transparent !important; background-color:transparent !important; box-shadow:none; margin:0; padding:0; height:30px; line-height:30px; font-size:13px; color:#333; box-sizing:border-box; }
+.adjust-bar input::placeholder { color:#a5a5aa; }
+.adjust-btn { height:32px; padding:0 14px; border-radius:17px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:12px; font-weight:600; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:transform .2s, opacity .2s; }
+.adjust-btn:active { transform:scale(.94); opacity:.85; }
+
+/* 胶囊滑出/滑入动画（抽屉拉到底部时隐藏） */
+.adjust-fade-enter-active, .adjust-fade-leave-active { transition:opacity .3s ease, transform .3s ease; }
+.adjust-fade-enter-from, .adjust-fade-leave-to { opacity:0; transform:translateY(100%); }
+/* 悬浮保存按钮：地图上方（抽屉外），顶部栏下方右侧，紧凑醒目 */
+.save-float { position:absolute; top:calc(env(safe-area-inset-top) + 56px); right:16px; z-index:15; display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:16px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; font-size:12px; font-weight:600; line-height:1; box-shadow:0 3px 12px rgba(16,185,129,.4); cursor:pointer; animation:floatIn .4s ease; }
+.save-float:active { transform:scale(.93); }
+.save-float.saving { opacity:.75; pointer-events:none; }
+.save-float-icon { font-size:13px; }
+@keyframes floatIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+
+/* ===== 抽屉内容动画（克制的入场 + 天数切换过渡，去掉持续循环动效） ===== */
+@keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+/* 徽章轻弹出（一次性） */
+.spot-badges span { animation:badgeIn .4s ease both; }
+@keyframes badgeIn { from{opacity:0;transform:scale(.85)} to{opacity:1;transform:scale(1)} }
+
+/* 选中日签轻放大（一次性） */
+.day-tab.on { animation:tabGrow .35s ease; }
+@keyframes tabGrow { from{transform:scale(.94)} to{transform:scale(1)} }
+
+/* 美食标签轻弹出（一次性） */
+.meal { animation:mealPop .35s ease both; }
+@keyframes mealPop { from{opacity:0;transform:scale(.88) translateY(3px)} to{opacity:1;transform:scale(1) translateY(0)} }
+
+/* 卡片悬停反馈（亮度/颜色，避免与入场 transform fill 冲突） */
+.spot-card:hover .spot-title { color:#7c3aed; }
+.spot-card:hover { box-shadow:0 5px 16px rgba(0,0,0,.08); }
+.spot-img { transition:filter .3s ease; }
+.spot-card:hover .spot-img { filter:brightness(1.06); }
+.hotel-card:hover { box-shadow:0 6px 16px rgba(0,0,0,.08); }
+.hotel-card { transition:box-shadow .25s ease; }
+
+/* 天数切换过渡（淡入淡出 + 上下滑动） */
+.day-switch-enter-active, .day-switch-leave-active { transition:opacity .28s ease, transform .28s ease; }
+.day-switch-enter-from { opacity:0; transform:translateY(14px); }
+.day-switch-leave-to { opacity:0; transform:translateY(-10px); }
+</style>
+
+<!-- 地图标记样式：AMap 的 content 是 JS 动态插入地图容器，不在组件 scoped 作用域内，必须用全局样式 -->
+<style>
+.spot-marker { display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; transform-origin:bottom center; animation:markerPop .35s cubic-bezier(.34,1.56,.64,1) both; }
+.spot-marker-name { padding:2px 7px; border-radius:7px; background:rgba(255,255,255,0.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#333; font-size:10px; font-weight:500; line-height:1.4; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.5); }
+.spot-marker-pin { display:block; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.22)); transition:transform .25s ease, filter .25s ease; }
+.spot-marker.active .spot-marker-pin { transform:scale(1.3); filter:drop-shadow(0 0 8px rgba(124,58,237,.9)); }
+.spot-marker.active .spot-marker-name { color:#7c3aed; font-weight:700; }
+.city-marker { padding:5px 12px; border-radius:10px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:12px; font-weight:600; box-shadow:0 3px 10px rgba(99,102,241,0.35); white-space:nowrap; }
+@keyframes markerPop { from{opacity:0;transform:scale(.6) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
 </style>

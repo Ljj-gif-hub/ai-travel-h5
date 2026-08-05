@@ -385,8 +385,8 @@ const getVideoCardAspect = (note) => {
 const getLeftCardAspect = (index) => 'aspect-3-4'
 const getRightCardAspect = (index) => 'aspect-3-4'
 
-// 携程风瀑布流：左列轮播卡片做小 → 左列紧凑更高，右列正常
-const displayNotes = computed(() => notes.value.slice(0, 10))
+// 携程风瀑布流：显示所有已加载的笔记（随滚动加载逐步增多，不再固定前10条）
+const displayNotes = computed(() => notes.value)
 
 // 【修复】左列：偶数索引（包含0号，原逻辑丢弃索引0导致首条视频不显示）
 // 推广轮播作为左列顶部额外卡片，不挤占任何一条笔记
@@ -677,7 +677,7 @@ const startPlanning = () => {
     if (!people.value || String(people.value).trim() === '') return showToast({ message: '请输入人数', position: 'middle' })
     if (Number(people.value) < 1 || Number(people.value) > 50) return showToast({ message: '人数请输入1-50之间', position: 'middle' })
     showLoadingToast({ message: 'AI正在规划...', duration: 500, forbidClick: true, loadingType: 'spinner' })
-    setTimeout(() => router.push({ path: '/trip-map', query: { destination: destination.value, budget: budget.value, days: days.value, people: people.value } }), 500)
+    setTimeout(() => router.push({ path: '/agent-map', query: { destination: destination.value, budget: budget.value, days: days.value, people: people.value } }), 500)
   } catch (e) { console.error('startPlanning 失败:', e); showToast({ message: '操作失败，请重试', position: 'middle' }) }
 }
 

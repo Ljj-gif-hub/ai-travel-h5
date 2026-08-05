@@ -155,7 +155,9 @@ const OAUTH_CONFIG = {
 }
 
 const handleThirdPartyLogin = async (platform) => {
-  const cfg = OAUTH_CONFIG[platform]
+  // 模板传的是中文（'微信'/'支付宝'），归一化为 OAUTH_CONFIG 的英文键
+  const key = ({ '微信': 'wechat', '支付宝': 'alipay' })[platform] || platform
+  const cfg = OAUTH_CONFIG[key]
   // 未配置 AppID → 友好提示
   if (!cfg || !cfg.appid) {
     showToast({ message: `${platform}登录暂未配置，请先去开放平台获取 AppID`, position: 'middle', duration: 2200 })
@@ -163,7 +165,7 @@ const handleThirdPartyLogin = async (platform) => {
   }
 
   try {
-    if (platform === 'wechat') {
+    if (key === 'wechat') {
       // ──── 微信 OAuth 2.0 ────
       const state = Math.random().toString(36).substring(2, 10)
       localStorage.setItem('oauth_state', state)
@@ -171,7 +173,7 @@ const handleThirdPartyLogin = async (platform) => {
       const url = `${cfg.authUrl}?appid=${cfg.appid}&redirect_uri=${cfg.redirectUri}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`
       window.location.href = url
     }
-    else if (platform === 'alipay') {
+    else if (key === 'alipay') {
       // ──── 支付宝 OAuth 2.0 ────
       const state = Math.random().toString(36).substring(2, 10)
       localStorage.setItem('oauth_state', state)

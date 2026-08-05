@@ -974,6 +974,11 @@ const loadSavedPlan = async (planId) => {
       if (data.planJson && typeof data.planJson === 'string' && data.planJson.startsWith('##')) {
         store.state.planData = { destination: data.destination, days: data.days, content: data.planJson }
       }
+      // Agent 保存的行程：把 hotels / budgetDetail 解析到状态（住宿 Tab 与费用卡需要）
+      if (store.state.planData && typeof store.state.planData === 'object') {
+        store.state.hotelList = store.state.planData.hotels || []
+        store.state.costBreakdown = store.state.planData.budgetDetail || null
+      }
       store.state.phase = 'completed'
       store.state.drawerState = 'mid'
       showSuccessToast('已加载保存的行程')

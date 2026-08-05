@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onActivated } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getToken } from '../utils/auth'
@@ -462,10 +462,11 @@ const handleSearch = () => {
 }
 
 /* ==================== 滚动触底加载 ==================== */
-const handleScroll = (e) => {
-  const el = e.target
-  if (!el) return
-  const { scrollTop, scrollHeight, clientHeight } = el
+// 页面实际滚动在 window/body（.page-shell 不滚动），用 window 滚动度量触底
+const handleScroll = () => {
+  const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
+  const scrollHeight = document.documentElement.scrollHeight
+  const clientHeight = window.innerHeight
   if (scrollHeight - scrollTop - clientHeight < 120 && hasMore.value && !loadingMore.value) {
     loadNotes()
   }
@@ -514,6 +515,7 @@ const initFollowingList = async () => {
 onMounted(async () => {
   await initFollowingList()
   loadNotes(true).then(() => { hasLoadedOnce = true })
+  window.addEventListener('scroll', handleScroll, { passive: true })
 })
 
 onActivated(async () => {
@@ -521,6 +523,10 @@ onActivated(async () => {
   if (hasLoadedOnce) {
     loadNotes(true)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', handleScroll)
 })
 
 </script>

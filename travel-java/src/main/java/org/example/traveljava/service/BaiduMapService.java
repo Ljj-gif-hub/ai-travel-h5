@@ -117,7 +117,7 @@ public class BaiduMapService implements MapService {
         }
     }
 
-    public List<POISuggestionDTO> getSuggestions(String keyword) {
+    public List<POISuggestionDTO> getSuggestions(String keyword, String city) {
         if (keyword == null || keyword.trim().isEmpty()) {
             log.warn("keyword为空，直接返回空列表");
             return Collections.emptyList();
@@ -128,12 +128,12 @@ public class BaiduMapService implements MapService {
             return getMockSuggestions();
         }
 
-        log.info("调用百度地图Suggestion API, keyword={}", keyword);
+        log.info("调用百度地图Suggestion API, keyword={}, city={}", keyword, city);
 
         try {
             String url = UriComponentsBuilder.fromHttpUrl(SUGGESTION_URL)
                     .queryParam("query", keyword.trim())
-                    .queryParam("region", "全国")
+                    .queryParam("region", (city != null && !city.isBlank()) ? city.trim() : "全国")
                     .queryParam("city_limit", false)
                     .queryParam("output", "json")
                     .queryParam("ak", ak)

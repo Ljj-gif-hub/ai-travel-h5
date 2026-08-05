@@ -16,9 +16,10 @@ public interface MapService {
     /**
      * POI 搜索联想（输入提示）
      * @param keyword 搜索关键词
+     * @param city 城市限定（可空，空则全国搜索）
      * @return 联想结果列表
      */
-    List<POISuggestionDTO> getSuggestions(String keyword);
+    List<POISuggestionDTO> getSuggestions(String keyword, String city);
 
     /**
      * 获取 POI 详情

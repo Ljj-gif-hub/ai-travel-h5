@@ -131,9 +131,9 @@ public class AgentProxyController {
                     .retrieve()
                     .bodyToFlux(String.class)
                     .map(chunk -> {
-                        // 透传 SSE 数据
+                        // Spring 的 SSE reader 会剥掉 data: 前缀（chunk 是裸 JSON），这里补回，保证前端能解析
                         if (chunk != null && !chunk.trim().isEmpty()) {
-                            return chunk + "\n";
+                            return "data: " + chunk.trim() + "\n\n";
                         }
                         return "";
                     })

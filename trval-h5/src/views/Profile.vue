@@ -130,9 +130,8 @@ const saveProfile = async () => {
       localStorage.setItem('userInfo', JSON.stringify(userInfo)); showEditPopup.value = false; closeToast(); showToast('修改成功')
     } else { closeToast(); showToast(response.message || '保存失败') }
   } catch (error) {
-    closeToast(); userInfo.nickname = editForm.value.nickname; userInfo.bio = editForm.value.bio
-    setMyData('userInfo', { ...userInfo })
-    localStorage.setItem('userInfo', JSON.stringify(userInfo)); showEditPopup.value = false; showToast('已保存到本地')
+    // 保存失败：不写本地、不回退弹窗，提示重试（避免误报"已保存到本地"导致数据丢失）
+    closeToast(); showToast('保存失败，请重试')
   }
 }
 

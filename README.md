@@ -21,6 +21,7 @@
 
 - 📱 [前端详细文档](trval-h5/README.md) — 技术栈、功能列表、UI 设计系统、项目结构
 - 🖥️ [后端详细文档](travel-java/README.md) — API 列表、安全机制、AI 供应商配置、部署指南
+- 🤖 [Agent 微服务文档](agent-service/README.md) — 5 阶段流水线、记忆层、工具、API
 
 ## 🚀 快速启动
 
@@ -100,6 +101,24 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.1 — 2026-08-05）
+
+### 🤖 Agent 记忆层（agent-service）
+- **长期用户偏好**（`user_id`）+ **短期会话上下文**（`session_id`）→ 个性化感知 + 连续规划
+- **调研缓存**（内存 TTL）避免重复搜索；记忆持久化到 `data/agent_memory.json`
+- **行程调整**：`adjustment` 参数局部增量重规划（如「放慢节奏」）
+
+### 🗺️ Agent 地图页（AgentMapView）
+- 高德地图 + 可拖拽抽屉联动：抽屉收放时地图**无极缩放**（easeOutCubic 缓动 + rAF 60fps）
+- 收起时显示**行程/住宿/天数摘要卡**（携程同款），点击或上滑展开
+- 景点标记**去重叠**布局 + 点击卡片定位、放大、高亮
+- 生成/调整后**一键保存**到「我的行程」
+
+### ⚙️ 其他
+- 后端：Agent 微服务**透传代理**（JWT 鉴权 + 限流 + 优雅降级）、地图 `script`/`geocode` 端点
+- 性能：游记分页、动态与酒店查询优化
+- 安全：鉴权/管理员角色/上传校验/CORS/限流/密钥清理
+
 ## 📝 最近更新（v3.0 — 2026-07-29）
 
 ### 前端重大更新
@@ -173,6 +192,7 @@ mvn spring-boot:run   # → http://localhost:3200
 | 搜索工具 | Tavily Search API（实时景点/酒店/美食） |
 | 地图工具 | 高德地图 API（通勤距离/时间） |
 | 预算工具 | 本地核算引擎（4 策略自动降级） |
+| 记忆层 | JSON 文件持久化（用户偏好 + 会话上下文 + 调研缓存） |
 | 编排模式 | ReAct Agent + 多阶段流水线 |
 | 流式推送 | SSE (Server-Sent Events) 实时进度 |
 

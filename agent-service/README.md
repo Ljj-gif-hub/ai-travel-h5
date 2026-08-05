@@ -1,6 +1,6 @@
 # 🤖 AI Travel Agent
 
-> 基于 LangChain + FastAPI 的旅游规划智能体。ReAct 推理 + Tavily 实时搜索 + 高德地图 + 自动预算校验。
+> 基于 LangChain + FastAPI 的旅游规划智能体。ReAct 推理 + Tavily 实时搜索 + 高德地图 + 自动预算校验 + 记忆层（长期用户偏好 + 短期会话上下文 + 调研缓存）。
 
 ## 🎯 核心能力
 
@@ -50,6 +50,19 @@
 | `search_hotels_info` | Tavily Search API | 搜索酒店区域分布和价格 |
 | `get_commute_info` | 高德地图 API | 计算两地通勤距离和时间 |
 | `calculate_budget` | 本地引擎 | 核算总花费 + 超标策略建议 |
+
+### 🧠 记忆层
+
+| 类型 | 标识 | 说明 |
+|------|------|------|
+| 长期用户偏好 | `user_id` | 酒店档位 / 预算 / 出行风格，按用户个性化感知 |
+| 短期会话上下文 | `session_id` | 上次规划摘要，实现「延续上下文」连续规划 |
+| 调研缓存 | destination + days | 同一目的地短时间复用搜索结果，避免重复 ReAct |
+
+- 持久化：写入 `data/agent_memory.json`（gitignored），进程重启不丢
+- 前端通过 JWT 解码出的 `user_id` + 本地会话号 `session_id` 传入
+- 调研缓存为内存 TTL（默认 1 小时），不落盘
+- 行程调整：`adjustment` 参数携带新的调整需求（如「放慢节奏」），Agent 局部增量重规划
 
 ### Demo 模式
 
@@ -125,19 +138,30 @@ POST /api/agent/plan/stream
 Content-Type: application/json
 
 # 同上参数，返回 text/event-stream
-# 事件类型: phase_start / phase_end / warning / complete / error
+# 事件类型: phase_start / phase_end / thinking / warning / adjustment / plan_update / complete / error
+```
+
+### 原始 SSE（Spring Boot 透传专用）
+
+```bash
+POST /api/agent/plan/stream-sse
+Content-Type: application/json
+
+# 直接从 Request body 解析 JSON，兼容任意 JSON 格式（无需 Pydantic 校验）
+# 后端 AgentProxyController 即转发到此端点（前端 → Spring Boot 3200 → Python 3201）
 ```
 
 ## 📁 项目结构
 
 ```
 agent-service/
-├── main.py              # FastAPI 入口，3 个端点
+├── main.py              # FastAPI 入口（同步/SSE/原始SSE + 健康检查）
 ├── requirements.txt      # Python 依赖
 ├── .env.example          # 环境变量模板
 ├── agent/
 │   ├── planner.py        # 5 阶段 Agent 编排器核心
 │   ├── tools.py          # 4 个 LangChain Tool
+│   ├── memory.py         # 🆕 记忆层（长期偏好 + 会话上下文 + 调研缓存）
 │   ├── schemas.py        # Pydantic 数据模型
 │   └── prompts.py        # System Prompt 模板
 └── README.md

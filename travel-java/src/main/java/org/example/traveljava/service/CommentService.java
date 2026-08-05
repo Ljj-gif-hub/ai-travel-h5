@@ -140,10 +140,12 @@ public class CommentService {
         try {
             commentLikeRepository.save(new CommentLike(commentId, userId));
             commentRepository.incrementLikes(commentId);
+            // 同步一级缓存，避免 bulk 更新后 findById 返回旧点赞数
+            comment.setLikes(comment.getLikes() + 1);
         } catch (DataIntegrityViolationException e) {
             // 并发重复点赞，唯一约束兜底，视为已点赞
             log.debug("评论点赞并发冲突：commentId={}, userId={}", commentId, userId);
         }
-        return commentRepository.findById(commentId).orElse(comment);
+        return comment;
     }
 }

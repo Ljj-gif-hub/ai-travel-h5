@@ -8,7 +8,8 @@ AI 智能旅游助手后端服务是整个应用的核心引擎，负责：
 
 - **多供应商 AI 集成**：DeepSeek / OpenAI / Claude / Gemini / Custom 五类 LLM，启动时自动检测可用供应商
 - **SSE 流式行程生成**：7 阶段进度推送 + 逐天行程生成，支持任务取消
-- **百度地图 API**：POI 搜索、热门目的地、城市景点、周边搜索、场景图片
+- **Agent 微服务透传**：`/api/agent/**` 转发到 Python Agent（同步 + SSE 流式），JWT 鉴权 + 限流 + 优雅降级
+- **地图 API**：百度地图 + 高德地图（POI 搜索、热门目的地、城市景点、周边搜索、地理编码、地图 SDK 代理）
 - **用户社交系统**：游记发布/点赞/评论/回复（二级嵌套）、关注/粉丝（JWT 隔离）、收藏、反馈
 - **电商功能**：优惠券管理、订单系统（机票/酒店/门票）
 - **安全防护**：JWT 认证、Redis 滑动窗口限流、XSS 过滤、安全响应头、路径穿越防护、图片代理白名单
@@ -124,9 +125,10 @@ travel-java/
 │   │   ├── GlobalExceptionHandler.java # 全局异常处理
 │   │   ├── RedisConfig.java           # Redis 配置
 │   │   └── ThreadPoolConfig.java      # 线程池（图片预加载）
-│   ├── controller/                    # REST API 控制器（20 个）
+│   ├── controller/                    # REST API 控制器（23 个）
 │   │   ├── TravelController.java      # 行程规划（核心 SSE 流式）
 │   │   ├── TripAIController.java      # AI 行程规划
+│   │   ├── AgentProxyController.java  # 🆕 Agent 微服务透传（同步 + SSE）
 │   │   ├── AuthController.java        # 用户认证（限流）
 │   │   ├── UserController.java        # 用户管理
 │   │   ├── CommentController.java     # 评论管理 + 回复
@@ -135,6 +137,7 @@ travel-java/
 │   │   ├── PostController.java        # 社区帖子
 │   │   ├── FileUploadController.java  # 文件上传
 │   │   ├── ImageProxyController.java  # 图片代理（白名单）
+│   │   ├── MapScriptController.java   # 地图 JS SDK 代理（高德 v2.0 / 百度 GL）
 │   │   └── ...                        # 地图/酒店/收藏/订单等
 │   ├── service/                       # 业务逻辑层（17 个）
 │   │   ├── AIService.java             # 核心 AI 服务
@@ -203,6 +206,16 @@ travel-java/
 | `/api/user/following` | GET | 关注列表（按 JWT 隔离） |
 | `/api/user/followers` | GET | 粉丝列表（按 JWT 隔离） |
 
+### Agent 微服务透传
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/agent/health` | GET | Agent 服务健康检测（含代理状态） |
+| `/api/agent/plan` | POST | 同步生成行程（透传 Python Agent，需登录） |
+| `/api/agent/plan/stream` | POST | SSE 流式生成（透传，需登录） |
+
+> 架构：前端 → Spring Boot `:3200`（AgentProxyController）→ Python Agent `:3201`
+
 ### 地图数据
 
 | 接口 | 方法 | 说明 |
@@ -212,6 +225,8 @@ travel-java/
 | `/api/map/hot-destinations` | GET | 热门目的地列表 |
 | `/api/map/city-attractions` | GET | 城市景点列表 |
 | `/api/map/nearby-attractions` | GET | 周边景点搜索 |
+| `/api/map/script` | GET | 地图 JS SDK 代理（高德 v2.0 / 百度 GL） |
+| `/api/map/geocode` | GET | 地理编码（城市名 → 经纬度） |
 
 ### 其他
 
