@@ -5,10 +5,12 @@
  */
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 
 defineOptions({ name: 'AITripPlanner' })
 const router = useRouter()
+const { t } = useI18n()
 
 // ====== 页面状态：form / generating / finish / error ======
 const pageState = ref('form')
@@ -36,13 +38,13 @@ const toggleMonth = (m) => {
   if (i >= 0) { selectedMonths.value.splice(i, 1) } else { selectedMonths.value.push(m) }
 }
 const dateDone = () => {
-  if (!selectedDays.value) { showToast('请选择天数'); return }
+  if (!selectedDays.value) { showToast(t('agent.selectDays')); return }
   showDatePopup.value = false
 }
 const dateLabel = computed(() => {
-  if (!selectedDays.value) { return '请选择 >' }
-  let label = `${selectedDays.value}天`
-  if (selectedMonths.value.length) { label += ` · ${selectedMonths.value.join('/')}月` }
+  if (!selectedDays.value) { return t('agent.pleaseSelect') }
+  let label = `${selectedDays.value}${t('common.days')}`
+  if (selectedMonths.value.length) { label += ` · ${selectedMonths.value.join('/')}${t('agent.monthUnit')}` }
   return label
 })
 
@@ -72,7 +74,7 @@ const prefLabel = computed(() => {
   const parts = []
   if (preferences.companion) { parts.push(preferences.companion) }
   if (preferences.styles.length) { parts.push(preferences.styles[0] + (preferences.styles.length > 1 ? `+${preferences.styles.length - 1}` : '')) }
-  return parts.length ? parts.join(' · ') : '请选择 >'
+  return parts.length ? parts.join(' · ') : t('agent.pleaseSelect')
 })
 
 const canSubmit = computed(() => destination.value.trim() && selectedDays.value)
@@ -138,24 +140,24 @@ try {
       <button class="nav-back" @click="goBack">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <span class="nav-title">AI 行程助手</span>
-      <button class="nav-old-ver" @click="quickFill">一键填充</button>
+      <span class="nav-title">{{ t('agent.title') }}</span>
+      <button class="nav-old-ver" @click="quickFill">{{ t('agent.quickFill') }}</button>
     </div>
 
     <div class="planner-scroll">
       <!-- ====== 状态1：表单视图 ====== -->
       <template v-if="pageState === 'form'">
         <div class="form-section card-base">
-          <div class="form-row clickable" @click="openOriginSelect"><span class="form-label">出发地</span><div class="form-value-tag">{{ origin || '请选择出发地' }} <button class="tag-close" @click.stop="clearOrigin">&times;</button></div><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
+          <div class="form-row clickable" @click="openOriginSelect"><span class="form-label">{{ t('agent.origin') }}</span><div class="form-value-tag">{{ origin || t('agent.selectOrigin') }} <button class="tag-close" @click.stop="clearOrigin">&times;</button></div><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
           <div class="row-divider" />
-          <div class="form-row clickable" @click="openDestinationSelect"><span class="form-label">目的地</span><div class="form-value-tag" v-if="destination">{{ destination }} <button class="tag-close" @click.stop="destination = ''">&times;</button></div><span class="form-value-hint" v-else>你想去哪里</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
+          <div class="form-row clickable" @click="openDestinationSelect"><span class="form-label">{{ t('agent.destination') }}</span><div class="form-value-tag" v-if="destination">{{ destination }} <button class="tag-close" @click.stop="destination = ''">&times;</button></div><span class="form-value-hint" v-else>{{ t('agent.whereToGo') }}</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
           <div class="quick-tags-row"><span v-for="tag in quickTags" :key="tag" class="quick-tag-chip" :class="{ active: destination === tag }" @click="selectQuickTag(tag)">{{ tag }}</span></div>
           <div class="row-divider" />
-          <div class="form-row clickable" @click="showDatePopup = true"><span class="form-label">日期 / 时间</span><span class="form-value-hint">{{ dateLabel }}</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
+          <div class="form-row clickable" @click="showDatePopup = true"><span class="form-label">{{ t('agent.dateTime') }}</span><span class="form-value-hint">{{ dateLabel }}</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
           <div class="row-divider" />
-          <div class="form-row clickable" @click="showPrefPopup = true"><span class="form-label">旅行偏好</span><span class="form-value-hint">{{ prefLabel }}</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
+          <div class="form-row clickable" @click="showPrefPopup = true"><span class="form-label">{{ t('agent.preferences') }}</span><span class="form-value-hint">{{ prefLabel }}</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg></div>
         </div>
-        <button class="submit-btn-main" :class="{ disabled: !canSubmit }" :disabled="!canSubmit" @click="handleSubmit"><svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M10 2 L12 8 L18 10 L12 12 L10 18 L8 12 L2 10 L8 8 Z"/></svg><span>AI 规划旅程</span></button>
+        <button class="submit-btn-main" :class="{ disabled: !canSubmit }" :disabled="!canSubmit" @click="handleSubmit"><svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M10 2 L12 8 L18 10 L12 12 L10 18 L8 12 L2 10 L8 8 Z"/></svg><span>{{ t('agent.planJourney') }}</span></button>
       </template>
 
       <!-- ====== 状态2：生成中视图（内联进度） ====== -->
@@ -170,22 +172,22 @@ try {
             </div>
           </div>
           <!-- 预览卡片 -->
-          <div v-if="previewData.spots" class="preview-card"><div class="pc-title">🏔️ 热门景点</div><div class="spot-scroll"><div v-for="(s,i) in previewData.spots" :key="i" class="spot-item"><div class="spot-img-plc"></div><div class="spot-name">{{ s.name }}</div><div class="spot-rating">⭐ {{ s.rating }}</div></div></div></div>
-          <div v-if="previewData.count && previewData.range" class="preview-card"><div class="pc-title">🏨 {{ previewData.count }}家酒店 · {{ previewData.range }}</div><div class="map-plc"><svg viewBox="0 0 200 120"><rect width="200" height="120" rx="10" fill="#e8f4f8"/><circle cx="100" cy="60" r="30" fill="#14b8a6" opacity="0.2"/><circle cx="100" cy="60" r="5" fill="#14b8a6"/></svg></div></div>
-          <div v-if="previewData.flights" class="preview-card"><div class="pc-title">✈️ 交通方案</div><div v-for="(f,i) in previewData.flights" :key="i" class="flight-row"><span>{{ f.from }} → {{ f.to }}</span><span class="flight-info">{{ f.type }} · {{ f.duration }}</span></div></div>
-          <div v-if="previewData.tips" class="preview-card"><div class="pc-title">💡 旅行贴士</div><div v-for="(t,i) in previewData.tips" :key="i" class="tip-row"><div class="tip-t">{{ t.title }}</div><div class="tip-c">{{ t.content }}</div></div></div>
-          <div class="stop-bar-inline"><button class="sb-btn" @click="stopGenerate">停止生成</button></div>
+          <div v-if="previewData.spots" class="preview-card"><div class="pc-title">🏔️ {{ t('agent.hotSpots') }}</div><div class="spot-scroll"><div v-for="(s,i) in previewData.spots" :key="i" class="spot-item"><div class="spot-img-plc"></div><div class="spot-name">{{ s.name }}</div><div class="spot-rating">⭐ {{ s.rating }}</div></div></div></div>
+          <div v-if="previewData.count && previewData.range" class="preview-card"><div class="pc-title">🏨 {{ t('agent.hotelCount', { count: previewData.count }) }} · {{ previewData.range }}</div><div class="map-plc"><svg viewBox="0 0 200 120"><rect width="200" height="120" rx="10" fill="#e8f4f8"/><circle cx="100" cy="60" r="30" fill="#14b8a6" opacity="0.2"/><circle cx="100" cy="60" r="5" fill="#14b8a6"/></svg></div></div>
+          <div v-if="previewData.flights" class="preview-card"><div class="pc-title">✈️ {{ t('agent.transportPlan') }}</div><div v-for="(f,i) in previewData.flights" :key="i" class="flight-row"><span>{{ f.from }} → {{ f.to }}</span><span class="flight-info">{{ f.type }} · {{ f.duration }}</span></div></div>
+          <div v-if="previewData.tips" class="preview-card"><div class="pc-title">💡 {{ t('agent.travelTips') }}</div><div v-for="(t,i) in previewData.tips" :key="i" class="tip-row"><div class="tip-t">{{ t.title }}</div><div class="tip-c">{{ t.content }}</div></div></div>
+          <div class="stop-bar-inline"><button class="sb-btn" @click="stopGenerate">{{ t('agent.stopGenerate') }}</button></div>
         </div>
       </template>
 
       <!-- ====== 状态3：完成视图 ====== -->
       <template v-if="pageState === 'finish'">
         <div class="finish-inline">
-          <div class="finish-badge">✓ 行程生成完毕</div>
-          <div class="finish-info">📍 {{ destination }} · {{ selectedDays }}天 · ¥5000 · {{ origin }}出发</div>
+          <div class="finish-badge">✓ {{ t('agent.generationComplete') }}</div>
+          <div class="finish-info">📍 {{ destination }} · {{ selectedDays }}{{ t('common.days') }} · ¥5000 · {{ t('agent.fromOrigin', { origin }) }}</div>
           <div class="finish-actions">
-            <button class="fa-btn primary" @click="router.push({path:'/planning',query:{destination:destination.trim(),days:selectedDays,budget:'5000',people:'2',taskId:taskId,streamMode:'true'}})">📋 查看结构化行程</button>
-            <button class="fa-btn" @click="resetToForm">🔄 重新规划</button>
+            <button class="fa-btn primary" @click="router.push({path:'/planning',query:{destination:destination.trim(),days:selectedDays,budget:'5000',people:'2',taskId:taskId,streamMode:'true'}})">📋 {{ t('agent.viewPlan') }}</button>
+            <button class="fa-btn" @click="resetToForm">🔄 {{ t('agent.replan') }}</button>
           </div>
         </div>
       </template>
@@ -193,8 +195,8 @@ try {
       <!-- ====== 错误状态 ====== -->
       <template v-if="pageState === 'error'">
         <div class="error-inline">
-          <div class="err-icon">⚠️</div><div class="err-text">生成失败，请重试</div>
-          <button class="fa-btn primary" @click="resetToForm">重新规划</button>
+          <div class="err-icon">⚠️</div><div class="err-text">{{ t('agent.genFailedRetry') }}</div>
+          <button class="fa-btn primary" @click="resetToForm">{{ t('agent.replan') }}</button>
         </div>
       </template>
     </div>
@@ -203,24 +205,24 @@ try {
       <div class="popup-root">
         <div class="popup-header">
           <button class="popup-close" @click="showDatePopup = false">&times;</button>
-          <span class="popup-title">日期</span>
-          <span class="popup-tag active">灵活时间</span>
+          <span class="popup-title">{{ t('agent.dateTitle') }}</span>
+          <span class="popup-tag active">{{ t('agent.flexibleTime') }}</span>
         </div>
         <div class="popup-block">
-          <div class="block-head"><span>天数</span><span class="block-hint">任意天数</span></div>
+          <div class="block-head"><span>{{ t('agent.daysLabel') }}</span><span class="block-hint">{{ t('agent.anyDays') }}</span></div>
           <div class="grid-7">
-            <button v-for="d in dayOptions" :key="d" class="grid-btn" :class="{ active: selectedDays === d }" @click="selectDay(d)">{{ d }}天</button>
+            <button v-for="d in dayOptions" :key="d" class="grid-btn" :class="{ active: selectedDays === d }" @click="selectDay(d)">{{ d }}{{ t('common.days') }}</button>
           </div>
         </div>
         <div class="popup-block">
-          <div class="block-head"><span>月份</span></div>
+          <div class="block-head"><span>{{ t('agent.months') }}</span></div>
           <div class="month-rows">
             <div v-for="(group, gi) in monthGroups" :key="gi" class="month-row">
-              <button v-for="m in group" :key="m" class="grid-btn" :class="{ active: selectedMonths.includes(m) }" @click="toggleMonth(m)">{{ m }}月</button>
+              <button v-for="m in group" :key="m" class="grid-btn" :class="{ active: selectedMonths.includes(m) }" @click="toggleMonth(m)">{{ m }}{{ t('agent.monthUnit') }}</button>
             </div>
           </div>
         </div>
-        <button class="popup-done" :class="{ disabled: !selectedDays }" :disabled="!selectedDays" @click="dateDone">完成</button>
+        <button class="popup-done" :class="{ disabled: !selectedDays }" :disabled="!selectedDays" @click="dateDone">{{ t('common.done') }}</button>
       </div>
     </van-popup>
 
@@ -228,27 +230,27 @@ try {
       <div class="popup-root popup-scroll">
         <div class="popup-header">
           <button class="popup-close" @click="showPrefPopup = false">&times;</button>
-          <span class="popup-title">选择出行偏好</span>
+          <span class="popup-title">{{ t('agent.selectPrefs') }}</span>
         </div>
-        <div class="popup-block"><div class="block-head"><span>同行伙伴</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.companion') }}</span></div>
           <div class="chip-row"><button v-for="c in companionOpts" :key="c" class="chip-btn" :class="{ active: preferences.companion === c }" @click="preferences.companion = c">{{ c }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>风格偏好</span><span class="block-hint">可多选</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.style') }}</span><span class="block-hint">{{ t('agent.multiSelect') }}</span></div>
           <div class="chip-row"><button v-for="s in styleOpts" :key="s" class="chip-btn multi" :class="{ active: preferences.styles.includes(s) }" @click="toggleStyle(s)">{{ s }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>酒店星级</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.hotelLevel') }}</span></div>
           <div class="chip-row"><button v-for="h in hotelOpts" :key="h" class="chip-btn" :class="{ active: preferences.hotelLevel === h }" @click="preferences.hotelLevel = h">{{ h }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>飞机舱位</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.cabinClass') }}</span></div>
           <div class="chip-row"><button v-for="c in cabinOpts" :key="c" class="chip-btn" :class="{ active: preferences.cabinClass === c }" @click="preferences.cabinClass = c">{{ c }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>行程节奏</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.pace') }}</span></div>
           <div class="chip-row"><button v-for="p in paceOpts" :key="p" class="chip-btn" :class="{ active: preferences.pace === p }" @click="preferences.pace = p">{{ p }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>时间安排</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.schedule') }}</span></div>
           <div class="chip-row"><button v-for="s in scheduleOpts" :key="s" class="chip-btn" :class="{ active: preferences.schedule === s }" @click="preferences.schedule = s">{{ s }}</button></div>
         </div>
-        <button class="popup-done" @click="prefDone">完成</button>
+        <button class="popup-done" @click="prefDone">{{ t('common.done') }}</button>
         <div style="height:20px" />
       </div>
     </van-popup>

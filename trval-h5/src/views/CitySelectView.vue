@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   municipalities, hkMacauTW, allProvinces, domesticGroups,
   overseasContinents, domesticHotCities, overseasHotCities,
@@ -10,6 +11,7 @@ import SearchBar from '../components/SearchBar.vue'
 
 defineOptions({ name: 'CitySelectView' })
 const router = useRouter()
+const { t } = useI18n()
 
 // ====== Tab ======
 const activeTab = ref('domestic')
@@ -24,11 +26,11 @@ const historyCities = ref([])
 const searchHistory = computed(() => historyCities.value.map(c => ({
   text: c,
   url: '',
-  tags: c === '北京' ? ['攻略','机票','火车票','定制'] :
-        c === '上海' ? ['攻略','机票','酒店'] :
-        c === '成都' ? ['攻略','景点','美食'] :
-        c === '三亚' ? ['攻略','机票','酒店'] :
-        ['攻略']
+  tags: c === '北京' ? [t('agent.tagGuide'), t('agent.tagFlight'), t('agent.tagTrain'), t('agent.tagCustom')] :
+        c === '上海' ? [t('agent.tagGuide'), t('agent.tagFlight'), t('agent.tagHotel')] :
+        c === '成都' ? [t('agent.tagGuide'), t('agent.tagSpots'), t('agent.tagFood')] :
+        c === '三亚' ? [t('agent.tagGuide'), t('agent.tagFlight'), t('agent.tagHotel')] :
+        [t('agent.tagGuide')]
 })))
 const currentLocation = ref('')
 const locationStatus = ref('idle') // 'idle'|'loading'|'success'|'failed'|'denied'
@@ -36,11 +38,11 @@ const locationStatus = ref('idle') // 'idle'|'loading'|'success'|'failed'|'denie
 // 定位 — 四态处理 + 权限预检
 const requestLocation = () => {
   locationStatus.value = 'loading'
-  currentLocation.value = '正在定位...'
+  currentLocation.value = t('agent.locating')
 
   if (!navigator.geolocation) {
     locationStatus.value = 'failed'
-    currentLocation.value = '浏览器不支持定位'
+    currentLocation.value = t('agent.geolocationUnsupported')
     return
   }
 
@@ -49,7 +51,7 @@ const requestLocation = () => {
     navigator.permissions.query({ name: 'geolocation' }).then(res => {
       if (res.state === 'denied') {
         locationStatus.value = 'denied'
-        currentLocation.value = '定位权限已关闭，请在系统设置中开启'
+        currentLocation.value = t('agent.locationDeniedSettings')
       }
     })
   }
@@ -84,18 +86,18 @@ const requestLocation = () => {
       } catch {}
 
       // 3) 都失败
-      currentLocation.value = '已定位'
+      currentLocation.value = t('agent.located')
     },
     (err) => {
       if (err.code === 1) {
         locationStatus.value = 'denied'
-        currentLocation.value = '定位权限未开启，请在设置中授权'
+        currentLocation.value = t('agent.locationPermissionDenied')
       } else if (err.code === 2) {
         locationStatus.value = 'failed'
-        currentLocation.value = '定位暂时不可用，请检查网络'
+        currentLocation.value = t('agent.locationUnavailable')
       } else {
         locationStatus.value = 'failed'
-        currentLocation.value = '定位失败，点击重试'
+        currentLocation.value = t('agent.locationFailedRetry')
       }
     },
     { timeout: 10000, enableHighAccuracy: true, maximumAge: 300000 }
@@ -223,19 +225,19 @@ const onImgError = (e) => {
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
       <div class="cs-search-wrap">
-        <SearchBar v-model="searchText" placeholder="搜索城市" :history="searchHistory" @select="(item) => selectCity(item.text)" />
+        <SearchBar v-model="searchText" :placeholder="t('agent.searchCity')" :history="searchHistory" @select="(item) => selectCity(item.text)" />
       </div>
     </div>
 
     <!-- ══════ 境内/境外 Tab（始终可见） ══════ -->
     <div class="cs-tabs">
-      <span class="cs-tab" :class="{ active: activeTab === 'domestic' }" @click="activeTab = 'domestic'">境内</span>
-      <span class="cs-tab" :class="{ active: activeTab === 'overseas' }" @click="activeTab = 'overseas'">境外</span>
+      <span class="cs-tab" :class="{ active: activeTab === 'domestic' }" @click="activeTab = 'domestic'">{{ t('agent.domestic') }}</span>
+      <span class="cs-tab" :class="{ active: activeTab === 'overseas' }" @click="activeTab = 'overseas'">{{ t('agent.overseas') }}</span>
     </div>
 
     <!-- ══════ 搜索模式 ══════ -->
     <div class="cs-search-results" v-show="searchText.trim() && activeTab === 'domestic'">
-      <div class="cs-section-title">境内搜索结果</div>
+      <div class="cs-section-title">{{ t('agent.domesticResults') }}</div>
       <div class="cs-city-grid">
         <div v-for="city in searchDomestic" :key="city" class="cs-city-card" @click="selectCity(city)">
           <div class="cs-city-img-wrap">
@@ -247,10 +249,10 @@ const onImgError = (e) => {
           </div>
         </div>
       </div>
-      <div v-if="searchDomestic.length === 0" class="cs-empty">未找到匹配的城市</div>
+      <div v-if="searchDomestic.length === 0" class="cs-empty">{{ t('agent.noCityMatch') }}</div>
     </div>
     <div class="cs-search-results" v-show="searchText.trim() && activeTab === 'overseas'">
-      <div class="cs-section-title">境外搜索结果</div>
+      <div class="cs-section-title">{{ t('agent.overseasResults') }}</div>
       <div class="cs-city-grid">
         <div v-for="city in searchOverseas" :key="city" class="cs-city-card" @click="selectCity(city)">
           <div class="cs-city-img-wrap">
@@ -262,14 +264,14 @@ const onImgError = (e) => {
           </div>
         </div>
       </div>
-      <div v-if="searchOverseas.length === 0" class="cs-empty">未找到匹配的城市</div>
+      <div v-if="searchOverseas.length === 0" class="cs-empty">{{ t('agent.noCityMatch') }}</div>
     </div>
 
     <!-- ══════ 正常模式 ══════ -->
     <div class="cs-content" v-show="!searchText.trim() && activeTab === 'domestic'">
       <div class="cs-left">
         <div class="cs-left-list">
-          <div class="cs-left-item recommend" :class="{ active: domesticLeftKey === 'recommend' }" @click="selectDomesticLeft('recommend')">推荐</div>
+          <div class="cs-left-item recommend" :class="{ active: domesticLeftKey === 'recommend' }" @click="selectDomesticLeft('recommend')">{{ t('agent.recommend') }}</div>
           <div v-for="group in domesticGroups" :key="group.key" class="cs-left-item" :class="{ active: domesticLeftKey === group.key }" @click="selectDomesticLeft(group.key)">{{ group.label }}</div>
           <div v-for="prov in allProvinces" :key="prov.name" class="cs-left-item" :class="{ active: domesticLeftKey === prov.name }" @click="selectDomesticLeft(prov.name)">{{ prov.name }}</div>
         </div>
@@ -285,25 +287,25 @@ const onImgError = (e) => {
             <!-- idle / loading -->
             <template v-if="locationStatus === 'idle' || locationStatus === 'loading'">
               <span class="cs-loc-spinner"></span>
-              <span class="cs-loc-text">{{ currentLocation || '定位中...' }}</span>
+              <span class="cs-loc-text">{{ currentLocation || t('agent.locating') }}</span>
             </template>
             <!-- success -->
             <template v-else-if="locationStatus === 'success'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#10B981" stroke-width="2"><circle cx="10" cy="10" r="3"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3"/></svg>
               <span class="cs-loc-text loc-text--success">{{ currentLocation }}</span>
-              <span class="cs-loc-tag">当前</span>
+              <span class="cs-loc-tag">{{ t('agent.current') }}</span>
             </template>
             <!-- failed -->
             <template v-else-if="locationStatus === 'failed'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="11"/><circle cx="10" cy="14" r="0.5" fill="#F59E0B"/></svg>
               <span class="cs-loc-text">{{ currentLocation }}</span>
-              <span class="cs-loc-retry">点击重试</span>
+              <span class="cs-loc-retry">{{ t('agent.clickRetry') }}</span>
             </template>
             <!-- denied -->
             <template v-else-if="locationStatus === 'denied'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#EF4444" stroke-width="2"><rect x="3" y="7" width="14" height="8" rx="2"/><path d="M7 7V5a3 3 0 016 0v2"/></svg>
               <span class="cs-loc-text">{{ currentLocation }}</span>
-              <span class="cs-loc-retry loc-retry--denied">去设置</span>
+              <span class="cs-loc-retry loc-retry--denied">{{ t('agent.goSettings') }}</span>
             </template>
           </div>
         </div>
@@ -311,8 +313,8 @@ const onImgError = (e) => {
         <!-- 历史（仅推荐模式） -->
         <div class="cs-section" v-if="domesticLeftKey === 'recommend' && historyCities.length > 0">
           <div class="cs-section-title-row">
-            <span class="cs-section-title">历史选择</span>
-            <span class="cs-clear-btn" @click="clearHistory">清除历史</span>
+            <span class="cs-section-title">{{ t('agent.history') }}</span>
+            <span class="cs-clear-btn" @click="clearHistory">{{ t('agent.clearHistory') }}</span>
           </div>
           <div class="cs-history-grid">
             <div v-for="city in historyCities" :key="city" class="cs-history-chip" @click="selectCity(city)">{{ city }}</div>
@@ -337,7 +339,7 @@ const onImgError = (e) => {
 
         <!-- 城市列表 -->
         <div class="cs-section" v-if="domesticCityList.length > 0">
-          <div class="cs-section-title">{{ domesticLeftKey === 'recommend' ? '热门城市' : (domesticSubKey || domesticLeftKey) }}</div>
+          <div class="cs-section-title">{{ domesticLeftKey === 'recommend' ? t('agent.hotCities') : (domesticSubKey || domesticLeftKey) }}</div>
           <div class="cs-city-grid">
             <div v-for="city in domesticCityList" :key="city" class="cs-city-card" @click="selectCity(city)">
               <div class="cs-city-img-wrap">
@@ -357,7 +359,7 @@ const onImgError = (e) => {
     <div class="cs-content" v-show="!searchText.trim() && activeTab === 'overseas'">
       <div class="cs-left">
         <div class="cs-left-list">
-          <div class="cs-left-item recommend" :class="{ active: overseasLeftKey === 'recommend' }" @click="selectOverseasLeft('recommend')">推荐</div>
+          <div class="cs-left-item recommend" :class="{ active: overseasLeftKey === 'recommend' }" @click="selectOverseasLeft('recommend')">{{ t('agent.recommend') }}</div>
           <div v-for="cont in overseasContinents" :key="cont.name" class="cs-left-item" :class="{ active: overseasLeftKey === cont.name }" @click="selectOverseasLeft(cont.name)">{{ cont.name }}</div>
         </div>
       </div>
@@ -370,30 +372,30 @@ const onImgError = (e) => {
           >
             <template v-if="locationStatus === 'idle' || locationStatus === 'loading'">
               <span class="cs-loc-spinner"></span>
-              <span class="cs-loc-text">{{ currentLocation || '定位中...' }}</span>
+              <span class="cs-loc-text">{{ currentLocation || t('agent.locating') }}</span>
             </template>
             <template v-else-if="locationStatus === 'success'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#10B981" stroke-width="2"><circle cx="10" cy="10" r="3"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3"/></svg>
               <span class="cs-loc-text loc-text--success">{{ currentLocation }}</span>
-              <span class="cs-loc-tag">当前</span>
+              <span class="cs-loc-tag">{{ t('agent.current') }}</span>
             </template>
             <template v-else-if="locationStatus === 'failed'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="11"/><circle cx="10" cy="14" r="0.5" fill="#F59E0B"/></svg>
               <span class="cs-loc-text">{{ currentLocation }}</span>
-              <span class="cs-loc-retry">点击重试</span>
+              <span class="cs-loc-retry">{{ t('agent.clickRetry') }}</span>
             </template>
             <template v-else-if="locationStatus === 'denied'">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#EF4444" stroke-width="2"><rect x="3" y="7" width="14" height="8" rx="2"/><path d="M7 7V5a3 3 0 016 0v2"/></svg>
               <span class="cs-loc-text">{{ currentLocation }}</span>
-              <span class="cs-loc-retry loc-retry--denied">去设置</span>
+              <span class="cs-loc-retry loc-retry--denied">{{ t('agent.goSettings') }}</span>
             </template>
           </div>
         </div>
 
         <div class="cs-section" v-if="overseasLeftKey === 'recommend' && historyCities.length > 0">
           <div class="cs-section-title-row">
-            <span class="cs-section-title">历史选择</span>
-            <span class="cs-clear-btn" @click="clearHistory">清除历史</span>
+            <span class="cs-section-title">{{ t('agent.history') }}</span>
+            <span class="cs-clear-btn" @click="clearHistory">{{ t('agent.clearHistory') }}</span>
           </div>
           <div class="cs-history-grid">
             <div v-for="city in historyCities" :key="city" class="cs-history-chip" @click="selectCity(city)">{{ city }}</div>
@@ -407,7 +409,7 @@ const onImgError = (e) => {
         </div>
 
         <div class="cs-section">
-          <div class="cs-section-title">{{ overseasLeftKey === 'recommend' ? '热门城市' : (overseasSubKey || '热门目的地') }}</div>
+          <div class="cs-section-title">{{ overseasLeftKey === 'recommend' ? t('agent.hotCities') : (overseasSubKey || t('agent.hotDestinations')) }}</div>
           <div class="cs-city-grid">
             <div v-for="city in overseasCityList" :key="city" class="cs-city-card" @click="selectCity(city)">
               <div class="cs-city-img-wrap">

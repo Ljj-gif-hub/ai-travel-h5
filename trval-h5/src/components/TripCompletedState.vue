@@ -4,7 +4,7 @@
     <div class="trip-title-bar">
       <div class="title-left">
         <h2 class="trip-dest">{{ planData?.destination || '...' }}</h2>
-        <span class="trip-meta">{{ planData?.days || 0 }}天 · {{ planData?.people || 0 }}人</span>
+        <span class="trip-meta">{{ t('components.daysPeople', { days: planData?.days || 0, people: planData?.people || 0 }) }}</span>
       </div>
       <div class="title-right" v-if="false"></div>
     </div>
@@ -13,26 +13,26 @@
     <template v-if="drawerState !== 'min'">
       <!-- 行程概览 -->
       <div class="trip-overview">
-        <p class="overview-text">{{ planData?.overview || 'AI 智能生成行程' }}</p>
-        <div class="ai-badge"><van-icon name="service-o" size="14" /><span>AI 生成 · 仅供参考</span></div>
+        <p class="overview-text">{{ planData?.overview || t('components.aiGenerated') }}</p>
+        <div class="ai-badge"><van-icon name="service-o" size="14" /><span>{{ t('components.aiReferenceOnly') }}</span></div>
       </div>
 
       <!-- 操作按钮 -->
       <div class="action-row">
-        <div class="action-btn" @click="$emit('share')"><van-icon name="share-o" size="20" /><span>分享</span></div>
-        <div class="action-btn" @click="$emit('like')"><van-icon name="good-job-o" size="20" /><span>有用</span></div>
-        <div class="action-btn" @click="$emit('dislike')"><van-icon name="good-job-o" size="20" style="transform:rotate(180deg)" /><span>踩</span></div>
-        <div class="action-btn" @click="$emit('save')"><van-icon name="bookmark-o" size="20" /><span>保存</span></div>
+        <div class="action-btn" @click="$emit('share')"><van-icon name="share-o" size="20" /><span>{{ t('components.share') }}</span></div>
+        <div class="action-btn" @click="$emit('like')"><van-icon name="good-job-o" size="20" /><span>{{ t('components.useful') }}</span></div>
+        <div class="action-btn" @click="$emit('dislike')"><van-icon name="good-job-o" size="20" style="transform:rotate(180deg)" /><span>{{ t('components.dislike') }}</span></div>
+        <div class="action-btn" @click="$emit('save')"><van-icon name="bookmark-o" size="20" /><span>{{ t('common.save') }}</span></div>
       </div>
 
       <!-- ===== 线路预览 ===== -->
       <div class="route-preview" v-if="(planData?.dayPlans || []).length > 0">
-        <div class="section-title">🗺️ 线路预览</div>
+        <div class="section-title">🗺️ {{ t('components.routePreview') }}</div>
         <div class="route-scroll">
           <div v-for="(day, i) in (planData?.dayPlans || [])" :key="'rp'+i" class="route-card" @click="scrollToDay(i)">
             <div class="route-day">Day{{ day.day || i+1 }}</div>
-            <div class="route-dest">{{ (day.timeSlots||[])[0]?.attraction || day.dayTitle || '第'+(i+1)+'天' }}</div>
-            <div class="route-spots">{{ (day.timeSlots||[]).map(s=>s.attraction).filter(Boolean).slice(0,2).join(' · ') || '探索中' }}</div>
+            <div class="route-dest">{{ (day.timeSlots||[])[0]?.attraction || day.dayTitle || t('components.dayN', { n: i + 1 }) }}</div>
+            <div class="route-spots">{{ (day.timeSlots||[]).map(s=>s.attraction).filter(Boolean).slice(0,2).join(' · ') || t('components.exploring') }}</div>
           </div>
         </div>
       </div>
@@ -46,9 +46,9 @@
       <div class="transport-card transport-depart" v-if="planData?.destination">
         <div class="transport-icon">{{ planData?.transport?.departIcon || '✈️' }}</div>
         <div class="transport-info">
-          <div class="transport-title">{{ planData?.transport?.departTitle || '出发前往 ' + planData.destination }}</div>
-          <div class="transport-detail">{{ planData?.transport?.departDetail || '建议选上午航班 · 提前2小时到机场' }}</div>
-          <div class="transport-price" v-if="planData?.transport?.departPrice">¥{{ planData.transport.departPrice }}起</div>
+          <div class="transport-title">{{ planData?.transport?.departTitle || t('components.departTo', { dest: planData.destination }) }}</div>
+          <div class="transport-detail">{{ planData?.transport?.departDetail || t('components.departDetail') }}</div>
+          <div class="transport-price" v-if="planData?.transport?.departPrice">{{ t('components.priceFrom', { price: planData.transport.departPrice }) }}</div>
         </div>
       </div>
 
@@ -57,11 +57,11 @@
 
       <!-- ===== 每日行程 (JSON卡片格式，兼容旧版) ===== -->
       <div class="daily-itinerary" v-if="!planData?.content && (planData?.dayPlans || []).length > 0">
-        <div class="section-title">📅 每日行程</div>
+        <div class="section-title">📅 {{ t('components.dailyItinerary') }}</div>
         <div v-for="(day, i) in (planData?.dayPlans || [])" :key="'day'+i" class="day-card" :ref="el => setDayRef(el, i)">
           <div class="day-header">
             <div class="day-num">Day{{ day.day || i+1 }}</div>
-            <div class="day-title">{{ day.dayTitle || '第'+(i+1)+'天' }}</div>
+            <div class="day-title">{{ day.dayTitle || t('components.dayN', { n: i + 1 }) }}</div>
           </div>
           <div class="timeline">
             <div v-for="(slot, si) in (day.timeSlots || [])" :key="'slot'+si" class="tl-item" :class="{ 'tl-item--last': si === (day.timeSlots||[]).length-1 }">
@@ -89,9 +89,9 @@
       <div class="transport-card transport-return" v-if="planData?.destination">
         <div class="transport-icon">{{ planData?.transport?.returnIcon || '🛬' }}</div>
         <div class="transport-info">
-          <div class="transport-title">{{ planData?.transport?.returnTitle || '从 ' + planData.destination + ' 返程' }}</div>
-          <div class="transport-detail">{{ planData?.transport?.returnDetail || '建议选傍晚航班 · 预留时间前往机场' }}</div>
-          <div class="transport-price" v-if="planData?.transport?.returnPrice">¥{{ planData.transport.returnPrice }}起</div>
+          <div class="transport-title">{{ planData?.transport?.returnTitle || t('components.returnFrom', { dest: planData.destination }) }}</div>
+          <div class="transport-detail">{{ planData?.transport?.returnDetail || t('components.returnDetail') }}</div>
+          <div class="transport-price" v-if="planData?.transport?.returnPrice">{{ t('components.priceFrom', { price: planData.transport.returnPrice }) }}</div>
         </div>
       </div>
     </template>
@@ -100,7 +100,10 @@
 
 <script setup>
 import { ref, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import MarkdownIt from 'markdown-it'
+
+const { t } = useI18n()
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 function renderMd(t) { return t ? md.render(t) : '' }

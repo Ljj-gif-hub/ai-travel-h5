@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/travel")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "行程规划")
 public class TravelController {
 
     private static final Logger log = LoggerFactory.getLogger(TravelController.class);

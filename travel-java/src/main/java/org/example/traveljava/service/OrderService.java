@@ -1,6 +1,9 @@
 package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Order;
+import org.example.traveljava.mq.TravelEvent;
+import org.example.traveljava.mq.TravelEventPublisher;
+import org.example.traveljava.mq.TravelEventType;
 import org.example.traveljava.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,9 +31,11 @@ public class OrderService {
     );
 
     private final OrderRepository orderRepository;
+    private final TravelEventPublisher eventPublisher;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository, TravelEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<Order> getOrders(Long userId) {
@@ -84,6 +89,19 @@ public class OrderService {
         order.setPaidAt(LocalDateTime.now());
         orderRepository.save(order);
         log.info("订单支付成功：orderNo={}", orderNo);
+
+        // 发布「订单支付成功」事件 → RabbitMQ 异步处理（未启用 MQ 时同步降级记录）
+        try {
+            eventPublisher.publish(TravelEvent.of(TravelEventType.ORDER_PAID, Map.of(
+                    "orderNo", orderNo,
+                    "userId", order.getUserId() == null ? 0L : order.getUserId(),
+                    "amount", order.getPrice() == null ? 0L : order.getPrice(),
+                    "channel", order.getPayChannel() == null ? "mock" : order.getPayChannel()
+            )));
+        } catch (Exception e) {
+            // 事件发布绝不影响支付主流程
+            log.warn("发布 ORDER_PAID 事件失败（忽略）: err={}", e.getMessage());
+        }
     }
 
     @Transactional

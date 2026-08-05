@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
  */
 @RestController
 @RequestMapping("/api/map")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "地图")
 public class MapScriptController {
 
     private final RestTemplate restTemplate;

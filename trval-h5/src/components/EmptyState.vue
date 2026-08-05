@@ -3,11 +3,15 @@
  * 全局空状态组件 — 旅行主题轻量化插画风格
  * 统一紫色品牌基调，增加旅行装饰元素消除大面积空白
  */
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   icon: { type: String, default: 'orders-o' },
   iconSize: { type: [String, Number], default: 72 },
   iconColor: { type: String, default: '#A78BFA' },
-  title: { type: String, default: '暂无数据' },
+  title: { type: String, default: '' },
   desc: { type: String, default: '' },
   btnText: { type: String, default: '' },
   btnType: { type: String, default: 'outline' }, // 'outline' | 'gradient'
@@ -53,7 +57,7 @@ const emit = defineEmits(['btn-click'])
     </div>
 
     <!-- 文字 -->
-    <p class="empty-title">{{ title }}</p>
+    <p class="empty-title">{{ title || t('common.empty') }}</p>
     <p v-if="desc" class="empty-desc">{{ desc }}</p>
 
     <!-- 按钮 -->

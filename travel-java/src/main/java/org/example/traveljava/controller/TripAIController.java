@@ -21,6 +21,7 @@ import java.util.*;
  */
 @RestController
 @RequestMapping("/api/trip/ai")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "行程规划")
 public class TripAIController {
 
     private static final Logger log = LoggerFactory.getLogger(TripAIController.class);

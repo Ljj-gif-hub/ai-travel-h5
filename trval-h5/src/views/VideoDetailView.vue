@@ -1,12 +1,14 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi, commentApi } from '../api';
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const goBack = () => { try { router.back() } catch (e) { router.push('/community') } };
 
@@ -322,7 +324,7 @@ const onVideoTouchEnd = () => {
 };
 
 const handleLike = async () => {
-  if (!getToken()) { showToast('请先登录'); return; }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return; }
   const note = notes.value[currentIdx.value];
   if (!note) return;
   const prevLiked = note.isLiked;
@@ -375,9 +377,9 @@ const handleSendComment = async () => {
       const note = notes.value[currentIdx.value];
       if (note) note.comments = (note.comments || 0) + 1;
       commentInput.value = '';
-      showToast('评论成功');
+      showToast(t('community.commentSuccess'));
     }
-  } catch { showToast('评论失败'); }
+  } catch { showToast(t('community.commentFailed')); }
 };
 
 const handleSendReply = async () => {
@@ -404,9 +406,9 @@ const handleSendReply = async () => {
       if (note) note.comments = (note.comments || 0) + 1
       replyInputs[rootId] = ''
       replyTarget.value = null
-      showToast('回复成功')
+      showToast(t('community.replySuccess'))
     }
-  } catch { showToast('回复失败'); }
+  } catch { showToast(t('community.replyFailed')); }
 };
 
 const toggleReplies = async (commentId) => {
@@ -423,7 +425,7 @@ const toggleReplies = async (commentId) => {
         replyShowCount[commentId] = 5;
         expandedReplies[commentId] = true;
       }
-    } catch { showToast('加载回复失败'); }
+    } catch { showToast(t('community.loadRepliesFailed')); }
   }
 };
 
@@ -433,7 +435,7 @@ const startReply = (comment) => {
   replyTarget.value = {
     id: comment.id,
     rootId,
-    authorName: comment.authorName || ('用户' + (comment.userId || ''))
+    authorName: comment.authorName || (t('community.user') + (comment.userId || ''))
   }
   // 确保展开该顶层评论的回复区
   if (!expandedReplies[rootId] && comment.parentId) {
@@ -452,7 +454,7 @@ const cancelReply = () => {
 const handleDeleteComment = async (c) => {
   try {
     const res = await commentApi.deleteComment(c.id);
-    if (res.code !== 0) { showToast(res.message || '删除失败'); return; }
+    if (res.code !== 0) { showToast(res.message || t('community.deleteFailed')); return; }
     // 判断是顶级评论还是回复
     const isTopLevel = !c.parentId;
     if (isTopLevel) {
@@ -479,11 +481,11 @@ const handleDeleteComment = async (c) => {
       const note = notes.value[currentIdx.value];
       if (note) note.comments = Math.max(0, (note.comments || 1) - 1);
     }
-  } catch { showToast('删除失败'); }
+  } catch { showToast(t('community.deleteFailed')); }
 };
 
 const handleLikeComment = async (c) => {
-  if (!getToken()) { showToast('请先登录'); return; }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return; }
   try {
     const res = await commentApi.likeComment(c.id);
     if (res.code === 0) {
@@ -508,7 +510,7 @@ const toggleHeart = () => {
 };
 
 const handleShare = () => {
-  navigator.clipboard?.writeText(window.location.href).then(() => showToast('链接已复制')).catch(() => {});
+  navigator.clipboard?.writeText(window.location.href).then(() => showToast(t('community.linkCopied'))).catch(() => {});
 };
 const stripHtml = (html) => {
   if (!html) return '';
@@ -522,7 +524,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 <template>
   <div class="video-shell" :class="{ dragging, fullscreen: isFullscreen }" v-if="!isLoading">
       <!-- 顶部栏 -->
-      <div class="top-bar"><van-icon name="arrow-left" size="24" color="#fff" @click.stop="goBack"/><span class="top-title">{{ current.title || '视频' }}</span><van-icon name="search" size="22" color="#fff" @click.stop/></div>
+      <div class="top-bar"><van-icon name="arrow-left" size="24" color="#fff" @click.stop="goBack"/><span class="top-title">{{ current.title || t('community.video') }}</span><van-icon name="search" size="22" color="#fff" @click.stop/></div>
 
       <!-- ══════ 视频区 ══════ -->
       <div class="video-zone" :style="videoStyle" @click="onVideoClick" @touchstart="onVideoTouchStart" @touchmove="onVideoTouchMove" @touchend="onVideoTouchEnd">
@@ -535,13 +537,13 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
               @timeupdate="onVideoTimeUpdate"
               @pause="isPlaying=false" @play="isPlaying=true"
             ></video>
-            <div v-else :key="'empty-'+currentIdx" class="no-video"><van-icon name="video-o" size="60" color="rgba(255,255,255,0.3)"/><p style="margin-top:12px;color:rgba(255,255,255,0.4);font-size:14px">暂无视频</p></div>
+            <div v-else :key="'empty-'+currentIdx" class="no-video"><van-icon name="video-o" size="60" color="rgba(255,255,255,0.3)"/><p style="margin-top:12px;color:rgba(255,255,255,0.4);font-size:14px">{{ t('community.noVideo') }}</p></div>
           </Transition>
         </div>
         <!-- 播放/暂停指示 -->
         <div class="play-indicator" :class="{ hide: isPlaying }"><van-icon name="play-circle-o" size="64" color="rgba(255,255,255,0.7)"/></div>
         <div v-if="heartBurst" class="heart-burst">❤️</div>
-        <div class="swipe-hint" v-if="showSwipeHint && currentIdx<notes.length-1 && !drawerVisible"><van-icon name="arrow-up" size="16" color="rgba(255,255,255,0.5)"/><span>上滑下一个</span></div>
+        <div class="swipe-hint" v-if="showSwipeHint && currentIdx<notes.length-1 && !drawerVisible"><van-icon name="arrow-up" size="16" color="rgba(255,255,255,0.5)"/><span>{{ t('community.swipeNext') }}</span></div>
         <!-- 全屏按钮（视频右下角，进度条上方） -->
         <button type="button" class="fullscreen-btn" :class="{ fullscreen: isFullscreen, hide: !showControls }" :style="fullscreenBtnStyle" @click.stop="toggleFullscreen">
           <van-icon :name="isFullscreen ? 'shrink' : 'expand-o'" size="16" color="#fff" />
@@ -572,11 +574,11 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
             <van-icon name="chat" size="32" color="#fff"/><span class="side-num">{{ commentCount }}</span>
           </div>
           <div class="side-btn" @click.stop="handleShare">
-            <van-icon name="share" size="30" color="#fff"/><span class="side-num">分享</span>
+            <van-icon name="share" size="30" color="#fff"/><span class="side-num">{{ t('community.share') }}</span>
           </div>
         </div>
         <div class="bottom-info">
-          <div class="bottom-author"><span class="b-name">@{{ current.authorName||'旅行者' }}</span><span class="follow-chip">+ 关注</span></div>
+          <div class="bottom-author"><span class="b-name">@{{ current.authorName || t('community.traveler') }}</span><span class="follow-chip">{{ t('community.follow') }}</span></div>
           <div class="b-desc">{{ stripHtml(current.content) }}</div>
           <div class="location-chip" v-if="current.authorCity||current.city"><van-icon name="location-o" size="11"/><span>{{ current.authorCity||current.city }}</span></div>
         </div>
@@ -591,17 +593,17 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
         <div class="handle-row"><div class="handle-bar"/></div>
         <!-- 标题 -->
         <div class="dr-header">
-          <span class="dr-title">{{ commentCount }} 条评论</span>
+          <span class="dr-title">{{ t('community.commentCount', { n: commentCount }) }}</span>
           <van-icon name="cross" size="18" color="#999" @click.stop="closeDrawer"/>
         </div>
         <!-- 列表 -->
         <div class="dr-list">
-          <div v-if="comments.length===0" class="no-cmt">暂无评论，来说两句吧</div>
+          <div v-if="comments.length===0" class="no-cmt">{{ t('community.noComments') }}</div>
           <div v-for="c in comments" :key="c.id" class="cmt-row">
             <van-image round width="32" height="32" fit="cover" class="cmt-av" :src="c.authorAvatar||''"/>
             <div class="cmt-main">
               <div class="cmt-head">
-                <span class="cmt-author-name">{{ c.authorName || ('用户'+c.userId) }}</span>
+                <span class="cmt-author-name">{{ c.authorName || (t('community.user') + c.userId) }}</span>
                 <span class="cmt-tm">{{ c.date }}</span>
               </div>
               <div class="cmt-txt">{{ c.content }}</div>
@@ -613,7 +615,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                 <span class="cmt-action" @click.stop="handleLikeComment(c)">
                   <van-icon name="good-job-o" size="14" /> {{ c.likes || '' }}
                 </span>
-                <span class="cmt-action" @click.stop="startReply(c)">回复</span>
+                <span class="cmt-action" @click.stop="startReply(c)">{{ t('community.reply') }}</span>
               </div>
 
               <!-- ══════ 回复区域 ══════ -->
@@ -621,13 +623,13 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                 <!-- 未展开：预览 → 展开按钮在下方 -->
                 <template v-if="!expandedReplies[c.id]">
                   <div v-if="c.topReply" class="reply-preview">
-                    <span class="reply-preview-author">{{ c.topReply.authorName || ('用户'+c.topReply.userId) }}</span>
+                    <span class="reply-preview-author">{{ c.topReply.authorName || (t('community.user') + c.topReply.userId) }}</span>
                     <span v-if="c.topReply.content" class="reply-preview-text">：{{ c.topReply.content }}</span>
                     <img v-if="c.topReply.image" :src="c.topReply.image" class="cmt-img" style="max-width:80px"/>
                   </div>
                   <div class="reply-toggle" @click.stop="toggleReplies(c.id)">
                     <span class="reply-toggle-line"></span>
-                    <span>展开{{ c.replyCount }}条回复 <van-icon name="arrow-down" size="10" /></span>
+                    <span>{{ t('community.expandReplies', { n: c.replyCount }) }} <van-icon name="arrow-down" size="10" /></span>
                   </div>
                 </template>
 
@@ -638,14 +640,14 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                       <van-image round width="24" height="24" fit="cover" :src="r.authorAvatar||''" class="reply-av"/>
                       <div class="reply-main">
                         <div class="reply-head">
-                          <span class="reply-author">{{ r.authorName || ('用户'+r.userId) }}</span>
+                          <span class="reply-author">{{ r.authorName || (t('community.user') + r.userId) }}</span>
                           <span class="reply-tm">{{ r.date }}</span>
                         </div>
                         <div class="reply-content">{{ r.content }}</div>
                         <img v-if="r.image" :src="r.image" class="cmt-img" style="max-width:80px"/>
                         <div class="reply-actions">
                           <span class="cmt-action" @click.stop="handleLikeComment(r)"><van-icon name="good-job-o" size="12" /> {{ r.likes || '' }}</span>
-                          <span class="cmt-action" @click.stop="startReply(r)">回复</span>
+                          <span class="cmt-action" @click.stop="startReply(r)">{{ t('community.reply') }}</span>
                           <van-icon v-if="getToken()" name="delete-o" size="12" color="#ccc" @click.stop="handleDeleteComment(r)"/>
                         </div>
                       </div>
@@ -653,11 +655,11 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                   </div>
                   <!-- 加载更多回复 -->
                   <div v-if="(replyList[c.id]||[]).length > (replyShowCount[c.id] || 5)" class="reply-toggle" @click.stop="replyShowCount[c.id] = (replyShowCount[c.id] || 5) + 5">
-                    <span>加载更多回复 <van-icon name="arrow-down" size="10" /></span>
+                    <span>{{ t('community.loadMoreReplies') }} <van-icon name="arrow-down" size="10" /></span>
                   </div>
                   <!-- 收起回复 -->
                   <div class="reply-toggle" @click.stop="toggleReplies(c.id)">
-                    <span>收起回复 <van-icon name="arrow-up" size="10" /></span>
+                    <span>{{ t('community.collapseReplies') }} <van-icon name="arrow-up" size="10" /></span>
                   </div>
                 </template>
               </div>
@@ -671,12 +673,12 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
         </div>
         <!-- 底部全局输入栏 -->
         <div class="dr-input-row" v-if="!replyTarget">
-          <van-field v-model="commentInput" placeholder="发一条友善的评论" :border="false" class="dr-input"/>
+          <van-field v-model="commentInput" :placeholder="t('community.friendlyComment')" :border="false" class="dr-input"/>
           <div class="dr-send" @click.stop="handleSendComment"><van-icon name="guide-o" size="18" color="#fff"/></div>
         </div>
         <div class="dr-input-row replying" v-else>
-          <span class="replying-label">回复 @{{ replyTarget.authorName }}</span>
-          <van-field v-model="replyInputs[replyTarget.rootId]" placeholder="写下你的回复..." :border="false" class="dr-input"/>
+          <span class="replying-label">{{ t('community.replyTo', { name: replyTarget.authorName }) }}</span>
+          <van-field v-model="replyInputs[replyTarget.rootId]" :placeholder="t('community.writeReply')" :border="false" class="dr-input"/>
           <div class="dr-send" @click.stop="handleSendReply()"><van-icon name="guide-o" size="18" color="#fff"/></div>
           <van-icon name="cross" size="18" color="#999" @click.stop="cancelReply" style="margin-left:8px;cursor:pointer"/>
         </div>

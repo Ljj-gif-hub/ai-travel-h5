@@ -5,6 +5,7 @@
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { agentPlanStream } from '../api/agent'
 import { sceneApi, planApi } from '../api/index.js'
@@ -13,16 +14,17 @@ import { getToken } from '../utils/auth'
 defineOptions({ name: 'AgentMapView' })
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 const destCity = ref(route.query.destination || '')
-const originCity = ref(route.query.origin || '出发地')
+const originCity = ref(route.query.origin || t('map.departure'))
 const tripDays = ref(Number(route.query.days) || 3)
 const tripPeople = ref(Number(route.query.people) || 2)
 const phase = ref('generating')
 const activeTab = ref('plan') // plan | hotel
 const activeDay = ref(0) // 当前查看的天索引
 const agentProgress = ref(0)
-const agentStep = ref('正在连接 AI Agent…')
+const agentStep = ref(t('map.connectingAgent'))
 const planData = ref(null)
 const costBreakdown = ref(null)
 const hotelList = ref([])
@@ -32,7 +34,7 @@ const markerEls = ref({})        // 景点名 → 标记 DOM，高亮用
 const activeSpot = ref('')       // 当前选中的景点
 const adjustText = ref('')       // 调整行程输入
 const markdownContent = ref('')  // 旧版 markdown 型保存行程的兜底展示
-const budgetLabels = { transport:'交通', accommodation:'住宿', food:'餐饮', tickets:'门票', shopping:'购物', total:'总计' }
+const budgetLabel = (k) => ({ transport: t('map.budgetTransport'), accommodation: t('map.budgetAccommodation'), food: t('map.budgetFood'), tickets: t('map.budgetTickets'), shopping: t('map.budgetShopping'), total: t('map.budgetTotal') }[k] || k)
 
 let streamAbort = null
 const isSaving = ref(false)
@@ -56,23 +58,23 @@ async function savePlan() {
       source: 'agent',
     })
     if (res.code === 0) {
-      showToast('行程已保存，可在「我的行程」查看')
+      showToast(t('map.savedViewInTrips'))
     } else {
-      showToast(res.message || '保存失败')
+      showToast(res.message || t('map.saveFailed'))
     }
   } catch (e) {
-    showToast('保存失败，请稍后重试')
+    showToast(t('map.saveFailedRetry'))
   } finally {
     isSaving.value = false
   }
 }
 
 const stepList = ref([
-  { name: '分析目的地特色', status: 'wait' },
-  { name: '智能规划每日行程', status: 'wait' },
-  { name: '核算预算与路线', status: 'wait' },
-  { name: '优化调整方案', status: 'wait' },
-  { name: '生成完整行程', status: 'wait' },
+  { name: t('map.stepAnalyze'), status: 'wait' },
+  { name: t('map.stepPlan'), status: 'wait' },
+  { name: t('map.stepBudget'), status: 'wait' },
+  { name: t('map.stepOptimize'), status: 'wait' },
+  { name: t('map.stepGenerate'), status: 'wait' },
 ])
 const phaseIdx = { research: 0, plan: 1, verify: 2, adjust: 3, finalize: 4 }
 const agentLogs = ref([]) // 实时思考日志
@@ -102,13 +104,13 @@ const spotCount = computed(() => {
 const itinPreview = computed(() => {
   if (!planData.value) return ''
   const days = planData.value.days || tripDays.value
-  return `${destCity.value} · ${days}天${Math.max(days - 1, 0)}晚 · ${spotCount.value}个景点`
+  return `${destCity.value} · ${days}${t('common.days')}${Math.max(days - 1, 0)}${t('common.night')} · ${spotCount.value}${t('map.spotUnit')}`
 })
 const hotelPreview = computed(() => {
-  if (!hotelList.value.length) return '暂无住宿推荐'
+  if (!hotelList.value.length) return t('map.noHotels')
   const first = hotelList.value[0]
-  const extra = hotelList.value.length > 1 ? ` 等${hotelList.value.length}家` : ''
-  const price = first.pricePerNight ? ` · ¥${first.pricePerNight}起` : ''
+  const extra = hotelList.value.length > 1 ? t('map.hotelMore', { n: hotelList.value.length }) : ''
+  const price = first.pricePerNight ? t('map.hotelPriceFrom', { price: first.pricePerNight }) : ''
   return `${first.name}${extra}${price}`
 })
 function expandFromPreview() { snapTo(MID) }
@@ -435,7 +437,7 @@ function getSessionId() {
 /** 提交调整需求：带新需求重新生成行程 */
 function submitAdjust() {
   const text = adjustText.value.trim()
-  if (!text) { showToast('请输入调整需求，如「放慢节奏」'); return }
+  if (!text) { showToast(t('map.enterAdjust')); return }
   adjustText.value = ''
   phase.value = 'generating'
   startGeneration(text)
@@ -455,7 +457,7 @@ async function startGeneration(adjustment = '') {
   steps.forEach(s => s.status = 'wait')
   agentLogs.value = []
   agentProgress.value = 0
-  agentStep.value = '正在连接 AI Agent…'
+  agentStep.value = t('map.connectingAgent')
 
   streamAbort = agentPlanStream({
     destination: destCity.value, origin: originCity.value, days: tripDays.value,
@@ -496,7 +498,7 @@ async function startGeneration(adjustment = '') {
           day: dp.day, dayTitle: dp.day_title || '',
           timeSlots: (dp.time_slots || []).map(s => ({
             timeOfDay: s.time_of_day || '', time: s.time || '', attraction: s.attraction || '',
-            activity: s.activity || '', duration: s.duration || '', cost: `${s.cost || 0}元`,
+            activity: s.activity || '', duration: s.duration || '', cost: `${s.cost || 0}${t('common.yuan')}`,
             transport: s.transport || '', tips: s.tips || '', hours: s.hours || '',
           })), meals: dp.meals || [],
         })), tips: d.tips || [],
@@ -510,7 +512,7 @@ async function startGeneration(adjustment = '') {
       addMarkers(markerNames); loadImages(d.day_plans || [])
       phase.value = 'completed'; snapTo(MAX)
     },
-    onError(msg) { showToast(msg || '规划失败'); goBackToPrev() },
+    onError(msg) { showToast(msg || t('map.planFailed')); goBackToPrev() },
   })
 }
 
@@ -518,7 +520,7 @@ async function startGeneration(adjustment = '') {
 async function loadSavedPlan(planId) {
   try {
     const result = await planApi.getPlanById(planId)
-    if (result.code !== 0 || !result.data) { showToast('加载失败'); return }
+    if (result.code !== 0 || !result.data) { showToast(t('map.loadFailed')); return }
     const data = result.data
     destCity.value = data.destination || ''
     tripDays.value = data.days || 3
@@ -551,7 +553,7 @@ async function loadSavedPlan(planId) {
                 attraction: s.attraction || '',
                 activity: s.activity || '',
                 duration: s.duration || '',
-                cost: s.cost != null ? `${s.cost}元` : '0元',
+                cost: s.cost != null ? `${s.cost}${t('common.yuan')}` : `0${t('common.yuan')}`,
                 transport: s.transport || '',
                 tips: s.tips || '',
                 hours: s.hours || '',
@@ -571,7 +573,7 @@ async function loadSavedPlan(planId) {
       planData.value = null
       hotelList.value = []
       costBreakdown.value = null
-      markdownContent.value = md || (isObj ? JSON.stringify(pd, null, 2) : '（该行程无内容）')
+      markdownContent.value = md || (isObj ? JSON.stringify(pd, null, 2) : t('map.planNoContent'))
     }
 
     // 先让内容显示出来，地图后台初始化（不阻塞）
@@ -579,7 +581,7 @@ async function loadSavedPlan(planId) {
     agentProgress.value = 100
     stepList.value.forEach(s => s.status = 'done')
     snapTo(MAX)
-    showToast('已加载保存的行程')
+    showToast(t('map.savedPlanLoaded'))
     initMap().then(() => {
       if (planData.value) {
         const names = []
@@ -589,7 +591,7 @@ async function loadSavedPlan(planId) {
     })
   } catch (e) {
     console.error('加载保存规划失败:', e)
-    showToast('行程打开失败')
+    showToast(t('map.planOpenFailed'))
   }
 }
 
@@ -629,12 +631,12 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
       <div class="top-btn" @click="goBack">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
       </div>
-      <span class="top-title">{{ destCity }} · {{ tripDays }}天</span>
+      <span class="top-title">{{ destCity }} · {{ tripDays }}{{ t('common.days') }}</span>
     </div>
 
     <!-- 悬浮保存：抽屉外，地图上方，生成完成后显示 -->
     <div class="save-float" v-if="phase==='completed'&&planData" :class="{ saving: isSaving }" @click="savePlan">
-      <span class="save-float-icon">💾</span><span>{{ isSaving ? '保存中…' : '保存行程' }}</span>
+      <span class="save-float-icon">💾</span><span>{{ isSaving ? t('map.saving') : t('map.saveTrip') }}</span>
     </div>
 
     <!-- 可拖拽抽屉 -->
@@ -655,7 +657,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
             <div class="cp-row">
               <span class="cp-ico">🗺️</span>
               <span class="cp-txt">{{ itinPreview }}</span>
-              <span class="cp-arrow">↑ 上滑</span>
+              <span class="cp-arrow">{{ t('map.swipeUp') }}</span>
             </div>
             <div class="cp-row">
               <span class="cp-ico">🏨</span>
@@ -663,7 +665,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
             </div>
             <div class="cp-days">
               <span v-for="dp in planData.dayPlans" :key="dp.day" class="cp-day">D{{ dp.day }}</span>
-              <span class="cp-days-hint">共 {{ planData.days || tripDays }} 天</span>
+              <span class="cp-days-hint">{{ t('map.totalDays', { days: planData.days || tripDays }) }}</span>
             </div>
           </div>
         </transition>
@@ -697,12 +699,12 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
             </div>
           </div>
 
-          <button class="stop-btn" @click="handleStop">停止生成</button>
+          <button class="stop-btn" @click="handleStop">{{ t('agent.stopGenerate') }}</button>
         </div>
 
         <!-- 旧版 markdown 保存行程兜底展示 -->
         <div v-else-if="phase==='completed' && markdownContent" class="done">
-          <div class="md-title">📄 行程内容</div>
+          <div class="md-title">📄 {{ t('map.planContent') }}</div>
           <div class="md-content">{{ markdownContent }}</div>
         </div>
 
@@ -710,8 +712,8 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
         <div v-else-if="phase==='completed'&&planData" class="done">
           <!-- 双 Tab -->
           <div class="tab-row">
-            <div class="tab" :class="{on:activeTab==='plan'}" @click="activeTab='plan'">📅 行程</div>
-            <div class="tab" :class="{on:activeTab==='hotel'}" @click="activeTab='hotel'">🏨 住宿</div>
+            <div class="tab" :class="{on:activeTab==='plan'}" @click="activeTab='plan'">📅 {{ t('map.itineraryTab') }}</div>
+            <div class="tab" :class="{on:activeTab==='hotel'}" @click="activeTab='hotel'">🏨 {{ t('map.hotelTab') }}</div>
           </div>
 
           <!-- 行程 Tab -->
@@ -736,15 +738,15 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                   <div class="spot-title-row">
                     <span class="spot-title">{{slot.attraction}}</span>
                     <span v-if="si<=1" class="spot-badges">
-                      <span class="hot-badge" v-if="si===0">🔥 热度10</span>
+                      <span class="hot-badge" v-if="si===0">🔥 {{ t('map.hotBadge10') }}</span>
                       <span class="level-badge" v-if="si===0">5A</span>
-                      <span class="rank-badge">🏆 必去榜单</span>
+                      <span class="rank-badge">🏆 {{ t('map.mustVisitRank') }}</span>
                     </span>
                   </div>
                 </div>
                 <div class="spot-hours" v-if="slot.hours||slot.tips">
                   <span class="hours-icon">🕐</span>
-                  <span>{{slot.hours||'详情见注意事项'}}</span>
+                  <span>{{slot.hours||t('map.seeNotes')}}</span>
                 </div>
                 <div class="spot-imgs">
                   <div class="spot-img" v-if="attractionImages[slot.attraction]"
@@ -784,16 +786,16 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                   <div class="hotel-meta">📍 {{h.district}} · ⭐{{h.rating}}</div>
                   <div class="hotel-desc" v-if="h.highlights">{{h.highlights}}</div>
                   <div class="hotel-price-row">
-                    <span class="hotel-price">¥{{h.pricePerNight?.toLocaleString()}}</span><span class="hotel-unit">/晚</span>
-                    <span class="hotel-total">共{{tripDays}}晚 ¥{{(h.pricePerNight*tripDays)?.toLocaleString()}}</span>
+                    <span class="hotel-price">¥{{h.pricePerNight?.toLocaleString()}}</span><span class="hotel-unit">/{{ t('common.night') }}</span>
+                    <span class="hotel-total">{{ t('map.totalNights', { n: tripDays }) }} ¥{{(h.pricePerNight*tripDays)?.toLocaleString()}}</span>
                   </div>
                 </div>
               </div>
               <div class="budget-card" v-if="costBreakdown">
-                <h3>💰 费用预估</h3>
+                <h3>💰 {{ t('map.costEstimate') }}</h3>
                 <div class="budget-rows">
                   <div v-for="(v,k) in costBreakdown" :key="k" class="budget-row" :class="{total:k==='total'}">
-                    <span>{{budgetLabels[k]||k}}</span><b>¥{{v.toLocaleString?.()||v}}</b>
+                    <span>{{ budgetLabel(k) }}</span><b>¥{{v.toLocaleString?.()||v}}</b>
                   </div>
                 </div>
               </div>
@@ -807,8 +809,8 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
     <transition name="adjust-fade">
       <div class="bottom-bar" v-if="showAdjustBar">
         <div class="adjust-bar">
-          <input v-model="adjustText" placeholder="💬 调整行程..." @keyup.enter="submitAdjust" />
-          <div class="adjust-btn" @click="submitAdjust">调整</div>
+          <input v-model="adjustText" :placeholder="t('map.adjustPlaceholder')" @keyup.enter="submitAdjust" />
+          <div class="adjust-btn" @click="submitAdjust">{{ t('map.adjust') }}</div>
         </div>
       </div>
     </transition>

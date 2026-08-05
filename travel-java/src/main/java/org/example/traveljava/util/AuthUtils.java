@@ -61,6 +61,18 @@ public final class AuthUtils {
     }
 
     /**
+     * 可选登录：能提取出用户则返回 userId，未登录 / token 无效返回 null（不抛异常）。
+     * 用于"登录个性化、未登录给通用结果"的接口（如推荐）。
+     */
+    public static Long optionalUserId(String authHeader, JwtUtil jwtUtil) {
+        try {
+            return requireUserId(authHeader, jwtUtil);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * 管理员鉴权 — 先校验登录，再校验 JWT 中的 role claim 必须为 ADMIN
      * @return 当前管理员用户 ID
      * @throws AuthException 未登录或非管理员时抛出

@@ -9,6 +9,7 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
 import { setToken } from '../utils/auth'
 import { authApi } from '../api'
@@ -19,6 +20,7 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 const activeTab = ref(route.meta?.initialTab === 'register' ? 'register' : 'login')
 const switchTab = (tab) => { activeTab.value = tab }
@@ -42,18 +44,16 @@ const termsPopupTitle = ref('')
 const termsPopupContent = ref('')
 const termsData = {
   userAgreement: {
-    title: '用户协议',
     content: `【首部及导言】\n欢迎使用智能旅游助手！\n\n为使用智能旅游助手软件及服务，您应当阅读并遵守《智能旅游助手用户协议》。\n\n一、协议的范围\n1.1 本协议是您与智能旅游助手之间关于使用本软件及相关服务所订立的协议。\n\n二、账号注册与使用\n2.1 您在注册账号时，应当提供真实、准确、完整的个人资料。\n2.2 您应当妥善保管账号和密码。\n\n三、用户行为规范\n3.1 您在使用本服务时，应当遵守国家法律法规。\n\n四、隐私保护\n4.1 我们重视您的隐私保护，具体内容详见《隐私政策》。`,
   },
   privacyPolicy: {
-    title: '隐私政策',
     content: `【隐私政策】\n\n生效日期：2026年1月1日\n\n智能旅游助手（以下简称"我们"）深知个人信息对您的重要性。\n\n一、我们收集的信息\n1.1 账号信息：手机号、用户名、密码（加密存储）。\n1.2 位置信息：当您使用地图导航功能时。\n1.3 设备信息：设备型号、操作系统版本。\n\n二、信息的使用\n2.1 为您提供旅行规划、景点推荐等核心服务。\n2.2 优化产品体验，改进服务质量。\n\n三、信息的存储与保护\n3.1 您的个人信息存储于境内服务器。\n3.2 我们采用SSL加密传输保护您的信息安全。\n\n四、您的权利\n4.1 您可以随时查看、修改您的个人信息。\n4.2 您可以注销账号，我们将删除您的所有个人数据。`,
   },
 }
 const openTerms = (type) => {
   const data = termsData[type]
   if (!data) return
-  termsPopupTitle.value = data.title
+  termsPopupTitle.value = t('auth.' + type)
   termsPopupContent.value = data.content
   showTermsPopup.value = true
 }
@@ -63,9 +63,9 @@ let countdownTimer = null
 const isPhoneValid = computed(() => /^1[3-9]\d{9}$/.test(registerForm.phone.trim()))
 const sendVerifyCode = () => {
   if (codeCountdown.value > 0) return
-  if (!isPhoneValid.value) { showToast({ message: '请输入正确的11位手机号', position: 'middle', duration: 1800 }); return }
+  if (!isPhoneValid.value) { showToast({ message: t('auth.enterValidPhone'), position: 'middle', duration: 1800 }); return }
   if (import.meta.env.DEV) console.warn('[DEV] 验证码使用固定值 123456')
-  showToast({ message: '验证码已发送（开发模式，请输入 123456）', position: 'middle', duration: 2000 })
+  showToast({ message: t('auth.verifyCodeSent'), position: 'middle', duration: 2000 })
   codeCountdown.value = 60
   countdownTimer = setInterval(() => { codeCountdown.value--; if (codeCountdown.value <= 0) { clearInterval(countdownTimer); countdownTimer = null } }, 1000)
 }
@@ -74,23 +74,23 @@ onUnmounted(() => { if (countdownTimer) { clearInterval(countdownTimer); countdo
 const validateLogin = () => {
   loginErrors.username = ''; loginErrors.password = ''
   let valid = true
-  if (!loginForm.username.trim()) { loginErrors.username = '请输入用户名'; valid = false }
-  if (!loginForm.password.trim()) { loginErrors.password = '请输入密码'; valid = false }
+  if (!loginForm.username.trim()) { loginErrors.username = t('auth.enterUsername'); valid = false }
+  if (!loginForm.password.trim()) { loginErrors.password = t('auth.enterPassword'); valid = false }
   return valid
 }
 
 const validateRegister = () => {
   registerErrors.username = ''; registerErrors.phone = ''; registerErrors.verifyCode = ''; registerErrors.password = ''; registerErrors.confirmPassword = ''
   let valid = true
-  if (!registerForm.username.trim()) { registerErrors.username = '请输入用户名'; valid = false }
-  if (!registerForm.phone.trim()) { registerErrors.phone = '请输入手机号'; valid = false }
-  else if (!isPhoneValid.value) { registerErrors.phone = '请输入正确的11位手机号'; valid = false }
-  if (!registerForm.verifyCode.trim()) { registerErrors.verifyCode = '请输入验证码'; valid = false }
-  if (!registerForm.password.trim()) { registerErrors.password = '请输入密码'; valid = false }
-  else if (registerForm.password.length < 6) { registerErrors.password = '密码至少6位'; valid = false }
-  if (!registerForm.confirmPassword.trim()) { registerErrors.confirmPassword = '请确认密码'; valid = false }
-  else if (registerForm.password !== registerForm.confirmPassword) { registerErrors.confirmPassword = '两次密码不相同'; valid = false }
-  if (!agreeTerms.value) { showToast({ message: '请阅读并同意用户协议与隐私政策', position: 'middle', duration: 2200 }); valid = false }
+  if (!registerForm.username.trim()) { registerErrors.username = t('auth.enterUsername'); valid = false }
+  if (!registerForm.phone.trim()) { registerErrors.phone = t('auth.enterPhone'); valid = false }
+  else if (!isPhoneValid.value) { registerErrors.phone = t('auth.enterValidPhone'); valid = false }
+  if (!registerForm.verifyCode.trim()) { registerErrors.verifyCode = t('auth.enterVerifyCode'); valid = false }
+  if (!registerForm.password.trim()) { registerErrors.password = t('auth.enterPassword'); valid = false }
+  else if (registerForm.password.length < 6) { registerErrors.password = t('auth.passwordTooShort'); valid = false }
+  if (!registerForm.confirmPassword.trim()) { registerErrors.confirmPassword = t('auth.enterConfirmPassword'); valid = false }
+  else if (registerForm.password !== registerForm.confirmPassword) { registerErrors.confirmPassword = t('auth.passwordMismatch'); valid = false }
+  if (!agreeTerms.value) { showToast({ message: t('auth.agreeTermsRequired'), position: 'middle', duration: 2200 }); valid = false }
   return valid
 }
 
@@ -102,7 +102,7 @@ const clearRegisterError = (field) => { registerErrors[field] = '' }
 const handleLogin = async () => {
   if (!validateLogin()) return
   loginLoading.value = true
-  showLoadingToast({ message: '登录中...', duration: 0, forbidClick: true, loadingType: 'spinner' })
+  showLoadingToast({ message: t('auth.loggingIn'), duration: 0, forbidClick: true, loadingType: 'spinner' })
   try {
     const response = await authApi.login({ username: loginForm.username.trim(), password: loginForm.password })
     if (response.code === 0) {
@@ -114,28 +114,28 @@ const handleLogin = async () => {
       setAccountData(username, 'userInfo', userInfo)
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
       closeToast()
-      showToast({ message: '旅途已就绪 ✨', position: 'middle', duration: 1800 })
+      showToast({ message: t('auth.loginSuccess'), position: 'middle', duration: 1800 })
       setTimeout(() => { const u = localStorage.getItem('redirectUrl'); if (u) { localStorage.removeItem('redirectUrl'); router.push(u) } else router.push('/') }, 600)
-    } else { closeToast(); showToast({ message: response.message || '登录失败', position: 'middle', duration: 1800 }) }
-  } catch { closeToast(); showToast({ message: '网络异常，请稍后重试', position: 'middle', duration: 1800 }) }
+    } else { closeToast(); showToast({ message: response.message || t('auth.loginFailed'), position: 'middle', duration: 1800 }) }
+  } catch { closeToast(); showToast({ message: t('auth.networkError'), position: 'middle', duration: 1800 }) }
   finally { loginLoading.value = false }
 }
 
 const handleRegister = async () => {
   if (!validateRegister()) return
   registerLoading.value = true
-  showLoadingToast({ message: '注册中...', duration: 0, forbidClick: true, loadingType: 'spinner' })
+  showLoadingToast({ message: t('auth.registering'), duration: 0, forbidClick: true, loadingType: 'spinner' })
   try {
     const response = await authApi.register({ username: registerForm.username.trim(), password: registerForm.password, confirmPassword: registerForm.confirmPassword, phone: registerForm.phone.trim() || null })
     if (response.code === 0) {
       const newUsername = registerForm.username.trim()
       if (!accountExists(newUsername)) initAccountData(newUsername)
-      closeToast(); showToast({ message: '注册成功，请登录 🎒', position: 'middle', duration: 2000 })
+      closeToast(); showToast({ message: t('auth.registerSuccess'), position: 'middle', duration: 2000 })
       activeTab.value = 'login'; loginForm.username = registerForm.username
       Object.assign(registerForm, { username: '', phone: '', verifyCode: '', password: '', confirmPassword: '' }); agreeTerms.value = false
-    } else if (response.code === -2 || (response.message && response.message.includes('已存在'))) { closeToast(); showToast({ message: '该用户名已被注册', position: 'middle', duration: 2000 }) }
-    else { closeToast(); showToast({ message: response.message || '注册失败', position: 'middle', duration: 1800 }) }
-  } catch { closeToast(); showToast({ message: '网络异常，请稍后重试', position: 'middle', duration: 1800 }) }
+    } else if (response.code === -2 || (response.message && response.message.includes('已存在'))) { closeToast(); showToast({ message: t('auth.usernameTaken'), position: 'middle', duration: 2000 }) }
+    else { closeToast(); showToast({ message: response.message || t('auth.registerFailed'), position: 'middle', duration: 1800 }) }
+  } catch { closeToast(); showToast({ message: t('auth.networkError'), position: 'middle', duration: 1800 }) }
   finally { registerLoading.value = false }
 }
 
@@ -155,12 +155,11 @@ const OAUTH_CONFIG = {
 }
 
 const handleThirdPartyLogin = async (platform) => {
-  // 模板传的是中文（'微信'/'支付宝'），归一化为 OAUTH_CONFIG 的英文键
-  const key = ({ '微信': 'wechat', '支付宝': 'alipay' })[platform] || platform
+  const key = platform
   const cfg = OAUTH_CONFIG[key]
   // 未配置 AppID → 友好提示
   if (!cfg || !cfg.appid) {
-    showToast({ message: `${platform}登录暂未配置，请先去开放平台获取 AppID`, position: 'middle', duration: 2200 })
+    showToast({ message: t('auth.oauthNotConfigured', { platform: t('auth.' + key) }), position: 'middle', duration: 2200 })
     return
   }
 
@@ -182,7 +181,7 @@ const handleThirdPartyLogin = async (platform) => {
       window.location.href = url
     }
   } catch (e) {
-    showToast({ message: '跳转授权页面失败，请稍后重试', position: 'middle', duration: 1800 })
+    showToast({ message: t('auth.oauthRedirectFailed'), position: 'middle', duration: 1800 })
   }
 }
 
@@ -198,11 +197,11 @@ const handleOAuthCallback = async () => {
 
   // 校验 state 防 CSRF
   if (state !== savedState) {
-    showToast({ message: '登录验证失败，请重试', position: 'middle', duration: 2000 })
+    showToast({ message: t('auth.oauthVerifyFailed'), position: 'middle', duration: 2000 })
     return
   }
 
-  showLoadingToast({ message: `${platform === 'wechat' ? '微信' : '支付宝'}登录中...`, duration: 0, forbidClick: true })
+  showLoadingToast({ message: t('auth.thirdPartyLoggingIn', { platform: t('auth.' + platform) }), duration: 0, forbidClick: true })
 
   try {
     // 调用后端换取 token
@@ -216,7 +215,7 @@ const handleOAuthCallback = async () => {
       if (!accountExists(username)) initAccountData(username)
       localStorage.setItem('userInfo', JSON.stringify(data.user || {}))
       closeToast()
-      showToast({ message: '登录成功 ✨', position: 'middle', duration: 1500 })
+      showToast({ message: t('auth.loginSuccessOAuth'), position: 'middle', duration: 1500 })
       setTimeout(() => {
         const u = localStorage.getItem('redirectUrl')
         if (u) { localStorage.removeItem('redirectUrl'); router.push(u) }
@@ -224,11 +223,11 @@ const handleOAuthCallback = async () => {
       }, 500)
     } else {
       closeToast()
-      showToast({ message: response.message || '登录失败', position: 'middle', duration: 1800 })
+      showToast({ message: response.message || t('auth.loginFailed'), position: 'middle', duration: 1800 })
     }
   } catch {
     closeToast()
-    showToast({ message: '网络异常，请稍后重试', position: 'middle', duration: 1800 })
+    showToast({ message: t('auth.networkError'), position: 'middle', duration: 1800 })
   } finally {
     localStorage.removeItem('oauth_state')
     localStorage.removeItem('oauth_platform')
@@ -240,7 +239,7 @@ const handleOAuthCallback = async () => {
 const goBack = () => { try { const u = localStorage.getItem('redirectUrl'); if (u) router.push(u); else router.push('/') } catch { router.push('/') } }
 
 const handleForgetPassword = () => {
-  showDialog({ title: '找回密码', message: '请联系客服处理\n客服邮箱：support@travel-assistant.com', confirmButtonText: '我知道了', confirmButtonColor: '#7b42f5' }).catch(() => {})
+  showDialog({ title: t('auth.forgotPasswordTitle'), message: t('auth.forgotPasswordMessage'), confirmButtonText: t('auth.gotIt'), confirmButtonColor: '#7b42f5' }).catch(() => {})
 }
 
 const pageReady = ref(false)
@@ -258,7 +257,7 @@ onMounted(() => {
     </div>
 
     <!-- 返回 -->
-    <button class="back-btn" @click="goBack" aria-label="返回">
+    <button class="back-btn" @click="goBack" :aria-label="t('common.back')">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
 
@@ -276,16 +275,16 @@ onMounted(() => {
               <line x1="22" y1="8" x2="22" y2="14" stroke="white" stroke-width="1.8"/>
             </svg>
           </div>
-          <h1 class="app-title">智能旅游助手</h1>
-          <p class="app-tagline">探索世界，从这里出发</p>
-          <p class="app-slogan">AI定制行程 &middot; 景点地图 &middot; 热门目的地推荐</p>
+          <h1 class="app-title">{{ t('app.name') }}</h1>
+          <p class="app-tagline">{{ t('home.bannerSubtitle') }}</p>
+          <p class="app-slogan">{{ t('app.slogan') }}</p>
         </div>
 
         <!-- Tab -->
         <div class="tab-bar" :class="{ in: pageReady }">
           <div class="tab-slider" :style="{ left: isLogin ? '4px' : 'calc(50% + 2px)', width: 'calc(50% - 6px)' }" />
-          <button :class="['tab-item', { active: isLogin }]" @click="switchTab('login')">登录</button>
-          <button :class="['tab-item', { active: !isLogin }]" @click="switchTab('register')">注册</button>
+          <button :class="['tab-item', { active: isLogin }]" @click="switchTab('login')">{{ t('common.login') }}</button>
+          <button :class="['tab-item', { active: !isLogin }]" @click="switchTab('register')">{{ t('common.register') }}</button>
         </div>
 
         <!-- 表单卡片 -->
@@ -296,23 +295,23 @@ onMounted(() => {
           <div v-if="isLogin" class="form-body" key="login">
             <div class="input-group" :class="{ err: loginErrors.username }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.5"/><path d="M3 18 Q3 12 10 12 Q17 12 17 18" stroke-linecap="round"/></svg>
-              <input v-model="loginForm.username" type="text" placeholder="用户名" class="form-input" @focus="clearLoginError('username')" @input="clearLoginError('username')"/>
+              <input v-model="loginForm.username" type="text" :placeholder="t('auth.username')" class="form-input" @focus="clearLoginError('username')" @input="clearLoginError('username')"/>
             </div>
             <div class="input-group" :class="{ err: loginErrors.password }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="12" height="10" rx="2.5"/><path d="M7 7 V5 A3 3 0 0 1 13 5 V7"/><circle cx="10" cy="12.5" r="1"/></svg>
-              <input v-model="loginForm.password" :type="showLoginPwd ? 'text' : 'password'" placeholder="密码" class="form-input" @focus="clearLoginError('password')" @input="clearLoginError('password')"/>
+              <input v-model="loginForm.password" :type="showLoginPwd ? 'text' : 'password'" :placeholder="t('auth.password')" class="form-input" @focus="clearLoginError('password')" @input="clearLoginError('password')"/>
               <button class="pwd-btn" @click="showLoginPwd = !showLoginPwd" type="button">
                 <svg v-if="!showLoginPwd" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M2 10 S5 5 10 5 S18 10 18 10 S15 15 10 15 S2 10 2 10"/></svg>
                 <svg v-else viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="3" x2="17" y2="17"/><path d="M7 7 Q5 9 4 10 Q7 15 10 15 Q13 15 15 12"/><circle cx="10" cy="10" r="2"/></svg>
               </button>
             </div>
             <div class="forgot-row">
-              <span class="forgot-link" @click="handleForgetPassword">忘记密码？</span>
+              <span class="forgot-link" @click="handleForgetPassword">{{ t('auth.forgotPassword') }}</span>
             </div>
             <button class="submit-btn login-btn" :disabled="loginLoading" @click="handleLogin">
               <template v-if="!loginLoading">
                 <svg viewBox="0 0 18 18" width="16" height="16" fill="currentColor"><path d="M2 9 L7 4 L7 7 Q13 7 16 10 L14 7 Q11 4 7 4 L7 1 Z" transform="rotate(-45 9 9)"/></svg>
-                <span>立即登录</span>
+                <span>{{ t('auth.loginNow') }}</span>
               </template>
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.3)" stroke-width="3"/><path d="M12 2 A10 10 0 0 1 22 12" stroke="white" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
             </button>
@@ -324,20 +323,20 @@ onMounted(() => {
           <div v-if="!isLogin" class="form-body" key="register">
             <div class="input-group" :class="{ err: registerErrors.username }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.5"/><path d="M3 18 Q3 12 10 12 Q17 12 17 18" stroke-linecap="round"/></svg>
-              <input v-model="registerForm.username" type="text" placeholder="用户名" class="form-input" @focus="clearRegisterError('username')" @input="clearRegisterError('username')"/>
+              <input v-model="registerForm.username" type="text" :placeholder="t('auth.username')" class="form-input" @focus="clearRegisterError('username')" @input="clearRegisterError('username')"/>
             </div>
             <div class="input-group" :class="{ err: registerErrors.phone }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="1" width="10" height="18" rx="2.5"/><line x1="8" y1="15" x2="12" y2="15" stroke-linecap="round"/></svg>
-              <input v-model="registerForm.phone" type="tel" maxlength="11" placeholder="手机号" class="form-input" @focus="clearRegisterError('phone')" @input="clearRegisterError('phone')"/>
+              <input v-model="registerForm.phone" type="tel" maxlength="11" :placeholder="t('auth.phone')" class="form-input" @focus="clearRegisterError('phone')" @input="clearRegisterError('phone')"/>
             </div>
             <div class="input-group" :class="{ err: registerErrors.verifyCode }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="12" rx="2"/><polyline points="3 5 10 11 17 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <input v-model="registerForm.verifyCode" type="text" maxlength="6" placeholder="验证码" class="form-input" @focus="clearRegisterError('verifyCode')" @input="clearRegisterError('verifyCode')"/>
-              <button class="code-btn" :class="{ off: codeCountdown > 0 || !isPhoneValid }" :disabled="codeCountdown > 0 || !isPhoneValid" @click="sendVerifyCode" type="button">{{ codeCountdown > 0 ? `${codeCountdown}s` : '获取验证码' }}</button>
+              <input v-model="registerForm.verifyCode" type="text" maxlength="6" :placeholder="t('auth.verifyCode')" class="form-input" @focus="clearRegisterError('verifyCode')" @input="clearRegisterError('verifyCode')"/>
+              <button class="code-btn" :class="{ off: codeCountdown > 0 || !isPhoneValid }" :disabled="codeCountdown > 0 || !isPhoneValid" @click="sendVerifyCode" type="button">{{ codeCountdown > 0 ? `${codeCountdown}s` : t('auth.getVerifyCode') }}</button>
             </div>
             <div class="input-group" :class="{ err: registerErrors.password }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="12" height="10" rx="2.5"/><path d="M7 7 V5 A3 3 0 0 1 13 5 V7"/><circle cx="10" cy="12.5" r="1"/></svg>
-              <input v-model="registerForm.password" :type="showRegPwd ? 'text' : 'password'" placeholder="密码（至少6位）" class="form-input" @focus="clearRegisterError('password')" @input="clearRegisterError('password')"/>
+              <input v-model="registerForm.password" :type="showRegPwd ? 'text' : 'password'" :placeholder="t('auth.passwordMinLength')" class="form-input" @focus="clearRegisterError('password')" @input="clearRegisterError('password')"/>
               <button class="pwd-btn" @click="showRegPwd = !showRegPwd" type="button">
                 <svg v-if="!showRegPwd" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M2 10 S5 5 10 5 S18 10 18 10 S15 15 10 15 S2 10 2 10"/></svg>
                 <svg v-else viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="3" x2="17" y2="17"/><path d="M7 7 Q5 9 4 10 Q7 15 10 15 Q13 15 15 12"/><circle cx="10" cy="10" r="2"/></svg>
@@ -345,7 +344,7 @@ onMounted(() => {
             </div>
             <div class="input-group" :class="{ err: registerErrors.confirmPassword }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="12" height="10" rx="2.5"/><path d="M7 7 V5 A3 3 0 0 1 13 5 V7"/><circle cx="10" cy="12.5" r="1"/></svg>
-              <input v-model="registerForm.confirmPassword" :type="showRegConfirmPwd ? 'text' : 'password'" placeholder="确认密码" class="form-input" @focus="clearRegisterError('confirmPassword')" @input="clearRegisterError('confirmPassword')"/>
+              <input v-model="registerForm.confirmPassword" :type="showRegConfirmPwd ? 'text' : 'password'" :placeholder="t('auth.confirmPassword')" class="form-input" @focus="clearRegisterError('confirmPassword')" @input="clearRegisterError('confirmPassword')"/>
               <button class="pwd-btn" @click="showRegConfirmPwd = !showRegConfirmPwd" type="button">
                 <svg v-if="!showRegConfirmPwd" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M2 10 S5 5 10 5 S18 10 18 10 S15 15 10 15 S2 10 2 10"/></svg>
                 <svg v-else viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="3" x2="17" y2="17"/><path d="M7 7 Q5 9 4 10 Q7 15 10 15 Q13 15 15 12"/><circle cx="10" cy="10" r="2"/></svg>
@@ -356,12 +355,12 @@ onMounted(() => {
                 <svg v-if="agreeTerms" viewBox="0 0 18 18" width="18" height="18"><circle cx="9" cy="9" r="8.5" fill="#7b42f5"/><polyline points="5 9.5 8 12 13 6" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <svg v-else viewBox="0 0 18 18" width="18" height="18"><circle cx="9" cy="9" r="8" fill="none" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/></svg>
               </button>
-              <span class="terms-label">我已阅读并同意 <span class="terms-link" @click.stop="openTerms('userAgreement')">《用户协议》</span> 和 <span class="terms-link" @click.stop="openTerms('privacyPolicy')">《隐私政策》</span></span>
+              <span class="terms-label">{{ t('auth.termsLabelPrefix') }}<span class="terms-link" @click.stop="openTerms('userAgreement')">{{ t('auth.userAgreement') }}</span>{{ t('auth.termsLabelAnd') }}<span class="terms-link" @click.stop="openTerms('privacyPolicy')">{{ t('auth.privacyPolicy') }}</span></span>
             </div>
             <button class="submit-btn reg-btn" :class="{ off: !canRegister }" :disabled="!canRegister || registerLoading" @click="handleRegister">
               <template v-if="!registerLoading">
                 <svg viewBox="0 0 44 48" width="16" height="18" fill="none"><rect x="8" y="14" width="28" height="30" rx="5" stroke="currentColor" stroke-width="2.2"/><path d="M14 14 V8 A4 4 0 0 1 18 4 H26 A4 4 0 0 1 30 8 V14" stroke="currentColor" stroke-width="2.2" fill="none"/></svg>
-                <span>注册</span>
+                <span>{{ t('common.register') }}</span>
               </template>
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" class="spin"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.3)" stroke-width="3"/><path d="M12 2 A10 10 0 0 1 22 12" stroke="white" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
             </button>
@@ -370,16 +369,16 @@ onMounted(() => {
 
           <!-- 第三方登录 -->
           <div class="third-party">
-            <div class="divider"><span class="divider-line"></span><span class="divider-text">其他方式登录</span><span class="divider-line"></span></div>
+            <div class="divider"><span class="divider-line"></span><span class="divider-text">{{ t('auth.otherLogin') }}</span><span class="divider-line"></span></div>
             <div class="social-row">
-              <button class="social-btn" @click="handleThirdPartyLogin('微信')" title="微信">
+              <button class="social-btn" @click="handleThirdPartyLogin('wechat')" :title="t('auth.wechat')">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M15.5 8.5a5.5 5.5 0 0 1 0 11c-.8 0-1.6-.2-2.3-.5L9 20.5l.5-3.5A5.5 5.5 0 1 1 15.5 8.5z"/>
                   <circle cx="12.5" cy="14" r=".8" fill="#4b5563" stroke="none"/>
                   <circle cx="16.5" cy="14" r=".8" fill="#4b5563" stroke="none"/>
                 </svg>
               </button>
-              <button class="social-btn" @click="handleThirdPartyLogin('支付宝')" title="支付宝">
+              <button class="social-btn" @click="handleThirdPartyLogin('alipay')" :title="t('auth.alipay')">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M16 4l-1 4h3l-6 8 1-6H9l7-6z"/>
                 </svg>
@@ -389,7 +388,7 @@ onMounted(() => {
         </div>
 
         <!-- 版权 -->
-        <p class="footer-text" :class="{ in: pageReady }">©2026 智能旅游助手 &middot; 陪你走遍山河湖海</p>
+        <p class="footer-text" :class="{ in: pageReady }">©2026 {{ t('app.name') }} · {{ t('app.footerSlogan') }}</p>
       </div>
     </div>
 
@@ -403,7 +402,7 @@ onMounted(() => {
           </button>
         </div>
         <div class="terms-popup-body"><pre class="terms-content">{{ termsPopupContent }}</pre></div>
-        <div class="terms-popup-footer"><button class="terms-agree-btn" @click="agreeTerms = true; showTermsPopup = false">我已阅读并同意</button></div>
+        <div class="terms-popup-footer"><button class="terms-agree-btn" @click="agreeTerms = true; showTermsPopup = false">{{ t('auth.termsAgree') }}</button></div>
       </div>
     </van-popup>
   </div>

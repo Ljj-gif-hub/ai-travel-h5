@@ -1,0 +1,33 @@
+/**
+ * 预订（酒店/机票）（zh）— 子代理 E
+ */
+export default {
+  title: '酒店预订',
+  flightTitle: '机票预订',
+  noHotels: '该城市暂无可用酒店',
+  noFlights: '该航线暂无航班',
+  noFlightsAvailable: '暂无可用航班',
+  book: '预订',
+  confirmBook: '确认预订',
+  checkInDate: '入住日期',
+  nights: '住宿晚数',
+  rooms: '房间数',
+  checkOutAt: '离店',
+  total: '合计',
+  depart: '出发',
+  arrive: '到达',
+  searching: '搜索中...',
+  searchFlights: '搜索航班',
+  selectDate: '选择出行日期',
+  confirmFlight: '确认航班',
+  goPay: '去支付',
+  selectCities: '请选择出发/到达城市',
+  sameCity: '出发与到达城市不能相同',
+  searchFailRetry: '查询失败，请稍后重试',
+  successPending: '预订成功，待支付',
+  fail: '预订失败',
+  failRetry: '预订失败，请稍后重试',
+  orderSuccessPending: '下单成功，待支付',
+  orderFail: '下单失败',
+  orderFailRetry: '下单失败，请稍后重试',
+}

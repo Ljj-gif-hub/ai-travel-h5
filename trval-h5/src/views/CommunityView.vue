@@ -6,10 +6,12 @@ import { getToken } from '../utils/auth'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import { avatarUrl } from '../utils/avatar'
+import { useI18n } from 'vue-i18n'
 
 defineOptions({ name: 'CommunityView' })
 
 const router = useRouter()
+const { t } = useI18n()
 
 /* ==================== Tab 切换 ==================== */
 const activeTab = ref('all')
@@ -253,7 +255,7 @@ const mapNoteItem = (item) => {
   // 种子数据：{ author: { nickname, avatar, ... }, images: [...], ... }
   const isSeedData = !!item.author && typeof item.author === 'object'
 
-  const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || '旅行者')
+  const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || t('community.traveler'))
   const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || avatarUrl(String(item.id || 'fallback'), authorNickname))
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
@@ -302,7 +304,7 @@ const mapNoteItem = (item) => {
     likeCount: item.likeCount || item.likes || 0,
     isLiked: item.isLiked || false,
     commentCount: item.commentCount || item.comments || 0,
-    time: item.time || item.date || item.createTime || '刚刚',
+    time: item.time || item.date || item.createTime || t('community.justNow'),
   }
 }
 
@@ -344,7 +346,7 @@ const goToDetail = (note) => {
 const handleLike = async (note) => {
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
 
@@ -360,7 +362,7 @@ const handleLike = async (note) => {
     // 失败回滚
     note.isLiked = prevLiked
     note.likeCount += prevLiked ? 1 : -1
-    showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('community.opFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
@@ -368,7 +370,7 @@ const handleLike = async (note) => {
 const handleFollow = async (author) => {
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
 
@@ -395,7 +397,7 @@ const handleFollow = async (author) => {
     notes.value.forEach(n => {
       if (n.author?.userId === author.userId) n.author.isFollowing = !newState
     })
-    showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('community.opFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
@@ -419,12 +421,12 @@ const handleCommentUpload = async (noteId, e) => {
         commentVideos[noteId] = res.data.url
         commentImages[noteId] = ''
       }
-      showToast({ message: res.data.type === 'image' ? '图片已上传' : '视频已上传', position: 'middle', duration: 1200 })
+      showToast({ message: res.data.type === 'image' ? t('community.imageUploaded') : t('community.videoUploaded'), position: 'middle', duration: 1200 })
     } else {
-      showToast({ message: res.message || '上传失败', position: 'middle', duration: 1500 })
+      showToast({ message: res.message || t('community.uploadFailed'), position: 'middle', duration: 1500 })
     }
   } catch (e) {
-    showToast({ message: '上传失败', position: 'middle', duration: 1500 })
+    showToast({ message: t('community.uploadFailed'), position: 'middle', duration: 1500 })
   } finally {
     commentUploading[noteId] = false
   }
@@ -437,7 +439,7 @@ const handleSendComment = async (note) => {
   if (!text && !img && !vid) return
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
   try {
@@ -447,18 +449,18 @@ const handleSendComment = async (note) => {
       commentInputs[note.id] = ''
       commentImages[note.id] = ''
       commentVideos[note.id] = ''
-      showToast({ message: '评论成功', position: 'middle', duration: 1200 })
+      showToast({ message: t('community.commentSuccess'), position: 'middle', duration: 1200 })
     } else {
-      showToast({ message: res.message || '评论失败', position: 'middle', duration: 1500 })
+      showToast({ message: res.message || t('community.commentFailed'), position: 'middle', duration: 1500 })
     }
   } catch (e) {
-    showToast({ message: '评论失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('community.commentFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
 /* ==================== 搜索 ==================== */
 const handleSearch = () => {
-  showToast({ message: '搜索功能开发中', position: 'middle', duration: 1500 })
+  showToast({ message: t('community.searchDev'), position: 'middle', duration: 1500 })
 }
 
 /* ==================== 滚动触底加载 ==================== */
@@ -478,7 +480,7 @@ const onTabChange = async (key) => {
   if (key === 'following') {
     const token = getToken()
     if (!token) {
-      showToast({ message: '请先登录查看关注动态', position: 'middle', duration: 1500 })
+      showToast({ message: t('community.loginToSeeFollowing'), position: 'middle', duration: 1500 })
       activeTab.value = 'all'
       return
     }
@@ -539,8 +541,8 @@ onBeforeUnmount(() => {
       <img class="hero-bg-img" src="https://images.unsplash.com/photo-1530789253388-582c481c54b0?w=800&q=80" alt="" />
       <div class="hero-overlay"></div>
       <div class="banner-content">
-        <h1 class="banner-title">同路人社区</h1>
-        <p class="banner-subtitle">真点评 · 真感受</p>
+        <h1 class="banner-title">{{ t('community.bannerTitle') }}</h1>
+        <p class="banner-subtitle">{{ t('community.bannerSubtitle') }}</p>
       </div>
       <div class="banner-illustration" style="display:none">
         <svg viewBox="0 0 200 120" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" class="banner-svg">
@@ -595,12 +597,12 @@ onBeforeUnmount(() => {
           class="tab-chip"
           :class="{ active: activeTab === 'all' }"
           @click="onTabChange('all')"
-        >广场</span>
+        >{{ t('community.square') }}</span>
         <span
           class="tab-chip"
           :class="{ active: activeTab === 'following' }"
           @click="onTabChange('following')"
-        >关注</span>
+        >{{ t('community.following') }}</span>
       </div>
 
       <!-- 搜索按钮 -->
@@ -627,10 +629,10 @@ onBeforeUnmount(() => {
       <!-- 空状态 -->
       <EmptyState
         v-else-if="empty"
-        title="还没有笔记"
-        desc="去分享你的旅行故事吧"
+        :title="t('community.emptyTitle')"
+        :desc="t('community.emptyDesc')"
         icon="notes-o"
-        btn-text="去发表"
+        :btn-text="t('community.emptyBtn')"
         btn-type="gradient"
         @btn-click="goToWrite"
       />
@@ -656,7 +658,7 @@ onBeforeUnmount(() => {
             <div class="author-info">
               <div class="author-name-row">
                 <span class="author-nickname">{{ note.author.nickname }}</span>
-                <span v-if="note.author.online" class="online-dot" title="在线"></span>
+                <span v-if="note.author.online" class="online-dot" :title="t('community.online')"></span>
               </div>
               <span class="author-meta">{{ note.time }} &middot; {{ note.author.city || '' }}</span>
             </div>
@@ -665,7 +667,7 @@ onBeforeUnmount(() => {
               :class="{ followed: note.author.isFollowing }"
               @click.stop="handleFollow(note.author)"
             >
-              {{ note.author.isFollowing ? '已关注' : '+ 关注' }}
+              {{ note.author.isFollowing ? t('community.followed') : t('community.follow') }}
             </div>
           </div>
 
@@ -740,7 +742,7 @@ onBeforeUnmount(() => {
               </div>
               <van-field
                 v-model="commentInputs[note.id]"
-                placeholder="评论或传图..."
+                :placeholder="t('community.commentOrUpload')"
                 :border="false"
                 input-align="left"
                 class="comment-field"
@@ -767,15 +769,15 @@ onBeforeUnmount(() => {
 
         <!-- 触底分页：每次显示10条 -->
         <div v-if="hasMoreToShow" class="load-more-btn" @click="loadMore">
-          加载更多 ({{ notes.length - displayCount }} 条)
+          {{ t('community.loadMoreCount', { n: notes.length - displayCount }) }}
         </div>
         <!-- API 加载中 -->
         <div v-if="loadingMore" class="loading-more">
           <van-loading size="20" color="#8B5CF6" />
-          <span>加载中...</span>
+          <span>{{ t('common.loading') }}</span>
         </div>
         <div v-else-if="!hasMore && !hasMoreToShow && notes.length > 0" class="no-more">
-          没有更多了
+          {{ t('common.noMore') }}
         </div>
       </template>
     </div>
@@ -800,7 +802,7 @@ onBeforeUnmount(() => {
         :default-index="cityColumns.findIndex(c => c.value === currentCity)"
         @confirm="onCityConfirm"
         @cancel="showCityPicker = false"
-        title="选择城市"
+        :title="t('community.selectCity')"
       />
     </van-popup>
   </div>

@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/notes")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "社交")
 public class NoteController {
 
     private static final Logger log = LoggerFactory.getLogger(NoteController.class);

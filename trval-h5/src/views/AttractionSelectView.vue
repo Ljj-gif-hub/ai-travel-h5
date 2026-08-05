@@ -5,6 +5,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   municipalities, hkMacauTW, allProvinces, domesticGroups,
   overseasContinents, domesticHotCities, overseasHotCities,
@@ -14,6 +15,7 @@ import SearchBar from '../components/SearchBar.vue'
 
 defineOptions({ name: 'AttractionSelectView' })
 const router = useRouter()
+const { t } = useI18n()
 
 // ====== Tab ======
 const activeTab = ref('domestic')
@@ -141,19 +143,19 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
       <div class="as-search-wrap">
-        <SearchBar v-model="searchText" placeholder="搜索目的地" :history="searchHistory" @select="(item) => selectCity(item.text)" />
+        <SearchBar v-model="searchText" :placeholder="t('agent.searchDestination')" :history="searchHistory" @select="(item) => selectCity(item.text)" />
       </div>
     </div>
 
     <!-- ══════ 境内/境外 Tab（始终可见） ══════ -->
     <div class="as-tabs">
-      <span class="as-tab" :class="{ active: activeTab === 'domestic' }" @click="activeTab = 'domestic'">境内</span>
-      <span class="as-tab" :class="{ active: activeTab === 'overseas' }" @click="activeTab = 'overseas'">境外</span>
+      <span class="as-tab" :class="{ active: activeTab === 'domestic' }" @click="activeTab = 'domestic'">{{ t('agent.domestic') }}</span>
+      <span class="as-tab" :class="{ active: activeTab === 'overseas' }" @click="activeTab = 'overseas'">{{ t('agent.overseas') }}</span>
     </div>
 
     <!-- ══════ 搜索模式 ══════ -->
     <div class="as-search-results" v-show="searchText.trim() && activeTab === 'domestic'">
-      <div class="as-section-title">境内搜索结果</div>
+      <div class="as-section-title">{{ t('agent.domesticResults') }}</div>
       <div class="as-city-grid">
         <div v-for="city in searchDomestic" :key="city" class="as-city-card" @click="selectCity(city)">
           <div class="as-city-img-wrap">
@@ -165,10 +167,10 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
           </div>
         </div>
       </div>
-      <div v-if="searchDomestic.length === 0" class="as-empty">未找到匹配的目的地</div>
+      <div v-if="searchDomestic.length === 0" class="as-empty">{{ t('agent.noDestMatch') }}</div>
     </div>
     <div class="as-search-results" v-show="searchText.trim() && activeTab === 'overseas'">
-      <div class="as-section-title">境外搜索结果</div>
+      <div class="as-section-title">{{ t('agent.overseasResults') }}</div>
       <div class="as-city-grid">
         <div v-for="city in searchOverseas" :key="city" class="as-city-card" @click="selectCity(city)">
           <div class="as-city-img-wrap">
@@ -180,14 +182,14 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
           </div>
         </div>
       </div>
-      <div v-if="searchOverseas.length === 0" class="as-empty">未找到匹配的目的地</div>
+      <div v-if="searchOverseas.length === 0" class="as-empty">{{ t('agent.noDestMatch') }}</div>
     </div>
 
     <!-- ══════ 正常模式 ══════ -->
     <div class="as-content" v-show="!searchText.trim() && activeTab === 'domestic'">
       <div class="as-left">
         <div class="as-left-list">
-          <div class="as-left-item recommend" :class="{ active: domesticLeftKey === 'recommend' }" @click="selectDomesticLeft('recommend')">推荐</div>
+          <div class="as-left-item recommend" :class="{ active: domesticLeftKey === 'recommend' }" @click="selectDomesticLeft('recommend')">{{ t('agent.recommend') }}</div>
           <div v-for="group in domesticGroups" :key="group.key" class="as-left-item" :class="{ active: domesticLeftKey === group.key }" @click="selectDomesticLeft(group.key)">{{ group.label }}</div>
           <div v-for="prov in allProvinces" :key="prov.name" class="as-left-item" :class="{ active: domesticLeftKey === prov.name }" @click="selectDomesticLeft(prov.name)">{{ prov.name }}</div>
         </div>
@@ -197,8 +199,8 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
         <!-- 历史（仅推荐模式） -->
         <div class="as-section" v-if="domesticLeftKey === 'recommend' && historyCities.length > 0">
           <div class="as-section-title-row">
-            <span class="as-section-title">历史选择</span>
-            <span class="as-clear-btn" @click="clearHistory">清除历史</span>
+            <span class="as-section-title">{{ t('agent.history') }}</span>
+            <span class="as-clear-btn" @click="clearHistory">{{ t('agent.clearHistory') }}</span>
           </div>
           <div class="as-history-grid">
             <div v-for="city in historyCities" :key="city" class="as-history-chip" @click="selectCity(city)">{{ city }}</div>
@@ -223,7 +225,7 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
 
         <!-- 城市列表 -->
         <div class="as-section" v-if="domesticCityList.length > 0">
-          <div class="as-section-title">{{ domesticLeftKey === 'recommend' ? '热门目的地' : (domesticSubKey || domesticLeftKey) }}</div>
+          <div class="as-section-title">{{ domesticLeftKey === 'recommend' ? t('agent.hotDestinations') : (domesticSubKey || domesticLeftKey) }}</div>
           <div class="as-city-grid">
             <div v-for="city in domesticCityList" :key="city" class="as-city-card" @click="selectCity(city)">
               <div class="as-city-img-wrap">
@@ -243,7 +245,7 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
     <div class="as-content" v-show="!searchText.trim() && activeTab === 'overseas'">
       <div class="as-left">
         <div class="as-left-list">
-          <div class="as-left-item recommend" :class="{ active: overseasLeftKey === 'recommend' }" @click="selectOverseasLeft('recommend')">推荐</div>
+          <div class="as-left-item recommend" :class="{ active: overseasLeftKey === 'recommend' }" @click="selectOverseasLeft('recommend')">{{ t('agent.recommend') }}</div>
           <div v-for="cont in overseasContinents" :key="cont.name" class="as-left-item" :class="{ active: overseasLeftKey === cont.name }" @click="selectOverseasLeft(cont.name)">{{ cont.name }}</div>
         </div>
       </div>
@@ -251,8 +253,8 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
       <div class="as-right">
         <div class="as-section" v-if="overseasLeftKey === 'recommend' && historyCities.length > 0">
           <div class="as-section-title-row">
-            <span class="as-section-title">历史选择</span>
-            <span class="as-clear-btn" @click="clearHistory">清除历史</span>
+            <span class="as-section-title">{{ t('agent.history') }}</span>
+            <span class="as-clear-btn" @click="clearHistory">{{ t('agent.clearHistory') }}</span>
           </div>
           <div class="as-history-grid">
             <div v-for="city in historyCities" :key="city" class="as-history-chip" @click="selectCity(city)">{{ city }}</div>
@@ -266,7 +268,7 @@ const goBack = () => { try { router.back() } catch { router.push('/trips') } }
         </div>
 
         <div class="as-section">
-          <div class="as-section-title">{{ overseasLeftKey === 'recommend' ? '热门目的地' : (overseasSubKey || '热门目的地') }}</div>
+          <div class="as-section-title">{{ overseasLeftKey === 'recommend' ? t('agent.hotDestinations') : (overseasSubKey || t('agent.hotDestinations')) }}</div>
           <div class="as-city-grid">
             <div v-for="city in overseasCityList" :key="city" class="as-city-card" @click="selectCity(city)">
               <div class="as-city-img-wrap">

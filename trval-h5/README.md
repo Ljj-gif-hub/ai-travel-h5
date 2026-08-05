@@ -94,6 +94,19 @@ AI 智能旅游助手是一款面向移动端用户的智能旅游规划应用�
 --shadow-purple: 0 8px 24px rgba(139,92,246,0.12);
 ```
 
+## 📝 最近更新（v4.3 — 2026-08-06）
+
+### 🌐 多语言国际化全量补齐
+- 语言包按 **24 个功能模块**拆分：`src/locales/{zh,en}/*.js`（common/app/settings/auth/profile/home/community/note/trips/planning/agent/map/calendar/booking/orders/payment/wallet/social/destination/feedback/about/share/chat/components）
+- `zh-CN.js` / `en-US.js` 重写为聚合器统一导入导出
+- **全部 44 个视图/组件**静态文案改为 `t()` 调用；中英 key 一一对应（929+ key，脚本校验一致）
+- 通用词库 `common.js` 跨模块复用；动态数据（城市名/用户内容/数值）保持不翻译
+
+### 🎯 智能推荐 + 机票预订
+- 目的地页「为你推荐」：登录用户个性化（收藏/游记/行程画像），未登录回退热门
+- 新增机票预订页 `/flight-booking`：出发/到达城市 + 日期 + 舱位 → 下单 → 订单中心支付
+- 首页「机票预订」入口指向新页面
+
 ## 📝 最近更新（v3.0 — 2026-07-29）
 
 ### 视觉系统重构
@@ -175,6 +188,11 @@ trval-h5/
 │   │   └── VoiceInput.vue            # 语音输入
 │   ├── router/                       # 路由配置
 │   │   └── index.js                  # 4 Tab + 子路由 + 认证守卫
+│   ├── locales/                      # 🌐 i18n 语言包（按功能模块拆分）
+│   │   ├── zh-CN.js                  #   中文聚合器
+│   │   ├── en-US.js                  #   英文聚合器
+│   │   ├── zh/*.js                   #   24 个中文模块
+│   │   └── en/*.js                   #   24 个英文模块
 │   ├── utils/                        # 工具函数
 │   │   ├── avatar.js                 # 本地 SVG 头像生成器
 │   │   ├── auth.js                   # JWT Token 管理
@@ -238,8 +256,10 @@ Tab 3: 我的 (/profile)      — 山水 Banner、统计、AI 对话记录、服
 - [x] 行程分享功能（短链 + 落地页 + Canvas 海报）
 
 ### 长期目标
-- [x] 多语言国际化（vue-i18n + 中/英 + 切换入口，核心界面已抽取）
+- [x] 多语言国际化（vue-i18n + 中/英 + 切换入口，**全量覆盖**：全部视图/组件已抽取，中英 929+ key）
 - [x] 接入第三方支付（统一 PaymentProvider + Mock/Real 双实现）
+- [x] 机票预订（`/flight-booking` 页 + `/api/flight/*` Mock/Real 供应方）
+- [x] 智能推荐接入（首页/目的地页「为你推荐」，内容+协同+热门混合引擎）
 - [x] 离线地图功能（workbox 瓦片缓存 + 离线开关强制 Leaflet）
 
 ## 📄 许可证

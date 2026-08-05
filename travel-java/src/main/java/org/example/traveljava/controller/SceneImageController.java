@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/scene")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "地图")
 public class SceneImageController {
 
     private static final Logger log = LoggerFactory.getLogger(SceneImageController.class);

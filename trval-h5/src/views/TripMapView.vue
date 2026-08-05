@@ -24,7 +24,7 @@
       <div class="top-btn back-btn" @click="goBack">
         <van-icon name="arrow-left" size="22" color="#fff" />
       </div>
-      <div class="top-title">{{ store.state.params.destination || '行程规划' }}</div>
+      <div class="top-title">{{ store.state.params.destination || t('map.tripPlanning') }}</div>
       <div class="top-actions">
         <div class="top-btn" @click="goCalendar">
           <van-icon name="calendar-o" size="20" color="#fff" />
@@ -32,7 +32,7 @@
         <div class="top-btn" @click="handleShare">
           <van-icon name="share-o" size="20" color="#fff" />
         </div>
-        <div class="offline-pill" :class="{ on: offlineMapMode }" @click="toggleOfflineMap">离线</div>
+        <div class="offline-pill" :class="{ on: offlineMapMode }" @click="toggleOfflineMap">{{ t('map.offline') }}</div>
       </div>
     </div>
 
@@ -89,6 +89,7 @@
  */
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showSuccessToast } from 'vant'
 
 // 导入自定义组件
@@ -107,6 +108,7 @@ import 'leaflet/dist/leaflet.css'
 const router = useRouter()
 const route = useRoute()
 const store = useTripStore()
+const { t } = useI18n()
 
 /* ==================== 地图管理 ==================== */
 const mapContainerRef = ref(null)
@@ -260,7 +262,7 @@ const initMap = async (centerCity) => {
     mapProvider = 'leaflet'
     const Lf = await loadLeaflet()
     if (Lf) await initLeafletMap(centerCity, Lf)
-    else showToast('地图加载失败')
+    else showToast(t('map.mapLoadFailed'))
     return
   }
 
@@ -307,7 +309,7 @@ const initMap = async (centerCity) => {
     console.log('[地图] 百度/高德均不可用，降级使用 Leaflet + OpenStreetMap')
     mapProvider = 'leaflet'
     const L = await loadLeaflet()
-    if (!L) { showToast('地图加载失败，请检查网络'); return }
+    if (!L) { showToast(t('map.mapLoadFailedNetwork')); return }
     await initLeafletMap(centerCity, L)
   } catch (e) {
     console.error('[地图] 初始化失败:', e)
@@ -316,7 +318,7 @@ const initMap = async (centerCity) => {
       mapProvider = 'leaflet'
       const L = await loadLeaflet()
       if (L) await initLeafletMap(centerCity, L)
-      else showToast('地图加载失败，请检查网络')
+      else showToast(t('map.mapLoadFailedNetwork'))
     }
   }
 }
@@ -495,7 +497,7 @@ const getCityCenter = async (city) => {
  */
 const addCityLabelBaidu = (city, center) => {
   if (!window.BMapGL || !mapInstance) return
-  const label = new window.BMapGL.Label(city || '目的地', {
+  const label = new window.BMapGL.Label(city || t('map.destination'), {
     position: new window.BMapGL.Point(center.lng, center.lat),
     offset: new window.BMapGL.Size(-40, -60),
   })
@@ -545,7 +547,7 @@ const initAmapMap = async (centerCity) => {
 const addCityLabelAmap = (city, center) => {
   if (!window.AMap || !mapInstance) return
   const label = new window.AMap.Text({
-    text: city || '目的地',
+    text: city || t('map.destination'),
     position: [center.lng, center.lat],
     offset: [0, -40],
     style: {
@@ -571,7 +573,7 @@ const addCityLabelLeaflet = async (city, L) => {
   const center = await getCityCenter(city)
   const icon = L.divIcon({
     className: 'city-label-marker',
-    html: `<div style="font-size:18px;font-weight:700;color:#fff;background:rgba(0,0,0,0.5);border-radius:12px;padding:6px 18px;white-space:nowrap;letter-spacing:2px;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${city || '目的地'}</div>`,
+    html: `<div style="font-size:18px;font-weight:700;color:#fff;background:rgba(0,0,0,0.5);border-radius:12px;padding:6px 18px;white-space:nowrap;letter-spacing:2px;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${city || t('map.destination')}</div>`,
     iconSize: [120, 36],
     iconAnchor: [60, 50],
   })
@@ -810,22 +812,22 @@ const startGeneration = async () => {
       store.state.planData.days = data.days || store.state.planData.days || params.days
       store.state.planData.people = store.state.planData.people || params.people
       store.state.planData.totalBudget = store.state.planData.totalBudget || params.budget
-      store.state.planData.overview = store.state.planData.overview || ('AI 智能生成' + (data.destination || params.destination) + (data.days || params.days) + '天深度行程')
+      store.state.planData.overview = store.state.planData.overview || t('map.aiDeepTrip', { dest: data.destination || params.destination, days: data.days || params.days })
       // 仅在 costBreakdown 为空时设默认值
       if (!store.state.costBreakdown) {
         const b = params.budget
         store.state.costBreakdown = { hotelCost: Math.round(b*0.35), ticketCost: Math.round(b*0.25), foodCost: Math.round(b*0.25), transportCost: Math.round(b*0.15), totalCost: b }
       }
-      showSuccessToast('行程已生成')
+      showSuccessToast(t('map.tripGenerated'))
     },
     onError: (msg) => {
       console.error('[生成] 失败:', msg)
-      showToast(msg || '生成失败，请重试')
+      showToast(msg || t('map.genFailedRetry'))
       store.state.phase = 'completed' // 退出生成中状态
-      store.state.currentStep = '生成失败'
+      store.state.currentStep = t('map.genFailed')
     },
     onStop: () => {
-      showToast('已停止')
+      showToast(t('map.stopped'))
       store.resetState()
     },
 
@@ -847,7 +849,7 @@ const startGeneration = async () => {
       if (!existing) {
         store.state.planData.dayPlans.push({
           day: data.day,
-          dayTitle: data.dayTitle || ('第' + data.day + '天'),
+          dayTitle: data.dayTitle || t('planning.dayN', { n: data.day }),
           timeSlots: data.timeSlots || [],
         })
         // 按天排序
@@ -902,7 +904,7 @@ const handleStopGeneration = async () => {
     abortSSE = null
   }
   store.resetState()
-  showToast('已停止生成')
+  showToast(t('map.stoppedGen'))
 }
 
 /**
@@ -912,14 +914,14 @@ const onVoiceResult = (text) => {
   if (!text) return
   // 如果有已完成的行程，发送到 AI 对话
   console.log('[语音] 识别结果:', text)
-  showToast('语音识别: ' + text)
+  showToast(t('map.voiceRecognition', { text }))
 }
 
 /* ==================== 操作按钮逻辑 ==================== */
 
 const goCalendar = () => {
   if (!store.state.planData) {
-    showToast('暂无行程可查看')
+    showToast(t('map.noPlanToView'))
     return
   }
   router.push('/trip-calendar')
@@ -928,14 +930,14 @@ const goCalendar = () => {
 /* 离线地图开关（B5）：强制 Leaflet + 缓存 OSM 瓦片 */
 const toggleOfflineMap = async () => {
   offlineMapMode.value = !offlineMapMode.value
-  showToast(offlineMapMode.value ? '已开启离线地图（缓存瓦片）' : '已关闭离线地图')
+  showToast(offlineMapMode.value ? t('map.offlineMapOn') : t('map.offlineMapOff'))
   const dest = store.state.params.destination
   if (dest) initMap(dest)
 }
 
 const handleShare = async () => {
   if (!store.state.planData) {
-    showToast('暂无行程可分享')
+    showToast(t('map.noPlanToShare'))
     return
   }
   try {
@@ -952,7 +954,7 @@ const handleShare = async () => {
         planData,
         source: 'trip',
       })
-      if (saveRes.code !== 0) { showToast(saveRes.message || '保存失败，无法分享'); return }
+      if (saveRes.code !== 0) { showToast(saveRes.message || t('map.saveFailedShare')); return }
       planId = saveRes.data.id
       store.setSavedPlanId(planId)
     }
@@ -960,7 +962,7 @@ const handleShare = async () => {
     // 2) 生成分享短链
     const { shareApi } = await import('../api/index.js')
     const shareRes = await shareApi.createShare(planId)
-    if (shareRes.code !== 0) { showToast(shareRes.message || '生成分享链接失败'); return }
+    if (shareRes.code !== 0) { showToast(shareRes.message || t('map.shareLinkFailed')); return }
     const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${shareRes.data.token}`
     const dest = store.state.params.destination || ''
     const days = store.state.params.days || 3
@@ -968,33 +970,33 @@ const handleShare = async () => {
     // 3) 优先 Web Share API，不支持则复制链接
     if (navigator.share) {
       try {
-        await navigator.share({ title: `我的${dest}${days}天旅行规划`, text: `看看我的${dest}${days}天旅行规划`, url: shareUrl })
+        await navigator.share({ title: t('map.myTripShare', { dest, days }), text: t('map.myTripShare', { dest, days }), url: shareUrl })
         return
       } catch (e) { /* 用户取消/失败 → 回退复制 */ }
     }
     try {
       await navigator.clipboard.writeText(shareUrl)
-      showToast('分享链接已复制')
+      showToast(t('map.shareLinkCopied'))
     } catch (e) {
-      showToast('分享失败')
+      showToast(t('map.shareFailed'))
     }
   } catch (e) {
     console.error('分享失败:', e)
-    showToast('分享失败')
+    showToast(t('map.shareFailed'))
   }
 }
 
 const handleLike = () => {
-  showSuccessToast('感谢你的喜欢！')
+  showSuccessToast(t('map.thanksLike'))
 }
 
 const handleDislike = () => {
-  showToast('感谢反馈，我们会继续优化')
+  showToast(t('map.thanksFeedback'))
 }
 
 const handleSavePlan = async () => {
   if (!store.state.planData) {
-    showToast('暂无行程可保存')
+    showToast(t('map.noPlanToSave'))
     return
   }
   try {
@@ -1011,14 +1013,14 @@ const handleSavePlan = async () => {
       source: 'trip',
     })
     if (result.code === 0) {
-      showSuccessToast('行程已保存')
+      showSuccessToast(t('map.tripSaved'))
       if (result.data?.id) store.setSavedPlanId(result.data.id)
     } else {
-      showToast(result.message || '保存失败')
+      showToast(result.message || t('map.saveFailed'))
     }
   } catch (e) {
     console.error('保存失败:', e)
-    showToast('保存失败，请重试')
+    showToast(t('map.saveFailedRetry'))
   }
 }
 
@@ -1060,11 +1062,11 @@ const loadSavedPlan = async (planId) => {
       store.state.phase = 'completed'
       store.state.drawerState = 'mid'
       store.setSavedPlanId(planId)
-      showSuccessToast('已加载保存的行程')
+      showSuccessToast(t('map.savedPlanLoaded'))
       initMap(data.destination || '北京')
       loadMapMarkers(data.destination || '北京')
     } else {
-      showToast('加载失败，将重新生成')
+      showToast(t('map.loadFailedRegen'))
       startGeneration()
     }
   } catch (e) {

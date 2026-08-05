@@ -1,12 +1,14 @@
 ﻿<script setup>
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi, uploadApi } from '../api';
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const goBack = () => {
   router.back();
@@ -73,12 +75,12 @@ const handleCoverUpload = async (e) => {
     const res = await uploadApi.uploadFile(file);
     if (res.code === 0 && res.data.type === 'image') {
       noteForm.cover = res.data.url;
-      showToast('封面上传成功');
+      showToast(t('note.coverUploadSuccess'));
     } else {
-      showToast(res.message || '请上传图片文件');
+      showToast(res.message || t('note.pleaseUploadImage'));
     }
   } catch (e) {
-    showToast('上传失败');
+    showToast(t('note.uploadFailed'));
   } finally {
     isCoverUploading.value = false;
     if (e.target) e.target.value = '';
@@ -94,12 +96,12 @@ const handleContentImageUpload = async (e) => {
     const res = await uploadApi.uploadFile(file);
     if (res.code === 0 && res.data.type === 'image') {
       contentImageList.value.push(res.data.url);
-      showToast('图片已添加');
+      showToast(t('note.imageAdded'));
     } else {
-      showToast(res.message || '请上传图片文件');
+      showToast(res.message || t('note.pleaseUploadImage'));
     }
   } catch (e) {
-    showToast('上传失败');
+    showToast(t('note.uploadFailed'));
   } finally {
     isContentImageUploading.value = false;
     if (e.target) e.target.value = '';
@@ -112,7 +114,7 @@ const handleContentVideoUpload = async (e) => {
   if (!file) return;
   // 前端预检：文件大小
   if (file.size > 1024 * 1024 * 1024) {
-    showToast('视频大小不能超过1GB');
+    showToast(t('note.videoTooLarge'));
     if (e.target) e.target.value = '';
     return;
   }
@@ -121,13 +123,13 @@ const handleContentVideoUpload = async (e) => {
     const res = await uploadApi.uploadFile(file);
     if (res.code === 0 && res.data.type === 'video') {
       contentVideoList.value.push(res.data.url);
-      showToast('视频已添加');
+      showToast(t('note.videoAdded'));
     } else {
-      showToast(res.message || '请上传视频文件');
+      showToast(res.message || t('note.pleaseUploadVideo'));
     }
   } catch (err) {
     console.error('视频上传失败:', err);
-    showToast(err.message || '上传失败，请检查网络连接');
+    showToast(err.message || t('note.uploadFailedNetwork'));
   } finally {
     isContentVideoUploading.value = false;
     if (e.target) e.target.value = '';
@@ -197,17 +199,17 @@ const loadNote = async () => {
 
 const saveNote = async () => {
   if (!noteForm.title.trim()) {
-    showToast('标题不能为空');
+    showToast(t('note.titleRequired'));
     return;
   }
   if (!noteForm.content.trim()) {
-    showToast('内容不能为空');
+    showToast(t('note.contentRequired'));
     return;
   }
 
   isLoading.value = true;
   const toast = showLoadingToast({
-    message: '保存中...',
+    message: t('note.saving'),
     duration: 0,
     position: 'middle',
     forbidClick: true,
@@ -235,7 +237,7 @@ const saveNote = async () => {
     if (response.code === 0) {
       closeToast();
       showToast({
-        message: isEdit.value ? '更新成功' : '发布成功',
+        message: isEdit.value ? t('note.updateSuccess') : t('note.publishSuccess'),
         position: 'middle',
       });
       setTimeout(() => {
@@ -248,11 +250,11 @@ const saveNote = async () => {
       }, 1000);
     } else {
       closeToast();
-      showToast(response.message || '保存失败');
+      showToast(response.message || t('note.saveFailed'));
     }
   } catch (error) {
     closeToast();
-    showToast('保存失败');
+    showToast(t('note.saveFailed'));
   } finally {
     isLoading.value = false;
   }
@@ -268,8 +270,8 @@ onMounted(() => {
 <template>
   <div class="write-note-page">
     <van-nav-bar
-      :title="isEdit ? '编辑游记' : '写游记'"
-      left-text="返回"
+      :title="isEdit ? t('note.editNote') : t('community.write')"
+      :left-text="t('common.back')"
       left-arrow
       safe-area-inset-top
       @click-left="goBack"
@@ -279,15 +281,15 @@ onMounted(() => {
       <van-cell-group inset class="form-group">
         <van-field
           v-model="noteForm.title"
-          label="标题"
-          placeholder="请输入游记标题"
+          :label="t('note.titleLabel')"
+          :placeholder="t('note.titlePlaceholder')"
           maxlength="50"
         />
 
         <van-field
           v-model="noteForm.content"
-          label="内容"
-          placeholder="分享你的旅行故事..."
+          :label="t('note.contentLabel')"
+          :placeholder="t('note.shareTravelStory')"
           type="textarea"
           :rows="10"
           maxlength="2000"
@@ -313,18 +315,18 @@ onMounted(() => {
             <label class="upload-label">
               <input type="file" accept="image/*" hidden @change="handleContentImageUpload" />
               <van-icon name="photograph" size="16" />
-              <span>添加图片</span>
+              <span>{{ t('note.addImage') }}</span>
             </label>
             <label class="upload-label">
               <input type="file" accept="video/*" hidden @change="handleContentVideoUpload" />
               <van-icon name="video-o" size="16" />
-              <span>添加视频</span>
+              <span>{{ t('note.addVideo') }}</span>
             </label>
           </div>
-          <span class="toolbar-hint">支持 jpg/png/gif/webp/mp4，可添加多个</span>
+          <span class="toolbar-hint">{{ t('note.formatHint') }}</span>
         </div>
 
-        <van-cell title="封面">
+        <van-cell :title="t('note.cover')">
           <template #right-icon>
             <label class="cover-upload">
               <input
@@ -347,7 +349,7 @@ onMounted(() => {
           </template>
         </van-cell>
 
-        <van-cell title="标签">
+        <van-cell :title="t('note.tags')">
           <template #right-icon>
             <div class="tags-wrap">
               <van-tag
@@ -358,7 +360,7 @@ onMounted(() => {
               >
                 {{ tag }}
               </van-tag>
-              <van-button size="small" type="default" v-if="noteForm.tags.length < 5">添加</van-button>
+              <van-button size="small" type="default" v-if="noteForm.tags.length < 5">{{ t('note.add') }}</van-button>
             </div>
           </template>
         </van-cell>
@@ -372,7 +374,7 @@ onMounted(() => {
           :loading="isLoading"
           @click="saveNote"
         >
-          {{ isEdit ? '更新' : '发布' }}
+          {{ isEdit ? t('note.update') : t('note.publish') }}
         </van-button>
       </div>
     </div>

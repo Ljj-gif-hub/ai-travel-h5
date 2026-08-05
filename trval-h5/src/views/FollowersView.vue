@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { followApi } from '../api';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
+const { t } = useI18n();
 
 const getDefaultAvatar = () => {
   return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#E2E8F0"/><text x="50" y="55" text-anchor="middle" fill="#94A3B8" font-size="14" font-family="sans-serif">No Photo</text></svg>')
@@ -39,13 +41,13 @@ const handleFollow = async (id) => {
   try {
     const response = await followApi.follow(id);
     if (response.code === 0) {
-      showToast('关注成功');
+      showToast(t('social.followSuccess'));
       loadFollowers();
     } else {
-      showToast(response.message || '关注失败');
+      showToast(response.message || t('social.followFail'));
     }
   } catch (error) {
-    showToast('关注失败');
+    showToast(t('social.followFail'));
   }
 };
 
@@ -53,13 +55,13 @@ const handleUnfollow = async (id) => {
   try {
     const response = await followApi.unfollow(id);
     if (response.code === 0) {
-      showToast('取消关注成功');
+      showToast(t('social.unfollowSuccess'));
       loadFollowers();
     } else {
-      showToast(response.message || '取消关注失败');
+      showToast(response.message || t('social.unfollowFail'));
     }
   } catch (error) {
-    showToast('取消关注失败');
+    showToast(t('social.unfollowFail'));
   }
 };
 
@@ -73,8 +75,8 @@ onMounted(() => {
 <template>
   <div class="followers-page">
     <van-nav-bar
-      title="我的粉丝"
-      left-text="返回"
+      :title="t('social.followers')"
+      :left-text="t('common.back')"
       left-arrow
       safe-area-inset-top
       @click-left="goBack"
@@ -86,8 +88,8 @@ onMounted(() => {
       <template v-else-if="followers.length === 0">
         <div class="empty-state">
           <van-icon name="user-o" size="60" color="#ccc" />
-          <div class="empty-text">暂无粉丝</div>
-          <van-button type="primary" size="small" @click="goBack">去看看</van-button>
+          <div class="empty-text">{{ t('social.emptyFollowers') }}</div>
+          <van-button type="primary" size="small" @click="goBack">{{ t('social.goSee') }}</van-button>
         </div>
       </template>
 
@@ -113,7 +115,7 @@ onMounted(() => {
             :type="user.isFollowed ? 'default' : 'primary'"
             @click="user.isFollowed ? handleUnfollow(user.id) : handleFollow(user.id)"
           >
-            {{ user.isFollowed ? '已关注' : '+ 关注' }}
+            {{ user.isFollowed ? t('social.followed') : t('social.follow') }}
           </van-button>
         </div>
       </div>

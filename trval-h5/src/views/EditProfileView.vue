@@ -1,12 +1,14 @@
 ﻿<script setup>
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { userApi } from '../api';
 import { getMyData, setMyData } from '../utils/userAccountStorage';
 
 const router = useRouter();
+const { t } = useI18n();
 
 const goBack = () => {
   router.back();
@@ -28,13 +30,13 @@ const isLoading = ref(false);
 
 const saveProfile = async () => {
   if (!userInfo.nickname.trim()) {
-    showToast('昵称不能为空');
+    showToast(t('profile.nicknameRequired'));
     return;
   }
 
   isLoading.value = true;
   const toast = showLoadingToast({
-    message: '保存中...',
+    message: t('profile.saving'),
     duration: 0,
     position: 'middle',
     forbidClick: true,
@@ -54,16 +56,16 @@ const saveProfile = async () => {
       setMyData('userInfo', response.data)
       localStorage.setItem('userInfo', JSON.stringify(response.data));
       closeToast();
-      showToast({ message: '保存成功', position: 'middle' });
+      showToast({ message: t('profile.saveSuccess'), position: 'middle' });
       setTimeout(() => { router.back(); }, 1000);
     } else {
       closeToast();
-      showToast(response.message || '保存失败');
+      showToast(response.message || t('profile.saveFailed'));
     }
   } catch (error) {
     closeToast();
     // 保存失败：不写本地、不回退，提示重试（避免误报"已保存到本地"导致数据丢失）
-    showToast({ message: '保存失败，请重试', position: 'middle' });
+    showToast({ message: t('profile.saveFailedRetry'), position: 'middle' });
   } finally {
     isLoading.value = false;
   }
@@ -105,8 +107,8 @@ onMounted(() => {
 <template>
   <div class="edit-profile-page">
     <van-nav-bar
-      title="编辑资料"
-      left-text="返回"
+      :title="t('profile.editProfile')"
+      :left-text="t('common.back')"
       left-arrow
       safe-area-inset-top
       @click-left="goBack"
@@ -121,37 +123,37 @@ onMounted(() => {
           :src="userInfo.avatar || getDefaultAvatar()"
           class="avatar-xl"
         />
-        <div class="avatar-tip">点击更换头像</div>
+        <div class="avatar-tip">{{ t('profile.changeAvatar') }}</div>
       </div>
 
       <van-cell-group inset class="form-group">
-        <van-cell title="昵称">
+        <van-cell :title="t('profile.nickname')">
           <template #right-icon>
             <van-field
               v-model="userInfo.nickname"
-              placeholder="请输入昵称"
+              :placeholder="t('profile.enterNickname')"
               maxlength="20"
               class="field-input"
             />
           </template>
         </van-cell>
 
-        <van-cell title="个性签名">
+        <van-cell :title="t('profile.bio')">
           <template #right-icon>
             <van-field
               v-model="userInfo.bio"
-              placeholder="请输入个性签名"
+              :placeholder="t('profile.enterBio')"
               maxlength="100"
               class="field-input"
             />
           </template>
         </van-cell>
 
-        <van-cell title="手机号">
+        <van-cell :title="t('auth.phone')">
           <template #right-icon>
             <van-field
               v-model="userInfo.phone"
-              placeholder="请输入手机号"
+              :placeholder="t('auth.enterPhone')"
               type="number"
               maxlength="11"
               class="field-input"
@@ -159,11 +161,11 @@ onMounted(() => {
           </template>
         </van-cell>
 
-        <van-cell title="邮箱">
+        <van-cell :title="t('profile.email')">
           <template #right-icon>
             <van-field
               v-model="userInfo.email"
-              placeholder="请输入邮箱"
+              :placeholder="t('profile.enterEmail')"
               class="field-input"
             />
           </template>
@@ -178,7 +180,7 @@ onMounted(() => {
           :loading="isLoading"
           @click="saveProfile"
         >
-          保存
+          {{ t('common.save') }}
         </van-button>
       </div>
     </div>

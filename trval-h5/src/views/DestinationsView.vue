@@ -2,8 +2,8 @@
   <div class="destinations-page">
     <div class="page-container">
       <van-nav-bar
-        title="热门目的地"
-        left-text="返回"
+        :title="t('destination.hot')"
+        :left-text="t('common.back')"
         left-arrow
         safe-area-inset-top
         class="nav-bar"
@@ -15,18 +15,18 @@
             <van-icon name="fire-o" size="20" color="#fff" />
           </div>
           <div class="page-title-text">
-            <h2 class="page-title">热门目的地</h2>
-            <p class="page-subtitle">探索最受欢迎的旅行城市</p>
+            <h2 class="page-title">{{ isPersonalized ? t('destination.recommendedForYou') : t('destination.hot') }}</h2>
+            <p class="page-subtitle">{{ isPersonalized ? t('destination.recommendSubtitle') : t('destination.hotSubtitle') }}</p>
           </div>
         </div>
 
         <div v-if="isLoading" class="loading-state">
-          <van-loading size="32px" color="#9333ea">加载中...</van-loading>
+          <van-loading size="32px" color="#9333ea">{{ t('common.loading') }}</van-loading>
         </div>
 
         <div v-else-if="destinations.length === 0" class="empty-state">
           <van-icon name="location-o" size="48" color="#d0d0d0" />
-          <p class="empty-title">暂无热门目的地</p>
+          <p class="empty-title">{{ t('destination.empty') }}</p>
         </div>
 
         <div v-else class="dest-grid">
@@ -48,7 +48,7 @@
                 <span class="dest-province" v-if="dest.province">{{ dest.province }}</span>
               </div>
             </div>
-            <div class="dest-desc">{{ dest.description || '探索这座城市的独特魅力' }}</div>
+            <div class="dest-desc">{{ dest.description || t('destination.descFallback') }}</div>
           </div>
         </div>
       </div>
@@ -61,8 +61,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loading, Icon, showToast } from 'vant'
 import { getHotDestinations } from '../api/destination'
+import { getToken } from '../utils/auth'
+import { recommendApi } from '../api/index'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
 
@@ -84,6 +88,7 @@ const getImageUrl = (keyword) => {
 
 const destinations = ref([])
 const isLoading = ref(false)
+const isPersonalized = ref(false)
 
 const goBack = () => {
   try {
@@ -98,23 +103,42 @@ const goBack = () => {
  */
 const goToDetail = (dest) => {
   try {
-    if (!dest || !dest.name) { showToast('目的地信息异常'); return }
+    if (!dest || !dest.name) { showToast(t('destination.infoError')); return }
     router.push({ path: '/destination-detail', query: { city: dest.name } })
-  } catch (e) { console.error('goToDetail 失败:', e); showToast('跳转失败') }
+  } catch (e) { console.error('goToDetail 失败:', e); showToast(t('destination.jumpFailed')) }
 }
 
 const loadDestinations = async () => {
   isLoading.value = true
   try {
+    // 已登录：优先个性化推荐（根据收藏/游记/行程画像），失败则回退热门
+    if (getToken()) {
+      try {
+        const rec = await recommendApi.getRecommendDestinations(10)
+        const list = (rec && rec.data) || []
+        if (list.length > 0) {
+          isPersonalized.value = true
+          destinations.value = list.map(item => ({
+            name: item.name,
+            image: item.cover || getImageUrl(item.name),
+            description: item.reason || t('destination.recommendDescFallback'),
+          }))
+          return
+        }
+      } catch (e) {
+        console.warn('个性化推荐加载失败，回退热门目的地:', e)
+      }
+    }
     const res = await getHotDestinations()
     const list = res.data || []
+    isPersonalized.value = false
     destinations.value = list.map(item => ({
       ...item,
       image: item.imageUrl || getImageUrl(item.name),
     }))
   } catch (e) {
     console.error('获取热门目的地失败:', e)
-    showToast('加载失败，请稍后重试')
+    showToast(t('common.requestFailed'))
     destinations.value = []
   } finally {
     isLoading.value = false

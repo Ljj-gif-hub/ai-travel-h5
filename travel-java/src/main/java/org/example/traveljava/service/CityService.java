@@ -88,6 +88,13 @@ public class CityService {
 
     // ==================== 公开接口 ====================
 
+    /** 全部热门城市名（境内+境外），供推荐/热榜等复用 */
+    public List<String> getHotCityNames() {
+        List<String> all = new ArrayList<>(HOT_DOMESTIC);
+        all.addAll(HOT_OVERSEAS);
+        return all;
+    }
+
     /** 获取境内城市数据 */
     public DomesticResponse getDomesticCities() {
         List<ProvinceGroup> groups = List.of(

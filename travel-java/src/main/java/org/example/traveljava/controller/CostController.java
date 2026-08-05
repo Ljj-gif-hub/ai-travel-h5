@@ -18,6 +18,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/cost")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "行程规划")
 public class CostController {
 
     private static final Logger log = LoggerFactory.getLogger(CostController.class);

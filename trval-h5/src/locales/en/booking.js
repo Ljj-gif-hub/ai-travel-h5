@@ -1,0 +1,33 @@
+/**
+ * Booking (hotel/flight) (en) — sub-agent E
+ */
+export default {
+  title: 'Hotel Booking',
+  flightTitle: 'Flight Booking',
+  noHotels: 'No hotels available in this city',
+  noFlights: 'No flights on this route',
+  noFlightsAvailable: 'No flights available',
+  book: 'Book',
+  confirmBook: 'Confirm Booking',
+  checkInDate: 'Check-in Date',
+  nights: 'Nights',
+  rooms: 'Rooms',
+  checkOutAt: 'Check-out',
+  total: 'Total',
+  depart: 'Depart',
+  arrive: 'Arrive',
+  searching: 'Searching…',
+  searchFlights: 'Search Flights',
+  selectDate: 'Select Travel Date',
+  confirmFlight: 'Confirm Flight',
+  goPay: 'Go to Pay',
+  selectCities: 'Please select departure/arrival cities',
+  sameCity: 'Departure and arrival cities cannot be the same',
+  searchFailRetry: 'Search failed, please try again later',
+  successPending: 'Booked, pending payment',
+  fail: 'Booking failed',
+  failRetry: 'Booking failed, please try again later',
+  orderSuccessPending: 'Order placed, pending payment',
+  orderFail: 'Order failed',
+  orderFailRetry: 'Order failed, please try again later',
+}

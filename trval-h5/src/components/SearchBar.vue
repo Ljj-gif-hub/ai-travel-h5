@@ -10,10 +10,13 @@
  * 同时 style.css 的 entranceUp 动画不再残留 transform，防止 creating containing block。
  */
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
-  placeholder: { type: String, default: '搜索目的地、景点或网址' },
+  placeholder: { type: String, default: '' },
   history: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -81,7 +84,7 @@ onUnmounted(() => {
     <!-- ══ 输入框 ══ -->
     <div class="edge-wrap" @click="inputRef?.focus()">
       <svg class="edge-ico" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#7b42f5" stroke-width="1.5" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5.5"/><line x1="12.5" y1="12.5" x2="17.5" y2="17.5"/></svg>
-      <input ref="inputRef" v-model="searchText" type="text" :placeholder="placeholder" class="edge-inp" @input="handleInput" @focus="handleFocus"/>
+      <input ref="inputRef" v-model="searchText" type="text" :placeholder="placeholder || t('components.searchPlaceholder')" class="edge-inp" @input="handleInput" @focus="handleFocus"/>
     </div>
 
     <!-- ══ 全屏遮罩 + 下拉面板（fixed定位） ══ -->
@@ -103,18 +106,18 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="edge-foot">
-          <span class="edge-flbl">筛选搜索:</span>
+          <span class="edge-flbl">{{ t('components.filterSearch') }}</span>
           <button :class="['edge-fbtn',{on:activeFilter==='history'}]" @click="setFilter('history')">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><polyline points="8 4.5 8 8 11 10"/><path d="M1.5 4 A6.5 6.5 0 0 1 5.5 1.5"/><polyline points="2 2 1.5 4 4 4.5"/></svg>
-            <span class="edge-ftxt">历史记录</span>
+            <span class="edge-ftxt">{{ t('components.history') }}</span>
           </button>
           <button :class="['edge-fbtn',{on:activeFilter==='favorites'}]" @click="setFilter('favorites')">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 1.5l1.8 4.2 4.7.4-3.5 3 1 4.4L8 11.2 4 13.5l1-4.4-3.5-3 4.7-.4L8 1.5z"/></svg>
-            <span class="edge-ftxt">收藏夹</span>
+            <span class="edge-ftxt">{{ t('components.favorites') }}</span>
           </button>
           <button :class="['edge-fbtn',{on:activeFilter==='tabs'}]" @click="setFilter('tabs')">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="1.5" y1="5.5" x2="14.5" y2="5.5"/><line x1="4" y1="7.5" x2="12" y2="7.5" opacity=".4"/><line x1="4" y1="9.5" x2="9" y2="9.5" opacity=".4"/></svg>
-            <span class="edge-ftxt">标签页</span>
+            <span class="edge-ftxt">{{ t('components.tabs') }}</span>
           </button>
           <button class="edge-gear">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#7b42f5" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v1.5M8 13v1.5M2.5 3l1.2 1M12.3 12l1.2 1M1.5 8h1.5M13 8h1.5M2.5 13l1.2-1M12.3 4l1.2-1"/></svg>

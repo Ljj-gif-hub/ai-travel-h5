@@ -8,8 +8,10 @@ import { useRoute } from 'vue-router'
 import { shareApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import SharePoster from '../components/SharePoster.vue'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
+const { t } = useI18n()
 const plan = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -19,7 +21,7 @@ const stripTags = (name) => (name || '').replace(/【[^】]*】/g, '').trim()
 
 const load = async () => {
   const token = route.params.token
-  if (!token) { error.value = '分享链接无效'; loading.value = false; return }
+  if (!token) { error.value = t('share.invalidLink'); loading.value = false; return }
   try {
     const res = await shareApi.getSharedPlan(token)
     if (res.code === 0 && res.data) {
@@ -30,11 +32,11 @@ const load = async () => {
       plan.value = data
       loading.value = false
     } else {
-      error.value = res.message || '分享内容不存在'
+      error.value = res.message || t('share.notFound')
       loading.value = false
     }
   } catch (e) {
-    error.value = '加载失败，请稍后重试'
+    error.value = t('common.requestFailed')
     loading.value = false
   }
 }
@@ -44,22 +46,22 @@ onMounted(load)
 
 <template>
   <div class="landing-page">
-    <van-nav-bar title="旅行规划分享" safe-area-inset-top class="nav-bar" />
+    <van-nav-bar :title="t('share.title')" safe-area-inset-top class="nav-bar" />
 
     <div v-if="loading" class="center"><van-loading color="#8B5CF6" size="28" /></div>
 
     <div v-else-if="error" class="center">
-      <EmptyState icon="warn-o" :title="error" desc="链接可能已失效" />
+      <EmptyState icon="warn-o" :title="error" :desc="t('share.linkExpired')" />
     </div>
 
     <div v-else-if="plan" class="content">
       <!-- 头部概览 -->
       <div class="hero">
-        <div class="hero-title">{{ plan.destination || '旅行' }} · {{ plan.days || '' }}天</div>
-        <div v-if="plan.people" class="hero-sub">{{ plan.people }} 人同行</div>
+        <div class="hero-title">{{ plan.destination || t('share.fallbackTitle') }} · {{ plan.days || '' }}{{ t('common.days') }}</div>
+        <div v-if="plan.people" class="hero-sub">{{ t('share.peopleTravel', { n: plan.people }) }}</div>
         <p v-if="plan.overview" class="overview">{{ plan.overview }}</p>
         <van-button size="small" round type="primary" class="poster-btn" @click="showPoster = !showPoster">
-          {{ showPoster ? '收起海报' : '生成分享海报' }}
+          {{ showPoster ? t('share.posterHide') : t('share.poster') }}
         </van-button>
       </div>
 
@@ -68,24 +70,24 @@ onMounted(load)
 
       <!-- 每日行程 -->
       <div v-for="(dp, di) in (plan.dayPlans || [])" :key="di" class="day-card">
-        <div class="day-head">{{ dp.day_title || `第${dp.day || di + 1}天` }}</div>
+        <div class="day-head">{{ dp.day_title || t('share.dayN', { n: dp.day || di + 1 }) }}</div>
         <div v-for="(slot, si) in (dp.timeSlots || [])" :key="si" class="slot">
           <span class="slot-time">{{ slot.time || '' }}</span>
           <span class="slot-name">{{ stripTags(slot.attraction) }}</span>
         </div>
         <div v-if="dp.meals && dp.meals.length" class="meals">
-          <div class="meals-title">🍽 餐饮</div>
+          <div class="meals-title">🍽 {{ t('share.meals') }}</div>
           <div v-for="(m, mi) in dp.meals" :key="mi" class="meal">{{ m }}</div>
         </div>
       </div>
 
       <!-- 出行贴士 -->
       <div v-if="plan.tips && plan.tips.length" class="tips-card">
-        <div class="tips-title">💡 出行贴士</div>
-        <div v-for="(t, ti) in plan.tips" :key="ti" class="tip">· {{ t }}</div>
+        <div class="tips-title">💡 {{ t('share.tips') }}</div>
+        <div v-for="(tip, ti) in plan.tips" :key="ti" class="tip">· {{ tip }}</div>
       </div>
 
-      <div class="brand-line">—— 由 AI 智能旅游助手生成 ——</div>
+      <div class="brand-line">{{ t('share.brand') }}</div>
     </div>
   </div>
 </template>

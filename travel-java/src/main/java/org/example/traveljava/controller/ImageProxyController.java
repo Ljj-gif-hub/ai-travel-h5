@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/proxy")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "系统")
 public class ImageProxyController {
 
     private static final Logger log = LoggerFactory.getLogger(ImageProxyController.class);

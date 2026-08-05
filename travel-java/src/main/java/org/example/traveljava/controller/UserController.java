@@ -15,6 +15,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "认证")
 public class UserController {
 
     private static final Logger log = LoggerFactory.getLogger(UserController.class);

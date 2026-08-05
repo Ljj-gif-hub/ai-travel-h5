@@ -8,10 +8,12 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 
 defineOptions({ name: 'AgentPlannerView' })
 const router = useRouter()
+const { t } = useI18n()
 
 // ====== 页面状态 ======
 // ====== 表单数据 ======
@@ -40,13 +42,13 @@ const toggleMonth = (m) => {
   if (i >= 0) { selectedMonths.value.splice(i, 1) } else { selectedMonths.value.push(m) }
 }
 const dateDone = () => {
-  if (!selectedDays.value) { showToast('请选择天数'); return }
+  if (!selectedDays.value) { showToast(t('agent.selectDays')); return }
   showDatePopup.value = false
 }
 const dateLabel = computed(() => {
-  if (!selectedDays.value) { return '请选择 >' }
-  let label = `${selectedDays.value}天`
-  if (selectedMonths.value.length) { label += ` · ${selectedMonths.value.join('/')}月` }
+  if (!selectedDays.value) { return t('agent.pleaseSelect') }
+  let label = `${selectedDays.value}${t('common.days')}`
+  if (selectedMonths.value.length) { label += ` · ${selectedMonths.value.join('/')}${t('agent.monthUnit')}` }
   return label
 })
 
@@ -77,15 +79,15 @@ const budgetOptions = [2000, 3000, 5000, 8000, 10000, 15000, 20000]
 const selectBudget = (b) => { budget.value = b }
 const budgetDone = () => { showBudgetPopup.value = false }
 const budgetLabel = computed(() => {
-  if (!budget.value) return '请选择 >'
-  if (budget.value >= 10000) return `${(budget.value / 10000).toFixed(1)}万/人`
-  return `${budget.value.toLocaleString()}元/人`
+  if (!budget.value) return t('agent.pleaseSelect')
+  if (budget.value >= 10000) return t('agent.budgetPerPersonWan', { amount: (budget.value / 10000).toFixed(1) })
+  return t('agent.budgetPerPerson', { amount: budget.value.toLocaleString() })
 })
 const prefLabel = computed(() => {
   const parts = []
   if (preferences.companion) { parts.push(preferences.companion) }
   if (preferences.styles.length) { parts.push(preferences.styles[0] + (preferences.styles.length > 1 ? `+${preferences.styles.length - 1}` : '')) }
-  return parts.length ? parts.join(' · ') : '请选择 >'
+  return parts.length ? parts.join(' · ') : t('agent.pleaseSelect')
 })
 
 const canSubmit = computed(() => destination.value.trim() && selectedDays.value)
@@ -153,24 +155,24 @@ const goBack = () => { try { router.back() } catch (e) { router.push('/trips') }
       <button class="nav-back" @click="goBack">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <span class="nav-title">🤖 AI Agent 智能规划</span>
-      <button class="nav-quick-fill" @click="quickFill">一键填充</button>
+      <span class="nav-title">🤖 {{ t('agent.aiAgentPlanning') }}</span>
+      <button class="nav-quick-fill" @click="quickFill">{{ t('agent.quickFill') }}</button>
     </div>
 
     <div class="planner-scroll">
       <!-- ====== 表单 ====== -->
         <div class="form-section card-base">
           <div class="form-row clickable" @click="openOriginSelect">
-            <span class="form-label">出发地</span>
+            <span class="form-label">{{ t('agent.origin') }}</span>
             <div class="form-value-tag" v-if="origin">{{ origin }} <button class="tag-close" @click.stop="clearOrigin">&times;</button></div>
-            <span class="form-value-hint" v-else>请选择出发地</span>
+            <span class="form-value-hint" v-else>{{ t('agent.selectOrigin') }}</span>
             <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg>
           </div>
           <div class="row-divider" />
           <div class="form-row clickable" @click="openDestinationSelect">
-            <span class="form-label">目的地</span>
+            <span class="form-label">{{ t('agent.destination') }}</span>
             <div class="form-value-tag" v-if="destination">{{ destination }} <button class="tag-close" @click.stop="destination = ''">&times;</button></div>
-            <span class="form-value-hint" v-else>你想去哪里</span>
+            <span class="form-value-hint" v-else>{{ t('agent.whereToGo') }}</span>
             <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg>
           </div>
           <div class="quick-tags-row">
@@ -178,23 +180,23 @@ const goBack = () => { try { router.back() } catch (e) { router.push('/trips') }
           </div>
           <div class="row-divider" />
           <div class="form-row clickable" @click="showDatePopup = true">
-            <span class="form-label">日期 / 时间</span><span class="form-value-hint">{{ dateLabel }}</span>
+            <span class="form-label">{{ t('agent.dateTime') }}</span><span class="form-value-hint">{{ dateLabel }}</span>
             <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg>
           </div>
           <div class="row-divider" />
           <div class="form-row clickable" @click="showBudgetPopup = true">
-            <span class="form-label">预算</span><span class="form-value-hint">{{ budgetLabel }}</span>
+            <span class="form-label">{{ t('agent.budget') }}</span><span class="form-value-hint">{{ budgetLabel }}</span>
             <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg>
           </div>
           <div class="row-divider" />
           <div class="form-row clickable" @click="showPrefPopup = true">
-            <span class="form-label">旅行偏好</span><span class="form-value-hint">{{ prefLabel }}</span>
+            <span class="form-label">{{ t('agent.preferences') }}</span><span class="form-value-hint">{{ prefLabel }}</span>
             <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="#cbd5e1" stroke-width="2"><polyline points="7 4 13 10 7 16"/></svg>
           </div>
         </div>
         <button class="submit-btn-main" :class="{ disabled: !canSubmit }" :disabled="!canSubmit" @click="startPlanning">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M10 2 L12 8 L18 10 L12 12 L10 18 L8 12 L2 10 L8 8 Z"/></svg>
-          <span>🚀 AI Agent 规划旅程</span>
+          <span>🚀 {{ t('agent.agentPlanJourney') }}</span>
         </button>
     </div>
 
@@ -203,24 +205,24 @@ const goBack = () => { try { router.back() } catch (e) { router.push('/trips') }
       <div class="popup-root">
         <div class="popup-header">
           <button class="popup-close" @click="showDatePopup = false">&times;</button>
-          <span class="popup-title">日期</span>
-          <span class="popup-tag active">灵活时间</span>
+          <span class="popup-title">{{ t('agent.dateTitle') }}</span>
+          <span class="popup-tag active">{{ t('agent.flexibleTime') }}</span>
         </div>
         <div class="popup-block">
-          <div class="block-head"><span>天数</span><span class="block-hint">任意天数</span></div>
+          <div class="block-head"><span>{{ t('agent.daysLabel') }}</span><span class="block-hint">{{ t('agent.anyDays') }}</span></div>
           <div class="grid-7">
-            <button v-for="d in dayOptions" :key="d" class="grid-btn" :class="{ active: selectedDays === d }" @click="selectDay(d)">{{ d }}天</button>
+            <button v-for="d in dayOptions" :key="d" class="grid-btn" :class="{ active: selectedDays === d }" @click="selectDay(d)">{{ d }}{{ t('common.days') }}</button>
           </div>
         </div>
         <div class="popup-block">
-          <div class="block-head"><span>月份</span></div>
+          <div class="block-head"><span>{{ t('agent.months') }}</span></div>
           <div class="month-rows">
             <div v-for="(group, gi) in monthGroups" :key="gi" class="month-row">
-              <button v-for="m in group" :key="m" class="grid-btn" :class="{ active: selectedMonths.includes(m) }" @click="toggleMonth(m)">{{ m }}月</button>
+              <button v-for="m in group" :key="m" class="grid-btn" :class="{ active: selectedMonths.includes(m) }" @click="toggleMonth(m)">{{ m }}{{ t('agent.monthUnit') }}</button>
             </div>
           </div>
         </div>
-        <button class="popup-done" :class="{ disabled: !selectedDays }" :disabled="!selectedDays" @click="dateDone">完成</button>
+        <button class="popup-done" :class="{ disabled: !selectedDays }" :disabled="!selectedDays" @click="dateDone">{{ t('common.done') }}</button>
       </div>
     </van-popup>
 
@@ -229,16 +231,16 @@ const goBack = () => { try { router.back() } catch (e) { router.push('/trips') }
       <div class="popup-root">
         <div class="popup-header">
           <button class="popup-close" @click="showBudgetPopup = false">&times;</button>
-          <span class="popup-title">人均预算</span>
+          <span class="popup-title">{{ t('agent.perPersonBudget') }}</span>
         </div>
         <div class="popup-block">
           <div class="grid-7">
             <button v-for="b in budgetOptions" :key="b" class="grid-btn" :class="{ active: budget === b }" @click="selectBudget(b)">
-              {{ b >= 10000 ? (b/10000).toFixed(1) + '万' : b.toLocaleString() }}
+              {{ b >= 10000 ? (b/10000).toFixed(1) + t('agent.unitWan') : b.toLocaleString() }}
             </button>
           </div>
         </div>
-        <button class="popup-done" @click="budgetDone">完成</button>
+        <button class="popup-done" @click="budgetDone">{{ t('common.done') }}</button>
       </div>
     </van-popup>
 
@@ -247,27 +249,27 @@ const goBack = () => { try { router.back() } catch (e) { router.push('/trips') }
       <div class="popup-root popup-scroll">
         <div class="popup-header">
           <button class="popup-close" @click="showPrefPopup = false">&times;</button>
-          <span class="popup-title">选择出行偏好</span>
+          <span class="popup-title">{{ t('agent.selectPrefs') }}</span>
         </div>
-        <div class="popup-block"><div class="block-head"><span>同行伙伴</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.companion') }}</span></div>
           <div class="chip-row"><button v-for="c in companionOpts" :key="c" class="chip-btn" :class="{ active: preferences.companion === c }" @click="preferences.companion = c">{{ c }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>风格偏好</span><span class="block-hint">可多选</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.style') }}</span><span class="block-hint">{{ t('agent.multiSelect') }}</span></div>
           <div class="chip-row"><button v-for="s in styleOpts" :key="s" class="chip-btn multi" :class="{ active: preferences.styles.includes(s) }" @click="toggleStyle(s)">{{ s }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>酒店星级</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.hotelLevel') }}</span></div>
           <div class="chip-row"><button v-for="h in hotelOpts" :key="h" class="chip-btn" :class="{ active: preferences.hotelLevel === h }" @click="preferences.hotelLevel = h">{{ h }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>飞机舱位</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.cabinClass') }}</span></div>
           <div class="chip-row"><button v-for="c in cabinOpts" :key="c" class="chip-btn" :class="{ active: preferences.cabinClass === c }" @click="preferences.cabinClass = c">{{ c }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>行程节奏</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.pace') }}</span></div>
           <div class="chip-row"><button v-for="p in paceOpts" :key="p" class="chip-btn" :class="{ active: preferences.pace === p }" @click="preferences.pace = p">{{ p }}</button></div>
         </div>
-        <div class="popup-block"><div class="block-head"><span>时间安排</span></div>
+        <div class="popup-block"><div class="block-head"><span>{{ t('agent.schedule') }}</span></div>
           <div class="chip-row"><button v-for="s in scheduleOpts" :key="s" class="chip-btn" :class="{ active: preferences.schedule === s }" @click="preferences.schedule = s">{{ s }}</button></div>
         </div>
-        <button class="popup-done" @click="prefDone">完成</button>
+        <button class="popup-done" @click="prefDone">{{ t('common.done') }}</button>
         <div style="height:20px" />
       </div>
     </van-popup>

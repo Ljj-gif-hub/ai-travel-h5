@@ -101,6 +101,32 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.3 — 2026-08-05）
+
+### 🔧 工程化基础设施补全（后端）
+- **Swagger/OpenAPI**：springdoc 接入，`/swagger-ui.html` + `/v3/api-docs`，全部 Controller 按业务分组标注
+- **日志系统**：`logback-spring.xml`（控制台 + 按天滚动文件 + 错误独立归档；prod profile 切 JSON 结构化输出）
+- **监控指标**：Actuator + Prometheus，`/actuator/prometheus` 暴露 JVM/HTTP/自定义业务指标（AI 调用、行程生成、推荐、MQ 事件）
+
+### 🛢️ 多数据库 + 消息队列
+- **MySQL/PostgreSQL**：驱动就绪 + `application-mysql.yml` / `application-postgres.yml` profile，环境变量一键切换
+- **RabbitMQ 异步处理**：`app.mq.enabled=true` 启用；订单支付成功事件 → 异步审计落库；默认关闭走同步降级，无 MQ 也能运行
+
+### 🎯 智能推荐 + 机票预订
+- **推荐引擎**：内容推荐 + 用户协同过滤 + 热门兜底三段式混合，`/api/recommend/items` + `/destinations`，登录个性化/未登录热门
+- **机票预订**：`/api/flight/search` + `/api/flight/book` + `FlightProvider`（Mock 确定性数据 / Real 第三方骨架），前端新增「机票预订」页（`/flight-booking`）
+- **预订对接层**：`booking.*` 配置，酒店/机票均按支付层同款「Mock/Real 双实现」模式
+
+### 🚀 分布式部署
+- `docker-compose.yml` 编排 MySQL/Redis/RabbitMQ/应用（`--scale app=2` 水平扩容）
+- `deploy/nginx.conf` 负载均衡 + SSE 转发 + 前端静态托管示例
+- 首页「机票预订」入口已接入新页面
+
+### 🌐 多语言国际化全量补齐
+- 语言包按 24 个功能模块拆分（`src/locales/{zh,en}/*.js`），`zh-CN.js`/`en-US.js` 聚合
+- **全量抽取**：全部视图/组件静态文案改为 `t()`，中英 key 一一对应（929 个 key）
+- 通用词库 `common.js`（返回/取消/保存/加载/失败等）跨模块复用；动态数据（城市名、用户内容、数值）保持不翻译
+
 ## 🆕 最近更新（v4.2 — 2026-08-05）
 
 ### 🏨 酒店预订对接（可配置对接层）

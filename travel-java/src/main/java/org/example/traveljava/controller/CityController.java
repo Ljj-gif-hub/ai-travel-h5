@@ -30,6 +30,7 @@ import java.util.*;
  */
 @RestController
 @RequestMapping("/api/city")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "地图")
 public class CityController {
 
     private static final Logger log = LoggerFactory.getLogger(CityController.class);

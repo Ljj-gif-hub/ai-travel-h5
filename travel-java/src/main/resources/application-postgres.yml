@@ -1,0 +1,26 @@
+# ================================================================
+# PostgreSQL 数据源 profile
+# 启用方式：
+#   java -jar travel-java.jar --spring.profiles.active=postgres
+# 或环境变量：SPRING_PROFILES_ACTIVE=postgres
+#
+# 说明：保持默认不传 profile 时为 H2（零配置开箱即用）；
+#       传 postgres 即切换到 PostgreSQL，全部连接参数可用环境变量覆盖。
+# ================================================================
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:travel_plans}?currentSchema=public}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_MIN_IDLE:2}
+      connection-timeout: ${DB_TIMEOUT:30000}
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false

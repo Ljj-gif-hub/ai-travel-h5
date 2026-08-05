@@ -54,17 +54,20 @@ public class AIService {
     private final Map<String, String> chatCache = lruCache(200);
     private final SceneImageService sceneImageService;
     private final ExecutorService imageFetchExecutor;
+    private final org.example.traveljava.config.AppMetrics appMetrics;
     /** 用户出行偏好（由 Controller 在生成前设置） */
     private Map<String, Object> userPrefs;
 
     public AIService(WebClient aiWebClient, AIProviderConfig aiConfig, ObjectMapper objectMapper,
                      SceneImageService sceneImageService,
-                     @Qualifier("imageFetchExecutor") ExecutorService imageFetchExecutor) {
+                     @Qualifier("imageFetchExecutor") ExecutorService imageFetchExecutor,
+                     org.example.traveljava.config.AppMetrics appMetrics) {
         this.webClient = aiWebClient;
         this.aiConfig = aiConfig;
         this.objectMapper = objectMapper;
         this.sceneImageService = sceneImageService;
         this.imageFetchExecutor = imageFetchExecutor;
+        this.appMetrics = appMetrics;
     }
 
     /** 线程安全的有界 LRU 缓存 */
@@ -310,6 +313,7 @@ public class AIService {
             log.info("从缓存返回聊天");
             return cached;
         }
+        appMetrics.aiCall(aiConfig.getActiveProvider());
 
         ChatRequest request = ChatRequest.builder()
                 .model(model())
@@ -348,6 +352,8 @@ public class AIService {
     /* ==================== SSE流式聊天（核心） ==================== */
     public Flux<String> streamChat(List<ChatMessage> messages) {
         log.info("DeepSeek流式聊天，消息数={}", messages.size());
+        appMetrics.aiCall(aiConfig.getActiveProvider());
+        appMetrics.chatStream();
 
         ChatRequest request = ChatRequest.builder()
                 .model(model())
@@ -490,6 +496,8 @@ public class AIService {
 
     /* ==================== 结构化行程（JSON格式） ==================== */
     public TravelPlanDTO generateStructuredTravelPlan(String destination, Long budget, Integer days) {
+        appMetrics.planGenerated();
+        appMetrics.aiCall(aiConfig.getActiveProvider());
         String cacheKey = "structured_" + destination + "_" + budget + "_" + days;
         String cached = planCache.get(cacheKey);
         if (cached != null) {

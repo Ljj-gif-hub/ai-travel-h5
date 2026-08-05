@@ -1,11 +1,13 @@
 ﻿<script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi } from '../api';
 
 const router = useRouter();
+const { t } = useI18n();
 
 const getDefaultCover = () => {
   return '/images/landmarks/692e92669c0c.jpg'
@@ -39,13 +41,13 @@ const handleDelete = async (id) => {
   try {
     const response = await noteApi.deleteNote(id);
     if (response.code === 0) {
-      showToast('删除成功');
+      showToast(t('note.deleteSuccess'));
       loadNotes();
     } else {
-      showToast(response.message || '删除失败');
+      showToast(response.message || t('note.deleteFailed'));
     }
   } catch (error) {
-    showToast('删除失败');
+    showToast(t('note.deleteFailed'));
   }
 };
 
@@ -73,8 +75,8 @@ onMounted(() => {
 <template>
   <div class="notes-page">
     <van-nav-bar
-      title="我的游记"
-      left-text="返回"
+      :title="t('note.myNotes')"
+      :left-text="t('common.back')"
       left-arrow
       safe-area-inset-top
       @click-left="goBack"
@@ -86,8 +88,8 @@ onMounted(() => {
       <template v-else-if="notes.length === 0">
         <div class="empty-state">
           <van-icon name="edit" size="60" color="#ccc" />
-          <div class="empty-text">暂无游记</div>
-          <van-button type="primary" size="small" @click="handleWriteNote">去写一篇</van-button>
+          <div class="empty-text">{{ t('note.noNotes') }}</div>
+          <van-button type="primary" size="small" @click="handleWriteNote">{{ t('note.goWriteOne') }}</van-button>
         </div>
       </template>
 
@@ -108,15 +110,15 @@ onMounted(() => {
           <div class="note-content">
             <div class="note-title">{{ note.title }}</div>
             <div class="note-meta">
-              <span class="meta-item">{{ note.views }}阅读</span>
-              <span class="meta-item">{{ note.likes }}赞</span>
-              <span class="meta-item">{{ note.comments }}评论</span>
+              <span class="meta-item">{{ note.views }}{{ t('note.reads') }}</span>
+              <span class="meta-item">{{ note.likes }}{{ t('note.likes') }}</span>
+              <span class="meta-item">{{ note.comments }}{{ t('note.comments') }}</span>
               <span class="meta-item">{{ note.date }}</span>
             </div>
           </div>
           <div class="note-actions">
-            <van-button size="small" type="default" @click.stop="router.push(`/write-note?id=${note.id}`)">编辑</van-button>
-            <van-button size="small" type="danger" @click.stop="handleDelete(note.id)">删除</van-button>
+            <van-button size="small" type="default" @click.stop="router.push(`/write-note?id=${note.id}`)">{{ t('common.edit') }}</van-button>
+            <van-button size="small" type="danger" @click.stop="handleDelete(note.id)">{{ t('common.delete') }}</van-button>
           </div>
         </div>
       </div>
@@ -124,7 +126,7 @@ onMounted(() => {
 
     <div class="float-btn-wrap">
       <van-button type="primary" round icon="edit" @click="handleWriteNote">
-        写游记
+        {{ t('community.write') }}
       </van-button>
     </div>
   </div>

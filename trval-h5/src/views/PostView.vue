@@ -1,11 +1,13 @@
 <script setup>
 import { ref, reactive, computed } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { postApi, uploadApi } from '../api';
 
 const router = useRouter();
+const { t } = useI18n();
 
 const goBack = () => { router.back() };
 
@@ -30,7 +32,7 @@ const handleUpload = async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   if (postForm.images.length >= maxImages) {
-    showToast(`最多${maxImages}张图片`);
+    showToast(t('community.maxImages', { n: maxImages }));
     return;
   }
   isUploading.value = true;
@@ -39,10 +41,10 @@ const handleUpload = async (e) => {
     if (res.code === 0) {
       postForm.images.push(res.data.url);
     } else {
-      showToast(res.message || '上传失败');
+      showToast(res.message || t('community.uploadFailed'));
     }
   } catch {
-    showToast('上传失败，请重试');
+    showToast(t('community.uploadFailedRetry'));
   } finally {
     isUploading.value = false;
     if (fileInput.value) fileInput.value.value = '';
@@ -55,16 +57,16 @@ const removeImage = (index) => {
 
 const submitPost = async () => {
   if (!postForm.content.trim() && postForm.images.length === 0) {
-    showToast('请输入内容或添加图片');
+    showToast(t('community.enterContentOrAddImage'));
     return;
   }
   if (!getToken()) {
-    showToast('请先登录');
+    showToast(t('common.notLoggedIn'));
     return;
   }
 
   isLoading.value = true;
-  showLoadingToast({ message: '发布中...', duration: 0, forbidClick: true });
+  showLoadingToast({ message: t('community.publishing'), duration: 0, forbidClick: true });
 
   try {
     const res = await postApi.createPost({
@@ -74,15 +76,15 @@ const submitPost = async () => {
 
     if (res.code === 0) {
       closeToast();
-      showToast('发布成功');
+      showToast(t('community.publishSuccess'));
       setTimeout(() => router.push('/community'), 800);
     } else {
       closeToast();
-      showToast(res.message || '发布失败');
+      showToast(res.message || t('community.publishFailed'));
     }
   } catch {
     closeToast();
-    showToast('网络异常，请稍后重试');
+    showToast(t('community.networkErrorRetry'));
   } finally {
     isLoading.value = false;
   }
@@ -96,7 +98,7 @@ const submitPost = async () => {
       <div class="nav-left" @click="goBack">
         <van-icon name="arrow-left" size="22" color="#1f2937" />
       </div>
-      <span class="nav-title">发动态</span>
+      <span class="nav-title">{{ t('community.postTitle') }}</span>
       <button
         type="button"
         class="nav-publish"
@@ -104,7 +106,7 @@ const submitPost = async () => {
         :disabled="isLoading"
         @click="submitPost"
       >
-        {{ isLoading ? '发布中...' : '发布' }}
+        {{ isLoading ? t('community.publishing') : t('community.publish') }}
       </button>
     </div>
 
@@ -113,7 +115,7 @@ const submitPost = async () => {
       <textarea
         v-model="postForm.content"
         class="post-textarea"
-        placeholder="分享你的旅行心情..."
+        :placeholder="t('community.shareTravelMood')"
         :maxlength="maxLength"
         rows="6"
       ></textarea>
@@ -137,7 +139,7 @@ const submitPost = async () => {
         >
           <van-icon name="plus" size="28" color="#c0c4cc" />
           <template v-if="postForm.images.length === 0">
-            <span class="img-add-text">添加图片</span>
+            <span class="img-add-text">{{ t('community.addImage') }}</span>
           </template>
         </div>
       </div>

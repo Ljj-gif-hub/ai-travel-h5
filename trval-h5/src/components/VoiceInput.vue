@@ -12,7 +12,7 @@
       @mouseleave.prevent="stopRecord"
     >
       <van-icon :name="isRecording ? 'audio' : 'audio-o'" size="20" />
-      <span>{{ isRecording ? '松开发送' : '按住说话' }}</span>
+      <span>{{ isRecording ? t('components.releaseToSend') : t('components.holdToTalk') }}</span>
     </div>
 
     <!-- 录音波形指示器 -->
@@ -27,7 +27,7 @@
 
     <!-- 不可用提示 -->
     <div class="voice-unavailable" v-if="!isSupported">
-      <span>语音识别不可用</span>
+      <span>{{ t('components.voiceUnavailable') }}</span>
     </div>
   </div>
 </template>
@@ -45,6 +45,9 @@
  */
 
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 /* ==================== Props ==================== */
 const props = defineProps({
@@ -95,11 +98,11 @@ function startRecord() {
   // 防抖：避免快速连续触发
   if (isStarting) return
   if (props.disabled) {
-    showToast('语音输入已禁用')
+    showToast(t('components.voiceDisabled'))
     return
   }
   if (!isSupported.value) {
-    showToast('当前浏览器不支持语音识别，请使用 Chrome 或 Edge')
+    showToast(t('components.voiceUnsupportedBrowser'))
     return
   }
 
@@ -151,7 +154,7 @@ function startRecord() {
       if (transcript) {
         emit('result', transcript)
       } else {
-        showToast('未识别到语音内容，请重试')
+        showToast(t('components.noVoiceContent'))
       }
     }
 
@@ -163,17 +166,17 @@ function startRecord() {
 
       // 根据错误类型给出不同提示
       const errorMessages = {
-        'no-speech': '未检测到语音，请再试一次',
-        'aborted': '语音识别已取消',
-        'audio-capture': '无法访问麦克风，请检查权限',
-        'network': '网络连接失败，请检查网络',
-        'not-allowed': '麦克风权限被拒绝，请在设置中允许',
-        'service-not-allowed': '语音识别服务不可用',
-        'bad-grammar': '语法错误',
-        'language-not-supported': '不支持当前语言',
+        'no-speech': t('components.errNoSpeechRetry'),
+        'aborted': t('components.errAborted'),
+        'audio-capture': t('components.errAudioCapturePerm'),
+        'network': t('components.errNetwork'),
+        'not-allowed': t('components.errNotAllowedPerm'),
+        'service-not-allowed': t('components.errServiceUnavailable'),
+        'bad-grammar': t('components.errBadGrammar'),
+        'language-not-supported': t('components.errLanguageUnsupported'),
       }
 
-      const msg = errorMessages[event.error] || '语音识别失败，请重试'
+      const msg = errorMessages[event.error] || t('components.recognitionFailedRetry')
       showToast(msg)
 
       // 重置状态
@@ -214,7 +217,7 @@ function startRecord() {
     console.error('[VoiceInput] 启动语音识别失败:', error)
     isRecording.value = false
     isStarting = false
-    showToast('启动语音识别失败，请重试')
+    showToast(t('components.voiceStartFailed'))
     emit('recording-end')
   }
 }

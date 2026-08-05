@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/travel/plan")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "行程规划")
 public class SavedTravelPlanController {
 
     private static final Logger log = LoggerFactory.getLogger(SavedTravelPlanController.class);

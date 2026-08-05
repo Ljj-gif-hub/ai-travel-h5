@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { planApi } from '../api'
@@ -11,6 +12,7 @@ import AIChatDialog from '../components/AIChatDialog.vue'
 defineOptions({ name: 'TripsView' })
 
 const router = useRouter()
+const { t } = useI18n()
 
 const trips = ref([])
 const isLoading = ref(false)
@@ -87,10 +89,10 @@ const radiusOptions = [
 
 const locateUser = () => new Promise((resolve) => {
   locatingUser.value = true; locationError.value = ''
-  if (!navigator.geolocation) { locationError.value = '浏览器不支持定位'; locatingUser.value = false; resolve(false); return }
+  if (!navigator.geolocation) { locationError.value = t('trips.geolocationUnsupported'); locatingUser.value = false; resolve(false); return }
   navigator.geolocation.getCurrentPosition(
     (pos) => { userLocation.value = { lat: pos.coords.latitude, lng: pos.coords.longitude }; locatingUser.value = false; resolve(true) },
-    (err) => { locationError.value = err.code === 1 ? '定位权限未开启' : '定位失败'; locatingUser.value = false; userLocation.value = { lat: 39.915, lng: 116.404 }; resolve(false) },
+    (err) => { locationError.value = err.code === 1 ? t('trips.locationPermissionDenied') : t('trips.locationFailed'); locatingUser.value = false; userLocation.value = { lat: 39.915, lng: 116.404 }; resolve(false) },
     { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
   )
 })
@@ -125,14 +127,14 @@ const initNearbyMap = async () => {
     nearbyMapProvider.value = 'amap'
     const map = new window.AMap.Map('nearby-map-container', { center: [userLocation.value.lng, userLocation.value.lat], zoom: 14, viewMode: '2D', resizeEnable: true })
     nearbyMapInstance.value = map
-    new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), title: '我的位置', zIndex: 100 }).addTo(map)
+    new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), title: t('trips.myLocation'), zIndex: 100 }).addTo(map)
     addNearbyMarkers(map)
   } else {
     nearbyMapProvider.value = 'leaflet'
     const L = window.L; if (!L) { const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css); const s = document.createElement('script'); s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; await new Promise(r => { s.onload = r; s.onerror = r; document.head.appendChild(s) }) }
     const map = L.map('nearby-map-container', { center: [userLocation.value.lat, userLocation.value.lng], zoom: 14, zoomControl: true, attributionControl: false })
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
-    L.circleMarker([userLocation.value.lat, userLocation.value.lng], { radius: 8, fillColor: '#3B82F6', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map).bindTooltip('我的位置', { permanent: true, direction: 'right' })
+    L.circleMarker([userLocation.value.lat, userLocation.value.lng], { radius: 8, fillColor: '#3B82F6', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map).bindTooltip(t('trips.myLocation'), { permanent: true, direction: 'right' })
     nearbyMapInstance.value = map; addNearbyMarkers(map)
   }
 }
@@ -228,7 +230,7 @@ const loadCityGuides = async () => {
   }
   try {
     const results = await Promise.allSettled(cities.map(c => import('../api/destination').then(m => m.getCityAttractions(c))))
-    cityGuides.value = results.map((r, i) => ({ city: cities[i], label: cities[i] === currentCity ? '📍 当前城市' : '🔥 热门推荐', attractions: (r.status === 'fulfilled' && r.value?.code === 0) ? (r.value.data || []).slice(0, 4).map(a => ({ name: a.name, address: a.address || '', rating: a.rating || null })) : [] })).filter(g => g.attractions.length > 0)
+    cityGuides.value = results.map((r, i) => ({ city: cities[i], label: cities[i] === currentCity ? t('trips.currentCityLabel') : t('trips.hotRecommendLabel'), attractions: (r.status === 'fulfilled' && r.value?.code === 0) ? (r.value.data || []).slice(0, 4).map(a => ({ name: a.name, address: a.address || '', rating: a.rating || null })) : [] })).filter(g => g.attractions.length > 0)
   } catch (e) { cityGuides.value = [] }
 }
 
@@ -237,21 +239,21 @@ const loadHotDestinations = async () => { try { const res = await getHotDestinat
 
 const formatTime = (timeStr) => { if (!timeStr) return ''; const d = new Date(timeStr); return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` }
 const getAttractions = (plan) => { if (!plan.planData?.dayPlans) return []; const arr = []; plan.planData.dayPlans.forEach(day => { day.timeSlots?.forEach(slot => { if (slot.attraction) arr.push(slot.attraction) }) }); return arr }
-const cardTitle = (plan) => { const dest = plan.destination || '未知'; const days = plan.days || 1; return `${dest}${days}日游` }
+const cardTitle = (plan) => { const dest = plan.destination || t('trips.unknown'); const days = plan.days || 1; return t('trips.dayTrip', { dest, days }) }
 const cardRoute = (plan) => { if (!plan.planData?.dayPlans) return ''; const lines = plan.planData.dayPlans.slice(0, 3).map(day => { const spots = []; day.timeSlots?.forEach(slot => { if (slot.attraction) spots.push(slot.attraction) }); return spots.length > 0 ? `Day${day.day||'?'} ${spots.join(' → ')}` : '' }).filter(Boolean); return lines.join(' | ') + (plan.planData.dayPlans.length > 3 ? ' …' : '') }
-const cardMeta = (plan) => { const days = plan.days || 0; const locationCount = getAttractions(plan).length; const parts = []; if (plan.travelDate) { const start = new Date(plan.travelDate); const end = new Date(start); end.setDate(end.getDate()+days-1); const fmt = d => `${d.getMonth()+1}月${d.getDate()}日`; parts.push(`${fmt(start)}-${fmt(end)}`) } else if (plan.createdAt) { parts.push(`${new Date(plan.createdAt).getMonth()+1}月${new Date(plan.createdAt).getDate()}日`) }; if (days>0) parts.push(`共${days}天`); if (locationCount>0) parts.push(`${locationCount}个地点`); return parts.join('·') }
-const statusLabel = (s) => ({ upcoming:'待出行', doing:'进行中', done:'已完成', draft:'草稿' }[s] || s)
+const cardMeta = (plan) => { const days = plan.days || 0; const locationCount = getAttractions(plan).length; const parts = []; if (plan.travelDate) { const start = new Date(plan.travelDate); const end = new Date(start); end.setDate(end.getDate()+days-1); const fmt = d => t('trips.dateFormat', { month: d.getMonth()+1, day: d.getDate() }); parts.push(`${fmt(start)}-${fmt(end)}`) } else if (plan.createdAt) { parts.push(t('trips.dateFormat', { month: new Date(plan.createdAt).getMonth()+1, day: new Date(plan.createdAt).getDate() })) }; if (days>0) parts.push(t('trips.totalDays', { days })); if (locationCount>0) parts.push(t('trips.spotCount', { count: locationCount })); return parts.join('·') }
+const statusLabel = (s) => ({ upcoming: t('trips.statusUpcoming'), doing: t('trips.statusDoing'), done: t('trips.statusDone'), draft: t('trips.statusDraft') }[s] || s)
 const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399', draft:'#F59E0B' }[s] || 'var(--text-hint)')
 
 const loadTrips = async () => { isLoading.value = true; loadError.value = false; try { const res = await planApi.getSavedPlans(); if (res.code === 0) trips.value = (res.data || []).map(p => ({ ...p, _status: inferStatus(p) })); else trips.value = [] } catch (e) { trips.value = []; if (e?.response?.status === 502) loadError.value = true } finally { isLoading.value = false } }
-const viewTrip = (plan) => { if (!plan?.destination) { showToast('行程数据异常'); return }; router.push({ path: '/agent-map', query: { savedPlanId: plan.id } }) }
+const viewTrip = (plan) => { if (!plan?.destination) { showToast(t('trips.planDataError')); return }; router.push({ path: '/agent-map', query: { savedPlanId: plan.id } }) }
 const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = true }
 const goToAgentPlanner = () => { router.push('/agent-planner') }
-const onPlanSaved = () => { showAIChat.value = false; showToast('行程已保存'); loadTrips() }
-const confirmDelete = async (plan) => { try { await showConfirmDialog({ title:'删除行程', message:`确定要删除「${plan?.destination||'未知'}」吗？` }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast('已删除'); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
+const onPlanSaved = () => { showAIChat.value = false; showToast(t('trips.planSaved')); loadTrips() }
+const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t('trips.deleteTrip'), message: t('trips.confirmDeleteMsg', { name: plan?.destination || t('trips.unknown') }) }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast(t('trips.deleted')); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
 const goDestinationDetail = (city) => { if (!city) return; router.push(`/destination-detail?city=${encodeURIComponent(city)}`) }
 const goAttraction = (name) => { if (!name) return; router.push(`/destination-detail?city=${encodeURIComponent(name)}`) }
-const handleMoreAction = (action) => { showMoreMenu.value = false; showToast('功能开发中') }
+const handleMoreAction = (action) => { showMoreMenu.value = false; showToast(t('trips.featureWip')) }
 
 onMounted(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages() } })
 onActivated(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); startCarousel() } })
@@ -263,7 +265,7 @@ onUnmounted(() => { stopCarousel() })
   <div class="trips-page">
     <!-- 漂浮粒子 — 已禁用 -->
     <van-nav-bar safe-area-inset-top class="nav-bar">
-      <template #title><span class="nav-title">{{ hasTrips ? '我的全部行程' : '暂无行程' }}</span></template>
+      <template #title><span class="nav-title">{{ hasTrips ? t('trips.myAllTrips') : t('trips.noTrips') }}</span></template>
       <template #right>
         <div class="nav-actions">
           <div class="nav-btn" @click="goToAgentPlanner"><van-icon name="add" size="20" color="#7C3AED" /></div>
@@ -273,7 +275,7 @@ onUnmounted(() => { stopCarousel() })
     </van-nav-bar>
     <van-popup v-model:show="showMoreMenu" position="top" :style="{ width:'160px', top:'calc(env(safe-area-inset-top,0px)+48px)', right:'8px', borderRadius:'14px' }" overlay-class="no-overlay">
       <div class="more-menu">
-        <div v-for="item in [{key:'import',icon:'down',label:'导入行程'},{key:'batchDelete',icon:'delete-o',label:'批量删除'},{key:'export',icon:'share-o',label:'导出行程'},{key:'settings',icon:'setting-o',label:'行程设置'}]" :key="item.key" class="more-item" @click="handleMoreAction(item.key)"><van-icon :name="item.icon" size="16" color="var(--text-secondary)" /><span>{{ item.label }}</span></div>
+        <div v-for="item in [{key:'import',icon:'down',label:t('trips.importTrips')},{key:'batchDelete',icon:'delete-o',label:t('trips.batchDelete')},{key:'export',icon:'share-o',label:t('trips.exportTrips')},{key:'settings',icon:'setting-o',label:t('trips.tripSettings')}]" :key="item.key" class="more-item" @click="handleMoreAction(item.key)"><van-icon :name="item.icon" size="16" color="var(--text-secondary)" /><span>{{ item.label }}</span></div>
       </div>
     </van-popup>
 
@@ -285,21 +287,21 @@ onUnmounted(() => { stopCarousel() })
             <div v-if="carouselImages.length === 0" class="hero-placeholder" />
             <div v-for="(img, idx) in carouselImages" :key="idx" class="hero-carousel-img" :class="{ active: idx === currentCarouselIndex }" :style="{ backgroundImage: `url(${img})` }" />
             <div class="hero-mask" />
-            <span class="hero-tag">线路规划</span>
-            <span v-if="hasTrips" class="hero-top-link" @click.stop="activeTab = 'all'">我的线路 <van-icon name="arrow" size="12" /></span>
+            <span class="hero-tag">{{ t('trips.routePlanning') }}</span>
+            <span v-if="hasTrips" class="hero-top-link" @click.stop="activeTab = 'all'">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
             <button class="hero-glass-btn" @click="goToAgentPlanner">
-              <span class="hero-btn-title">🤖 AI Agent 智能规划</span>
-              <span class="hero-btn-sub">自主搜索 · 实时校验 · 自动优化</span>
+              <span class="hero-btn-title">🤖 {{ t('agent.aiAgentPlanning') }}</span>
+              <span class="hero-btn-sub">{{ t('trips.agentSlogan') }}</span>
             </button>
           </div>
 
           <div class="nearby-card card-macaron">
             <div id="nearby-mini-map" class="nearby-mini-map-box" />
-            <div v-if="!miniMapReady" class="nearby-mini-placeholder"><van-loading size="20" color="#8B5CF6" /><span>加载地图中...</span></div>
+            <div v-if="!miniMapReady" class="nearby-mini-placeholder"><van-loading size="20" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
             <div class="nearby-overlay">
               <div class="nearby-top">
-                <div class="nearby-title-row"><van-icon name="location-o" size="20" color="#fff" /><span class="nearby-title">周边游地图</span></div>
-                <span class="nearby-link" @click.stop="goMap">探索周边出行灵感 &gt;</span>
+                <div class="nearby-title-row"><van-icon name="location-o" size="20" color="#fff" /><span class="nearby-title">{{ t('trips.nearbyMap') }}</span></div>
+                <span class="nearby-link" @click.stop="goMap">{{ t('trips.exploreNearby') }}</span>
               </div>
             </div>
           </div>
@@ -307,9 +309,9 @@ onUnmounted(() => { stopCarousel() })
 
         <van-popup v-model:show="showNearbyMap" position="bottom" :style="{ height:'100%', width:'100%' }" closeable close-icon="cross" @closed="closeNearbyMap">
           <div class="nearby-full-page">
-            <div class="nearby-topbar"><van-icon name="arrow-left" size="20" @click="closeNearbyMap" /><span class="nearby-topbar-title">周边游</span><span v-if="userLocation" class="nearby-loc-text">📍 {{ userLocation.lat.toFixed(2) }}, {{ userLocation.lng.toFixed(2) }}</span></div>
+            <div class="nearby-topbar"><van-icon name="arrow-left" size="20" @click="closeNearbyMap" /><span class="nearby-topbar-title">{{ t('trips.nearby') }}</span><span v-if="userLocation" class="nearby-loc-text">📍 {{ userLocation.lat.toFixed(2) }}, {{ userLocation.lng.toFixed(2) }}</span></div>
             <div class="nearby-map-wrap">
-              <div v-if="locatingUser" class="nearby-locating"><van-loading size="24" color="#8B5CF6" /><span>{{ locationError || '正在定位...' }}</span></div>
+              <div v-if="locatingUser" class="nearby-locating"><van-loading size="24" color="#8B5CF6" /><span>{{ locationError || t('trips.locating') }}</span></div>
               <div id="nearby-map-container" class="nearby-map-box"></div>
               <div class="nearby-map-controls">
                 <button class="nearby-ctrl-btn" @click="relocate" :disabled="locatingUser"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
@@ -317,11 +319,11 @@ onUnmounted(() => { stopCarousel() })
               </div>
             </div>
             <div class="nearby-bottom-panel">
-              <div class="nearby-radius-bar"><span class="nearby-radius-label">搜索范围</span><div class="nearby-radius-options"><button v-for="r in radiusOptions" :key="r.value" class="nearby-radius-btn" :class="{ active: nearbyRadius === r.value }" @click="changeRadius(r.value)">{{ r.label }}</button></div></div>
-              <div v-if="loadingNearby" class="nearby-loading-row"><van-loading size="18" color="#8B5CF6" /><span>搜索周边景点中...</span></div>
+              <div class="nearby-radius-bar"><span class="nearby-radius-label">{{ t('trips.searchRadius') }}</span><div class="nearby-radius-options"><button v-for="r in radiusOptions" :key="r.value" class="nearby-radius-btn" :class="{ active: nearbyRadius === r.value }" @click="changeRadius(r.value)">{{ r.label }}</button></div></div>
+              <div v-if="loadingNearby" class="nearby-loading-row"><van-loading size="18" color="#8B5CF6" /><span>{{ t('trips.searchingNearby') }}</span></div>
               <div v-else class="nearby-attraction-list">
-                <div class="nearby-list-head"><span>附近景点</span><span class="nearby-count" v-if="nearbyAttractions.length">{{ nearbyAttractions.length }}个</span></div>
-                <div v-if="nearbyAttractions.length === 0 && !loadingNearby" class="nearby-empty"><van-icon name="location-o" size="32" color="#CBD5E1" /><span>附近暂无景点数据</span></div>
+                <div class="nearby-list-head"><span>{{ t('trips.nearbyAttractions') }}</span><span class="nearby-count" v-if="nearbyAttractions.length">{{ t('trips.count', { count: nearbyAttractions.length }) }}</span></div>
+                <div v-if="nearbyAttractions.length === 0 && !loadingNearby" class="nearby-empty"><van-icon name="location-o" size="32" color="#CBD5E1" /><span>{{ t('trips.noNearbyAttractions') }}</span></div>
                 <div v-else class="nearby-scroll-list">
                   <div v-for="(attr, i) in nearbyAttractions" :key="i" class="nearby-attr-card" @click="goAttractionDetail(attr)">
                     <div class="nearby-attr-index">{{ i + 1 }}</div>
@@ -335,7 +337,7 @@ onUnmounted(() => { stopCarousel() })
         </van-popup>
 
         <div v-for="guide in cityGuides" :key="guide.city" class="guide-section" v-show="guide.attractions.length > 0">
-          <div class="sec-head"><span class="sec-title">{{ guide.city }}</span><span class="sec-guide-label" v-if="guide.label">{{ guide.label }}</span><span class="sec-more" @click="goDestinationDetail(guide.city)">攻略 &gt;</span></div>
+          <div class="sec-head"><span class="sec-title">{{ guide.city }}</span><span class="sec-guide-label" v-if="guide.label">{{ guide.label }}</span><span class="sec-more" @click="goDestinationDetail(guide.city)">{{ t('trips.guideLink') }}</span></div>
           <div class="h-scroll">
             <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goAttraction(attr.name)">
               <div class="guide-card-img-wrap">
@@ -348,37 +350,37 @@ onUnmounted(() => { stopCarousel() })
         </div>
 
         <div class="templates-section" v-if="!hasTrips && hotDestinations.length > 0">
-          <div class="sec-head"><span class="sec-title">热门目的地</span></div>
+          <div class="sec-head"><span class="sec-title">{{ t('trips.hotDestinations') }}</span></div>
           <div class="quick-tags"><span v-for="dest in hotDestinations" :key="dest.name" class="quick-tag" @click="openAIChat({ destination: dest.name, budget: '', days: '' })">{{ dest.name }}</span></div>
         </div>
 
         <div v-if="hasTrips" class="trips-list-section">
           <div class="page-content">
             <div v-if="isLoading" class="skeleton-list"><div v-for="i in 2" :key="i" class="trip-card-skeleton"><div class="sk-row sk-row-title" /><div class="sk-row sk-row-info" /><div class="sk-row sk-row-attract" /></div></div>
-            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">加载失败</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">重试</van-button></div>
+            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">{{ t('trips.loadFailed') }}</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">{{ t('common.tryAgain') }}</van-button></div>
             <template v-else>
               <div class="guide-zone">
                 <div class="guide-line" />
               <div class="section-block">
-                <div class="section-head"><span class="section-head-title">📋 行程规划</span><span class="section-head-count">{{ tripPlans.length }}条</span></div>
-                <div v-if="tripPlans.length === 0" class="empty-hint-row">暂无AI行程规划，<span class="link" @click="goToAgentPlanner">去创建</span></div>
+                <div class="section-head"><span class="section-head-title">📋 {{ t('trips.tripPlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: tripPlans.length }) }}</span></div>
+                <div v-if="tripPlans.length === 0" class="empty-hint-row">{{ t('trips.noAiPlans') }}<span class="link" @click="goToAgentPlanner">{{ t('trips.goCreate') }}</span></div>
                 <div v-for="trip in tripPlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">我的线路</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
+                  <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
                   <div class="trip-card-title">{{ cardTitle(trip) }}</div>
                   <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
                   <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">线路详情</span></div>
+                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
                 </div>
               </div>
               <div class="section-block">
-                <div class="section-head"><span class="section-head-title">🏠 首页规划</span><span class="section-head-count">{{ homePlans.length }}条</span></div>
-                <div v-if="homePlans.length === 0" class="empty-hint-row">暂无首页快捷规划</div>
+                <div class="section-head"><span class="section-head-title">🏠 {{ t('trips.homePlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: homePlans.length }) }}</span></div>
+                <div v-if="homePlans.length === 0" class="empty-hint-row">{{ t('trips.noHomePlans') }}</div>
                 <div v-for="trip in homePlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge trip-s-badge--home"><span class="trip-s-letter">S</span></div><span class="trip-card-label">我的线路</span></div>
+                  <div class="trip-card-top"><div class="trip-s-badge trip-s-badge--home"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span></div>
                   <div class="trip-card-title">{{ cardTitle(trip) }}</div>
                   <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
                   <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">线路详情</span></div>
+                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
                 </div>
               </div>
               </div>

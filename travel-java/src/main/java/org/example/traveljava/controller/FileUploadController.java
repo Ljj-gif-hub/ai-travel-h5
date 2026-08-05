@@ -22,6 +22,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 @RestController
+@io.swagger.v3.oas.annotations.tags.Tag(name = "系统")
 public class FileUploadController {
 
     private static final Logger log = LoggerFactory.getLogger(FileUploadController.class);

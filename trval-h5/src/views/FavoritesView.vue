@@ -5,22 +5,24 @@
  */
 import { ref, onMounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { favoriteApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const goBack = () => { router.back() }
 
 /* ==================== 分类 Tab ==================== */
 const activeTab = ref('all')
 const tabs = [
-  { name: '全部', key: 'all' },
-  { name: '景点', key: 'spot' },
-  { name: '游记', key: 'note' },
-  { name: '攻略', key: 'guide' },
+  { nameKey: 'all', key: 'all' },
+  { nameKey: 'spot', key: 'spot' },
+  { nameKey: 'note', key: 'note' },
+  { nameKey: 'guide', key: 'guide' },
 ]
 
 /* ==================== 列表数据 ==================== */
@@ -57,12 +59,12 @@ const handleDelete = async (id) => {
   try {
     const response = await favoriteApi.deleteFavorite(id)
     if (response.code === 0) {
-      showToast('取消收藏成功')
+      showToast(t('wallet.unfavSuccess'))
       loadFavorites(activeTab.value === 'all' ? '' : activeTab.value)
     } else {
-      showToast(response.message || '取消收藏失败')
+      showToast(response.message || t('wallet.unfavFail'))
     }
-  } catch (error) { showToast('取消收藏失败') }
+  } catch (error) { showToast(t('wallet.unfavFail')) }
 }
 
 const handleItemClick = (item) => {
@@ -101,7 +103,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 <template>
   <div class="page-shell">
     <!-- 顶部导航 -->
-    <van-nav-bar title="我的收藏" left-text="返回" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('wallet.favTitle')" :left-text="t('common.back')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <!-- 分类 Tab -->
     <div class="filter-tabs">
@@ -110,7 +112,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
         v-for="tab in tabs" :key="tab.key"
         :class="['filter-tab', { active: activeTab === tab.key }]"
         @click="handleTabChange(tab.key)"
-      >{{ tab.name }}</button>
+      >{{ t('wallet.' + tab.nameKey) }}</button>
     </div>
 
     <div class="page-content">
@@ -122,17 +124,17 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
           <!-- 错误兜底 -->
           <div v-else-if="loadError" class="error-state">
             <van-icon name="warn-o" size="48" color="#94A3B8" />
-            <p class="error-text">加载失败，请稍后重试</p>
-            <van-button round plain class="retry-btn" size="small" @click="loadFavorites(activeTab === 'all' ? '' : activeTab)">重新加载</van-button>
+            <p class="error-text">{{ t('common.requestFailed') }}</p>
+            <van-button round plain class="retry-btn" size="small" @click="loadFavorites(activeTab === 'all' ? '' : activeTab)">{{ t('common.retry') }}</van-button>
           </div>
 
           <!-- 空状态 -->
           <EmptyState
             v-else-if="favorites.length === 0"
             icon="star-o"
-            title="暂无收藏"
-            desc="收藏喜欢的景点和攻略，方便随时查看"
-            btn-text="去看看"
+            :title="t('wallet.noFavs')"
+            :desc="t('wallet.noFavsDesc')"
+            :btn-text="t('wallet.goExplore')"
             btn-type="outline"
             @btn-click="handleGoExplore"
           />

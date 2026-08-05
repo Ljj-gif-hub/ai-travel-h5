@@ -29,6 +29,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/agent")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Agent")
 public class AgentProxyController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProxyController.class);

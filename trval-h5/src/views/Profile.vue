@@ -40,8 +40,8 @@ const changeTheme = (v) => setTheme(v)
 /* ==================== 语言切换（B5 i18n） ==================== */
 const { t, locale } = useI18n()
 const langOptions = [
-  { value: 'zh-CN', label: '中文' },
-  { value: 'en-US', label: 'English' },
+  { value: 'zh-CN', labelKey: 'langZh' },
+  { value: 'en-US', labelKey: 'langEn' },
 ]
 const changeLanguage = (v) => setLanguage(v)
 
@@ -63,26 +63,26 @@ const editForm = ref({ nickname: '', bio: '' })
 
 /* ==================== 服务列表 ==================== */
 const serviceList = ref([
-  { name: '我的行程规划', icon: 'bookmark-o', desc: '查看和编辑旅行规划', badge: 0, path: '/trips', color: '#8B5CF6' },
-  { name: '我的订单', icon: 'orders-o', desc: '机票、酒店、门票订单', badge: 0, path: '/orders', color: '#6366F1' },
-  { name: '我的收藏', icon: 'star-o', desc: '收藏的景点和攻略', badge: 0, path: '/favorites', color: '#F59E0B' },
-  { name: '优惠券', icon: 'coupon-o', desc: '可用优惠券和折扣', badge: 0, path: '/coupons', color: '#34D399' },
+  { nameKey: 'myPlans', icon: 'bookmark-o', descKey: 'myPlansDesc', badge: 0, path: '/trips', color: '#8B5CF6' },
+  { nameKey: 'myOrders', icon: 'orders-o', descKey: 'myOrdersDesc', badge: 0, path: '/orders', color: '#6366F1' },
+  { nameKey: 'myFavorites', icon: 'star-o', descKey: 'myFavoritesDesc', badge: 0, path: '/favorites', color: '#F59E0B' },
+  { nameKey: 'myCoupons', icon: 'coupon-o', descKey: 'myCouponsDesc', badge: 0, path: '/coupons', color: '#34D399' },
 ])
 
 /* ==================== 快捷操作 ==================== */
 const quickActions = [
-  { name: '写游记', icon: 'edit', color: '#8B5CF6', path: '/write-note' },
-  { name: '发动态', icon: 'photograph', color: '#FB7185', path: '/post' },
-  { name: '邀请好友', icon: 'friends-o', color: '#34D399', action: 'invite' },
-  { name: '意见反馈', icon: 'smile-comment-o', color: '#F59E0B', path: '/feedback' },
+  { nameKey: 'writeNote', icon: 'edit', color: '#8B5CF6', path: '/write-note' },
+  { nameKey: 'post', icon: 'photograph', color: '#FB7185', path: '/post' },
+  { nameKey: 'invite', icon: 'friends-o', color: '#34D399', action: 'invite' },
+  { nameKey: 'feedback', icon: 'smile-comment-o', color: '#F59E0B', path: '/feedback' },
 ]
 
 /* ==================== 消息分类入口（从消息页集成） ==================== */
 const categoryItems = reactive([
-  { key: 'order', label: '订单出行', icon: 'orders-o', color: '#3B82F6', badge: 0 },
-  { key: 'chat', label: '互动消息', icon: 'chat-o', color: '#F59E0B', badge: 2 },
-  { key: 'notify', label: '账户通知', icon: 'bell-o', color: '#F97316', badge: 1 },
-  { key: 'vip', label: '会员服务', icon: 'gem-o', color: '#EAB308', badge: 0 },
+  { key: 'order', labelKey: 'categoryOrder', icon: 'orders-o', color: '#3B82F6', badge: 0 },
+  { key: 'chat', labelKey: 'categoryChat', icon: 'chat-o', color: '#F59E0B', badge: 2 },
+  { key: 'notify', labelKey: 'categoryNotify', icon: 'bell-o', color: '#F97316', badge: 1 },
+  { key: 'vip', labelKey: 'categoryVip', icon: 'gem-o', color: '#EAB308', badge: 0 },
 ])
 
 const conversations = ref([])
@@ -92,16 +92,16 @@ const showAIChat = ref(false)
 const activeConv = ref(null)
 const aiInitialMessages = ref([])
 const openConversation = (conv) => { activeConv.value = conv; aiInitialMessages.value = switchToSession(conv.id) || []; showAIChat.value = true }
-const deleteConversation = async (id) => { try { await showConfirmDialog({ title: '删除对话', message: '确定要删除这条对话记录吗？' }); deleteSession(id); loadConversations(); showToast({ message: '已删除', position: 'middle' }) } catch (e) {} }
+const deleteConversation = async (id) => { try { await showConfirmDialog({ title: t('profile.deleteConversationTitle'), message: t('profile.deleteConversationConfirm') }); deleteSession(id); loadConversations(); showToast({ message: t('profile.deleted'), position: 'middle' }) } catch (e) {} }
 const onAIChatClose = () => { showAIChat.value = false; activeConv.value = null; aiInitialMessages.value = []; loadConversations() }
 
 const notifications = ref([])
 const loadNotifications = () => { notifications.value = [{ id:1, type:'order', icon:'orders-o', iconColor:'#3B82F6', title:'行程规划已完成', preview:'您的"北京5日游"行程已生成', time: Date.now()-1800000, unread:true }, { id:2, type:'system', icon:'bell-o', iconColor:'#F97316', title:'系统通知', preview:'新版本已上线，新增AI智能对话功能', time: Date.now()-10800000, unread:true }, { id:3, type:'coupon', icon:'coupon-o', iconColor:'#F59E0B', title:'优惠券到账', preview:'恭喜您获得新人专享优惠券', time: Date.now()-86400000, unread:false }] }
 
-const formatMsgTime = (t) => { if(!t) return ''; const d=new Date(t), n=new Date(), h=Math.floor((n-d)/3600000); if(h<1) return '刚刚'; if(h<24) return h+'小时前'; if(h<48) return '昨天'; if(h<168) return Math.floor(h/24)+'天前'; return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0') }
-const getConvPreview = (c) => { if(!c.messages||!c.messages.length) return '新对话'; const m=[...c.messages].reverse(); const a=m.find(x=>x.type==='ai'&&x.content); if(a) return a.content.slice(0,50)+(a.content.length>50?'...':''); const u=m.find(x=>x.type==='user'&&x.content); return u?u.content.slice(0,50)+(u.content.length>50?'...':''):'新对话' }
-const handleCategoryClick = (cat) => { if(!isLoggedIn.value){router.push('/login');return}; if(cat.key==='order') router.push('/orders'); else showToast({message:'功能开发中',position:'middle'}) }
-const handleContactService = () => { showToast({message:'客服功能开发中',position:'middle'}) }
+const formatMsgTime = (ts) => { if(!ts) return ''; const d=new Date(ts), n=new Date(), h=Math.floor((n-d)/3600000); if(h<1) return t('profile.timeJustNow'); if(h<24) return t('profile.timeHoursAgo', { n: h }); if(h<48) return t('profile.timeYesterday'); if(h<168) return t('profile.timeDaysAgo', { n: Math.floor(h/24) }); return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0') }
+const getConvPreview = (c) => { if(!c.messages||!c.messages.length) return t('profile.newChat'); const m=[...c.messages].reverse(); const a=m.find(x=>x.type==='ai'&&x.content); if(a) return a.content.slice(0,50)+(a.content.length>50?'...':''); const u=m.find(x=>x.type==='user'&&x.content); return u?u.content.slice(0,50)+(u.content.length>50?'...':''):t('profile.newChat') }
+const handleCategoryClick = (cat) => { if(!isLoggedIn.value){router.push('/login');return}; if(cat.key==='order') router.push('/orders'); else showToast({message:t('profile.featureDeveloping'),position:'middle'}) }
+const handleContactService = () => { showToast({message:t('profile.serviceDeveloping'),position:'middle'}) }
 
 /* ==================== 工具 ==================== */
 const getBadgeContent = (num) => (num > 9 ? '9+' : String(num))
@@ -122,7 +122,7 @@ const handleAvatarClick = () => {
   catch (e) { console.error('handleAvatarClick 失败:', e) }
 }
 const handleLevelClick = () => {
-  try { if (!isLoggedIn.value) { router.push('/login'); return }; showToast('会员升级功能开发中') }
+  try { if (!isLoggedIn.value) { router.push('/login'); return }; showToast(t('profile.memberUpgradeDeveloping')) }
   catch (e) { console.error('handleLevelClick 失败:', e) }
 }
 const handleMetaClick = (type) => {
@@ -139,19 +139,19 @@ const handleEditClick = () => {
   } catch (e) { console.error('handleEditClick 失败:', e) }
 }
 const saveProfile = async () => {
-  if (!editForm.value.nickname.trim()) { showToast('昵称不能为空'); return }
-  const toast = showLoadingToast({ message: '保存中...', duration: 0, forbidClick: true })
+  if (!editForm.value.nickname.trim()) { showToast(t('profile.nicknameRequired')); return }
+  const toast = showLoadingToast({ message: t('profile.saving'), duration: 0, forbidClick: true })
   try {
     const response = await userApi.updateProfile({ nickname: editForm.value.nickname, bio: editForm.value.bio })
     if (response.code === 0) {
       const data = response.data; userInfo.nickname = data.nickname; userInfo.bio = data.bio || ''
       // 【多账号隔离】写入当前账号独立存储
       setMyData('userInfo', { ...userInfo })
-      localStorage.setItem('userInfo', JSON.stringify(userInfo)); showEditPopup.value = false; closeToast(); showToast('修改成功')
-    } else { closeToast(); showToast(response.message || '保存失败') }
+      localStorage.setItem('userInfo', JSON.stringify(userInfo)); showEditPopup.value = false; closeToast(); showToast(t('profile.updateSuccess'))
+    } else { closeToast(); showToast(response.message || t('profile.saveFailed')) }
   } catch (error) {
     // 保存失败：不写本地、不回退弹窗，提示重试（避免误报"已保存到本地"导致数据丢失）
-    closeToast(); showToast('保存失败，请重试')
+    closeToast(); showToast(t('profile.saveFailedRetry'))
   }
 }
 
@@ -160,28 +160,28 @@ const handleInvite = () => { if (!isLoggedIn.value) { router.push('/login'); ret
 const inviteOrigin = ref(window.location.origin)
 const inviteLink = computed(() => `${inviteOrigin.value}/register?invite=${userInfo.username || 'traveler'}`)
 const inviteShareOptions = [
-  { name: '微信好友', icon: 'wechat', color: '#07C160' },
-  { name: '朋友圈', icon: 'cluster-o', color: '#07C160' },
-  { name: '复制链接', icon: 'link-o', color: '#8B5CF6' },
-  { name: 'QQ好友', icon: 'chat-o', color: '#12B7F5' },
-  { name: '微博', icon: 'share-o', color: '#E6162D' },
-  { name: '保存二维码', icon: 'qr', color: '#3B82F6' },
+  { key: 'wechat', nameKey: 'shareWechatFriend', icon: 'wechat', color: '#07C160' },
+  { key: 'moments', nameKey: 'shareMoments', icon: 'cluster-o', color: '#07C160' },
+  { key: 'copyLink', nameKey: 'copyLink', icon: 'link-o', color: '#8B5CF6' },
+  { key: 'qq', nameKey: 'shareQQ', icon: 'chat-o', color: '#12B7F5' },
+  { key: 'weibo', nameKey: 'shareWeibo', icon: 'share-o', color: '#E6162D' },
+  { key: 'saveQr', nameKey: 'saveQr', icon: 'qr', color: '#3B82F6' },
 ]
 const handleInviteShare = async (opt) => {
-  if (opt.name === '复制链接') {
-    try { await navigator.clipboard.writeText(inviteLink.value); showToast('邀请链接已复制') } catch { showToast('复制失败') }
-  } else if (opt.name === '保存二维码') {
-    showToast('二维码功能开发中')
+  if (opt.key === 'copyLink') {
+    try { await navigator.clipboard.writeText(inviteLink.value); showToast(t('profile.inviteLinkCopied')) } catch { showToast(t('profile.copyFailed')) }
+  } else if (opt.key === 'saveQr') {
+    showToast(t('profile.qrDeveloping'))
   } else if (navigator.share) {
     try {
-      await navigator.share({ title: '智能旅游助手', text: '加入智能旅游助手，一起探索世界！', url: inviteLink.value })
+      await navigator.share({ title: t('app.name'), text: t('profile.inviteShareText'), url: inviteLink.value })
     } catch {}
   } else {
-    try { await navigator.clipboard.writeText(inviteLink.value); showToast(`已复制链接，请打开${opt.name}粘贴分享`) } catch { showToast('分享失败') }
+    try { await navigator.clipboard.writeText(inviteLink.value); showToast(t('profile.copyShareFor', { platform: t('profile.' + opt.nameKey) })) } catch { showToast(t('profile.shareFailed')) }
   }
 }
 const copyInviteLink = async () => {
-  try { await navigator.clipboard.writeText(inviteLink.value); showToast('邀请链接已复制') } catch { showToast('复制失败') }
+  try { await navigator.clipboard.writeText(inviteLink.value); showToast(t('profile.inviteLinkCopied')) } catch { showToast(t('profile.copyFailed')) }
 }
 const shareInvite = () => { showInvitePopup.value = true }
 const handleQuickAction = (item) => {
@@ -196,22 +196,22 @@ const handleServiceClick = (item) => {
 /* ==================== 退出登录 ==================== */
 const handleLogout = async () => {
   try {
-    await showConfirmDialog({ title: '确认退出', message: '确定要退出登录吗？' })
-    showLoadingToast({ message: '退出中...', duration: 0, forbidClick: true, loadingType: 'spinner' })
+    await showConfirmDialog({ title: t('profile.logoutConfirmTitle'), message: t('profile.logoutConfirmMessage') })
+    showLoadingToast({ message: t('profile.loggingOut'), duration: 0, forbidClick: true, loadingType: 'spinner' })
     try { await userApi.logout() } catch (error) { /* 后端失败继续清除 */ }
     finally {
       removeToken()
       // 【多账号隔离】退出仅清空会话缓存，保留账号持久化数据
       clearAccountSession()
       isLoggedIn.value = false; resetUserInfo(); closeToast()
-      showToast({ message: '已退出', position: 'middle' })
+      showToast({ message: t('profile.loggedOut'), position: 'middle' })
       setTimeout(() => router.push('/login'), 800)
     }
   } catch (e) { /* 取消 */ }
 }
 
 const resetUserInfo = () => {
-  userInfo.avatar = ''; userInfo.nickname = '旅行者'; userInfo.username = ''; userInfo.level = '普通会员'
+  userInfo.avatar = ''; userInfo.nickname = t('profile.traveler'); userInfo.username = ''; userInfo.level = t('profile.regularMember')
   userInfo.points = 0; userInfo.following = 0; userInfo.followers = 0; userInfo.travelNotes = 0; userInfo.bio = ''
   travelStats.citiesVisited = 0; travelStats.totalDays = 0; travelStats.totalSpent = 0; travelStats.totalPhotos = 0
   serviceList.value.forEach(item => item.badge = 0)
@@ -224,8 +224,8 @@ const loadProfile = async () => {
     if (response.code === 0) {
       const data = response.data
       userInfo.avatar = data.avatar || userInfo.avatar
-      userInfo.nickname = data.nickname || '旅行者'; userInfo.username = data.username || ''
-      userInfo.level = data.level || '普通会员'; userInfo.points = data.points || 0
+      userInfo.nickname = data.nickname || t('profile.traveler'); userInfo.username = data.username || ''
+      userInfo.level = data.level || t('profile.regularMember'); userInfo.points = data.points || 0
       userInfo.following = data.following || 0; userInfo.followers = data.followers || 0
       userInfo.travelNotes = data.travelNotes || 0; userInfo.bio = data.bio || ''
       travelStats.citiesVisited = data.citiesVisited || 0; travelStats.totalDays = data.totalDays || 0
@@ -262,10 +262,10 @@ const loadBadgeCounts = async () => {
 const goToLogin = () => router.push('/login')
 
 const statCards = [
-  { key: 'citiesVisited', label: '去过城市', icon: 'location-o', color: '#8B5CF6' },
-  { key: 'totalDays', label: '旅行天数', icon: 'calendar-o', color: '#6366F1' },
-  { key: 'totalSpent', label: '累计花费', icon: 'gold-coin-o', color: '#F59E0B', isMoney: true },
-  { key: 'totalPhotos', label: '旅行照片', icon: 'photo-o', color: '#34D399' },
+  { key: 'citiesVisited', labelKey: 'statCities', icon: 'location-o', color: '#8B5CF6' },
+  { key: 'totalDays', labelKey: 'statDays', icon: 'calendar-o', color: '#6366F1' },
+  { key: 'totalSpent', labelKey: 'statSpent', icon: 'gold-coin-o', color: '#F59E0B', isMoney: true },
+  { key: 'totalPhotos', labelKey: 'statPhotos', icon: 'photo-o', color: '#34D399' },
 ]
 
 onMounted(() => { if (isLoggedIn.value) { loadProfile(); loadBadgeCounts() } })
@@ -325,11 +325,11 @@ onDeactivated(() => {
               </div>
               <div v-if="userInfo.bio" class="hero-bio">{{ sanitizeHtml(userInfo.bio) }}</div>
               <div class="hero-meta">
-                <span @click="handleMetaClick('following')">{{ formatNumber(userInfo.following) }} 关注</span>
+                <span @click="handleMetaClick('following')">{{ formatNumber(userInfo.following) }} {{ t('profile.following') }}</span>
                 <i>·</i>
-                <span @click="handleMetaClick('followers')">{{ formatNumber(userInfo.followers) }} 粉丝</span>
+                <span @click="handleMetaClick('followers')">{{ formatNumber(userInfo.followers) }} {{ t('profile.followers') }}</span>
                 <i>·</i>
-                <span @click="handleMetaClick('notes')">{{ formatNumber(userInfo.travelNotes) }} 游记</span>
+                <span @click="handleMetaClick('notes')">{{ formatNumber(userInfo.travelNotes) }} {{ t('profile.notes') }}</span>
               </div>
             </div>
           </div>
@@ -343,17 +343,17 @@ onDeactivated(() => {
               <div class="stat-val">
                 {{ s.isMoney ? '¥' + formatMoney(travelStats[s.key]) : formatNumber(travelStats[s.key]) }}
               </div>
-              <div class="stat-lbl">{{ s.label }}</div>
+              <div class="stat-lbl">{{ t('profile.' + s.labelKey) }}</div>
             </div>
           </div>
 
           <!-- 操作按钮 -->
           <div class="hero-actions">
             <button class="hero-act primary-act btn-tap-scale" @click="handleWriteNote">
-              <van-icon name="edit" size="16" /> 写游记
+              <van-icon name="edit" size="16" /> {{ t('profile.writeNote') }}
             </button>
             <button class="hero-act second-act btn-tap-scale" @click="() => router.push('/trips')">
-              <van-icon name="bookmark-o" size="16" /> 我的规划
+              <van-icon name="bookmark-o" size="16" /> {{ t('profile.planShortcut') }}
             </button>
           </div>
         </template>
@@ -367,27 +367,27 @@ onDeactivated(() => {
             </div>
             <div class="hero-info">
               <div class="hero-name-row">
-                <span class="hero-name">旅行者</span>
+                <span class="hero-name">{{ t('profile.traveler') }}</span>
               </div>
-              <div class="hero-bio">登录后享受更多专属旅行服务</div>
+              <div class="hero-bio">{{ t('profile.guestHint') }}</div>
             </div>
           </div>
           <div class="hero-actions">
-            <button class="hero-act primary-act btn-tap-scale" @click="goToLogin">立即登录</button>
-            <button class="hero-act second-act btn-tap-scale" @click="router.push('/register')">注册账号</button>
+            <button class="hero-act primary-act btn-tap-scale" @click="goToLogin">{{ t('auth.loginNow') }}</button>
+            <button class="hero-act second-act btn-tap-scale" @click="router.push('/register')">{{ t('auth.registerAccount') }}</button>
           </div>
         </template>
       </div>
 
       <!-- ======== 快捷操作 ======== -->
       <div class="section-card entrance-item entrance-d2">
-        <div class="sec-head"><span class="sec-title">快捷操作</span></div>
+        <div class="sec-head"><span class="sec-title">{{ t('profile.quickActions') }}</span></div>
         <div class="quick-row">
           <div v-for="(item, i) in quickActions" :key="i" class="quick-block" @click="handleQuickAction(item)">
             <div class="quick-block-icon" :style="{ background: `${item.color}18` }">
               <van-icon :name="item.icon" :color="item.color" size="22" />
             </div>
-            <span class="quick-block-label">{{ item.name }}</span>
+            <span class="quick-block-label">{{ t('profile.' + item.nameKey) }}</span>
           </div>
         </div>
       </div>
@@ -400,22 +400,22 @@ onDeactivated(() => {
               <div class="cat-icon" :style="{ background: `${cat.color}14` }"><van-icon :name="cat.icon" :color="cat.color" size="22" /></div>
               <van-badge v-if="cat.badge > 0" :content="cat.badge" class="cat-badge" />
             </div>
-            <span class="cat-label">{{ cat.label }}</span>
+            <span class="cat-label">{{ t('profile.' + cat.labelKey) }}</span>
           </div>
         </div>
       </div>
 
       <!-- ======== AI 对话记录 ======== -->
       <div class="section-card" v-if="isLoggedIn">
-        <div class="sec-head"><span class="sec-title">AI 对话记录</span></div>
+        <div class="sec-head"><span class="sec-title">{{ t('profile.aiChatHistory') }}</span></div>
         <div v-if="conversations.length === 0" class="empty-conv-wrap">
-          <EmptyState icon="chat-o" title="暂无AI对话" desc="前往首页使用AI规划行程" btn-text="去首页看看" btn-type="gradient" @btn-click="() => router.push('/')" />
+          <EmptyState icon="chat-o" :title="t('profile.noAIHistory')" :desc="t('profile.noAIHistoryDesc')" :btn-text="t('profile.goHomeToTry')" btn-type="gradient" @btn-click="() => router.push('/')" />
         </div>
         <div v-else class="conv-list">
           <div v-for="conv in conversations" :key="conv.id" class="conv-card">
             <div class="conv-accent" />
             <div class="conv-info" @click="openConversation(conv)">
-              <div class="conv-top-row"><span class="conv-title">{{ conv.title || '未命名对话' }}</span><span class="conv-time">{{ formatMsgTime(conv.updatedAt) }}</span></div>
+              <div class="conv-top-row"><span class="conv-title">{{ conv.title || t('profile.unnamedChat') }}</span><span class="conv-time">{{ formatMsgTime(conv.updatedAt) }}</span></div>
               <p class="conv-preview">{{ getConvPreview(conv) }}</p>
             </div>
             <div class="conv-actions"><van-icon name="arrow" size="16" color="#CBD5E1" class="conv-arrow" @click="openConversation(conv)" /><van-icon name="delete-o" size="18" color="#EF4444" class="conv-delete" @click.stop="deleteConversation(conv.id)" /></div>
@@ -425,8 +425,8 @@ onDeactivated(() => {
 
       <!-- ======== 消息通知 ======== -->
       <div class="section-card" v-if="isLoggedIn">
-        <div class="sec-head"><span class="sec-title">消息通知</span></div>
-        <div v-if="notifications.length === 0" class="empty-notif"><p class="empty-notif-title">暂无更多消息</p><p class="empty-notif-hint">您的订单通知、优惠活动都会在这里显示</p></div>
+        <div class="sec-head"><span class="sec-title">{{ t('profile.notifications') }}</span></div>
+        <div v-if="notifications.length === 0" class="empty-notif"><p class="empty-notif-title">{{ t('profile.noMoreMessages') }}</p><p class="empty-notif-hint">{{ t('profile.notificationsHint') }}</p></div>
         <div v-else class="notif-list">
           <div v-for="item in notifications" :key="item.id" class="notif-item" :class="{ unread: item.unread }">
             <div class="notif-icon-wrap"><div class="notif-icon" :style="{ background: `${item.iconColor}14` }"><van-icon :name="item.icon" :color="item.iconColor" size="20" /></div><span v-if="item.unread" class="notif-dot" /></div>
@@ -437,7 +437,7 @@ onDeactivated(() => {
 
       <!-- ======== 我的服务 ======== -->
       <div class="section-card">
-        <div class="sec-head"><span class="sec-title">我的服务</span></div>
+        <div class="sec-head"><span class="sec-title">{{ t('profile.myServices') }}</span></div>
         <div class="service-list">
           <div v-for="(item, i) in serviceList" :key="i" class="svc-item" @click="handleServiceClick(item)">
             <div class="svc-left">
@@ -445,8 +445,8 @@ onDeactivated(() => {
                 <van-icon :name="item.icon" :color="item.color" size="20" />
               </div>
               <div class="svc-text">
-                <div class="svc-name">{{ item.name }}</div>
-                <div class="svc-desc">{{ item.desc }}</div>
+                <div class="svc-name">{{ t('profile.' + item.nameKey) }}</div>
+                <div class="svc-desc">{{ t('profile.' + item.descKey) }}</div>
               </div>
             </div>
             <div class="svc-right">
@@ -479,13 +479,13 @@ onDeactivated(() => {
             :key="opt.value"
             :class="['theme-opt', { active: locale === opt.value }]"
             @click="changeLanguage(opt.value)"
-          >{{ opt.label }}</button>
+          >{{ t(`settings.${opt.labelKey}`) }}</button>
         </div>
       </div>
 
       <!-- ======== 退出登录 ======== -->
       <div v-if="isLoggedIn" class="logout-wrap">
-        <button class="logout-btn btn-tap-scale" @click="handleLogout">退出登录</button>
+        <button class="logout-btn btn-tap-scale" @click="handleLogout">{{ t('common.logout') }}</button>
       </div>
 
       <div style="height: 8px;" />
@@ -496,17 +496,17 @@ onDeactivated(() => {
     <!-- ======== 编辑资料弹窗 ======== -->
     <van-popup v-model:show="showEditPopup" position="bottom" :style="{ height: '42%' }" round>
       <div class="pop-header">
-        <span class="pop-title">编辑资料</span>
+        <span class="pop-title">{{ t('profile.editProfile') }}</span>
         <van-icon name="cross" size="20" @click="showEditPopup = false" />
       </div>
       <div class="pop-body">
         <van-cell-group inset>
-          <van-field v-model="editForm.nickname" label="昵称" placeholder="请输入昵称" maxlength="20" />
-          <van-field v-model="editForm.bio" label="个性签名" placeholder="介绍一下自己吧" maxlength="100" type="textarea" :rows="3" />
+          <van-field v-model="editForm.nickname" :label="t('profile.nickname')" :placeholder="t('profile.enterNickname')" maxlength="20" />
+          <van-field v-model="editForm.bio" :label="t('profile.bio')" :placeholder="t('profile.bioIntro')" maxlength="100" type="textarea" :rows="3" />
         </van-cell-group>
         <div class="pop-btns">
-          <van-button type="default" block class="pop-btn" @click="showEditPopup = false">取消</van-button>
-          <van-button type="primary" block class="pop-btn pop-btn-primary" @click="saveProfile">保存</van-button>
+          <van-button type="default" block class="pop-btn" @click="showEditPopup = false">{{ t('common.cancel') }}</van-button>
+          <van-button type="primary" block class="pop-btn pop-btn-primary" @click="saveProfile">{{ t('common.save') }}</van-button>
         </div>
       </div>
     </van-popup>
@@ -517,17 +517,17 @@ onDeactivated(() => {
         <van-icon name="cross" size="20" class="invite-close" @click="showInvitePopup = false" />
         <div class="invite-head">
           <van-icon name="gift-o" size="42" color="#8B5CF6" />
-          <h3>邀请好友</h3>
-          <p>邀请好友注册，双方获得专属旅行优惠券</p>
+          <h3>{{ t('profile.invite') }}</h3>
+          <p>{{ t('profile.inviteDesc') }}</p>
         </div>
         <div class="invite-link-box" @click="copyInviteLink">
           <span class="invite-link">{{ inviteLink }}</span>
           <van-icon name="description" size="16" color="#8B5CF6" />
         </div>
         <div class="share-grid">
-          <div v-for="opt in inviteShareOptions" :key="opt.name" class="share-option" @click="handleInviteShare(opt)">
+          <div v-for="opt in inviteShareOptions" :key="opt.key" class="share-option" @click="handleInviteShare(opt)">
             <div class="share-icon-circle" :style="{ background: opt.color }"><van-icon :name="opt.icon" size="22" color="#fff" /></div>
-            <span class="share-label">{{ opt.name }}</span>
+            <span class="share-label">{{ t('profile.' + opt.nameKey) }}</span>
           </div>
         </div>
       </div>

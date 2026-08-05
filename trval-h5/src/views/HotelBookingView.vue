@@ -5,11 +5,13 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { hotelApi } from '../api'
 
 const router = useRouter()
+const { t } = useI18n()
 const goBack = () => router.back()
 
 /* ==================== 城市选择 ==================== */
@@ -77,7 +79,7 @@ const openBook = (hotel) => {
 }
 
 const confirmBook = async () => {
-  if (!getToken()) { showToast('请先登录'); router.push('/login'); return }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); router.push('/login'); return }
   try {
     const res = await hotelApi.bookHotel({
       hotelId: bookingHotel.value.id,
@@ -86,14 +88,14 @@ const confirmBook = async () => {
       rooms: rooms.value,
     })
     if (res.code === 0) {
-      showToast('预订成功，待支付')
+      showToast(t('booking.successPending'))
       showBook.value = false
       router.push('/orders')
     } else {
-      showToast(res.message || '预订失败')
+      showToast(res.message || t('booking.fail'))
     }
   } catch (e) {
-    showToast('预订失败，请稍后重试')
+    showToast(t('booking.failRetry'))
   }
 }
 
@@ -102,7 +104,7 @@ onMounted(() => { loadHotels(currentCity.value) })
 
 <template>
   <div class="booking-page">
-    <van-nav-bar title="酒店预订" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('booking.title')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <!-- 城市切换 -->
     <div class="city-chips">
@@ -116,18 +118,18 @@ onMounted(() => { loadHotels(currentCity.value) })
     <!-- 酒店列表 -->
     <div class="hotel-list">
       <van-skeleton v-if="loading" title avatar row="3" />
-      <div v-else-if="hotels.length === 0" class="empty">该城市暂无可用酒店</div>
+      <div v-else-if="hotels.length === 0" class="empty">{{ t('booking.noHotels') }}</div>
       <div v-for="h in hotels" :key="h.id" class="hotel-card" @click="openBook(h)">
         <img :src="h.imageUrl" class="hotel-img" alt="" loading="lazy" />
         <div class="hotel-info">
           <div class="hotel-name">{{ h.name }}</div>
           <div class="hotel-addr">{{ h.address }}</div>
           <div class="hotel-meta">
-            <span class="hotel-price">¥{{ h.pricePerNight }}/晚</span>
+            <span class="hotel-price">¥{{ h.pricePerNight }}/{{ t('common.night') }}</span>
             <span class="hotel-rating">⭐ {{ h.rating }}</span>
           </div>
         </div>
-        <van-button size="small" type="primary" round class="book-btn">预订</van-button>
+        <van-button size="small" type="primary" round class="book-btn">{{ t('booking.book') }}</van-button>
       </div>
     </div>
 
@@ -137,23 +139,23 @@ onMounted(() => { loadHotels(currentCity.value) })
         <div class="pop-title">{{ bookingHotel.name }}</div>
 
         <div class="form-row">
-          <label>入住日期</label>
+          <label>{{ t('booking.checkInDate') }}</label>
           <input v-model="checkIn" type="date" class="date-input" :min="todayStr(0)" />
         </div>
         <div class="form-row">
-          <label>住宿晚数</label>
+          <label>{{ t('booking.nights') }}</label>
           <van-stepper v-model="nights" min="1" max="30" />
         </div>
         <div class="form-row">
-          <label>房间数</label>
+          <label>{{ t('booking.rooms') }}</label>
           <van-stepper v-model="rooms" min="1" max="9" />
         </div>
         <div class="form-row">
-          <span class="form-note">离店 {{ checkOut }}</span>
-          <span class="pop-price">合计 ¥{{ totalPrice }}</span>
+          <span class="form-note">{{ t('booking.checkOutAt') }} {{ checkOut }}</span>
+          <span class="pop-price">{{ t('booking.total') }} ¥{{ totalPrice }}</span>
         </div>
 
-        <van-button block type="primary" class="confirm-btn" @click="confirmBook">确认预订</van-button>
+        <van-button block type="primary" class="confirm-btn" @click="confirmBook">{{ t('booking.confirmBook') }}</van-button>
       </template>
     </van-popup>
   </div>

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "社交")
 public class CommentController {
 
     private static final Logger log = LoggerFactory.getLogger(CommentController.class);

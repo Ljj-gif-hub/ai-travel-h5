@@ -64,31 +64,31 @@ const handlePay = async (order) => {
       // 模拟渠道：跳转 mock 支付地址即完成支付（真实渠道此处跳第三方收银台）
       const mock = await paymentApi.mockPay(res.data.orderNo)
       if (mock.code === 0) {
-        showToast('模拟支付成功')
+        showToast(t('payment.mockSuccess'))
       } else {
-        showToast(mock.message || '支付失败')
+        showToast(mock.message || t('payment.payFail'))
       }
     } else {
-      showToast(res.message || '支付失败')
+      showToast(res.message || t('payment.payFail'))
     }
     loadOrders(activeTab.value === 'all' ? '' : activeTab.value)
-  } catch (error) { showToast('支付失败') }
+  } catch (error) { showToast(t('payment.payFail')) }
 }
 
 const handleCancel = async (order) => {
   try {
     const response = await orderApi.cancelOrder(order.id)
     if (response.code === 0) {
-      showToast('取消成功')
+      showToast(t('orders.cancelSuccess'))
       loadOrders(activeTab.value === 'all' ? '' : activeTab.value)
     } else {
-      showToast(response.message || '取消失败')
+      showToast(response.message || t('orders.cancelFail'))
     }
-  } catch (error) { showToast('取消失败') }
+  } catch (error) { showToast(t('orders.cancelFail')) }
 }
 
 const getStatusText = (status) => {
-  const map = { pending: t('orders.pending'), paid: t('orders.paid'), completed: t('orders.completed'), cancelled: t('orders.cancelled'), refunded: '已退款' }
+  const map = { pending: t('orders.pending'), paid: t('orders.paid'), completed: t('orders.completed'), cancelled: t('orders.cancelled'), refunded: t('orders.refunded') }
   return map[status] || status
 }
 
@@ -135,17 +135,17 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
           <!-- 错误兜底 -->
           <div v-else-if="loadError" class="error-state">
             <van-icon name="warn-o" size="48" color="#94A3B8" />
-            <p class="error-text">加载失败，请稍后重试</p>
-            <van-button round plain type="primary" size="small" class="retry-btn" @click="loadOrders(activeTab === 'all' ? '' : activeTab)">重新加载</van-button>
+            <p class="error-text">{{ t('common.requestFailed') }}</p>
+            <van-button round plain type="primary" size="small" class="retry-btn" @click="loadOrders(activeTab === 'all' ? '' : activeTab)">{{ t('common.retry') }}</van-button>
           </div>
 
           <!-- 空状态 -->
           <EmptyState
             v-else-if="orders.length === 0"
             icon="orders-o"
-            title="暂无订单"
-            desc="您还没有任何订单，快去看看吧"
-            btn-text="去看看"
+            :title="t('orders.noOrders')"
+            :desc="t('orders.noOrdersDesc')"
+            :btn-text="t('orders.goExplore')"
             btn-type="outline"
             @btn-click="handleGoExplore"
           />
@@ -154,7 +154,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
           <div v-else class="orders-list">
             <div v-for="order in orders" :key="order.id" class="order-card">
               <div class="order-header">
-                <span class="order-no">订单号：{{ order.orderNo }}</span>
+                <span class="order-no">{{ t('orders.orderNo') }}：{{ order.orderNo }}</span>
                 <span class="order-status" :style="{ color: getStatusColor(order.status) }">{{ getStatusText(order.status) }}</span>
               </div>
 
@@ -174,12 +174,12 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
                 <template v-else-if="order.type === 'hotel'">
                   <div class="type-badge badge-hotel">{{ t('orders.hotel') }}</div>
                   <div class="info-name">{{ order.hotelName }}</div>
-                  <div class="info-date">入住：{{ order.checkIn }} — 离店：{{ order.checkOut }}</div>
+                  <div class="info-date">{{ t('orders.checkIn') }}：{{ order.checkIn }} — {{ t('orders.checkOut') }}：{{ order.checkOut }}</div>
                 </template>
                 <template v-else-if="order.type === 'ticket'">
                   <div class="type-badge badge-ticket">{{ t('orders.ticket') }}</div>
                   <div class="info-name">{{ order.scenicName }}</div>
-                  <div class="info-date">游玩日期：{{ order.date }}</div>
+                  <div class="info-date">{{ t('orders.playDate') }}：{{ order.date }}</div>
                 </template>
               </div>
 

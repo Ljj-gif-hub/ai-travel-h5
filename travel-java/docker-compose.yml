@@ -1,0 +1,97 @@
+# ================================================================
+# 生产部署编排：MySQL + Redis + RabbitMQ + 应用（可横向扩容）
+#
+# 用法：
+#   docker compose up -d --build              # 构建并启动
+#   docker compose up -d --build --scale app=2   # 2 个应用实例（配合 nginx 负载均衡）
+#
+# 环境变量可在 .env 中覆盖，最小必填：JWT_SECRET（应用启动强制校验）
+# ================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: travel-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-travel_plans}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travel_root_2026}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-travel_root_2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: travel-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: travel-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # 管理台 http://localhost:15672
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: travel-java:latest
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql,prod
+      JWT_SECRET: ${JWT_SECRET:?请设置 JWT_SECRET（>=32字符）}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-travel_plans}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travel_root_2026}
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
+      MQ_ENABLED: ${MQ_ENABLED:-true}
+      MQ_LISTENER_AUTO_STARTUP: "true"
+      # AI 供应商 Key（可选，配置后可用真实 LLM）
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # 地图 Key（可选）
+      AMAP_WEB_KEY: ${AMAP_WEB_KEY:-}
+      BAIDU_MAP_AK: ${BAIDU_MAP_AK:-}
+    ports:
+      - "3200:3200"
+
+volumes:
+  mysql-data:
+  redis-data:
+  rabbitmq-data:

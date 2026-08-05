@@ -6,21 +6,23 @@
  */
 import { ref, onMounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { couponApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 
 const goBack = () => { router.back() }
 
 /* ==================== 分类 Tab ==================== */
 const activeTab = ref('unused')
 const tabs = [
-  { name: '未使用', key: 'unused' },
-  { name: '已使用', key: 'used' },
-  { name: '已过期', key: 'expired' },
+  { nameKey: 'unused', key: 'unused' },
+  { nameKey: 'used', key: 'used' },
+  { nameKey: 'expired', key: 'expired' },
 ]
 
 /* ==================== 列表数据 ==================== */
@@ -57,12 +59,12 @@ const handleUse = async (coupon) => {
   try {
     const response = await couponApi.useCoupon(coupon.id, null)
     if (response.code === 0) {
-      showToast('使用成功')
+      showToast(t('wallet.useSuccess'))
       loadCoupons(activeTab.value)
     } else {
-      showToast(response.message || '使用失败')
+      showToast(response.message || t('wallet.useFail'))
     }
-  } catch (error) { showToast('使用失败') }
+  } catch (error) { showToast(t('wallet.useFail')) }
 }
 
 const handleGoExplore = () => { router.push('/') }
@@ -78,11 +80,11 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 <template>
   <div class="page-shell">
     <!-- 顶部导航 -->
-    <van-nav-bar title="优惠券" left-text="返回" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('wallet.title')" :left-text="t('common.back')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <!-- 分类 Tab -->
     <van-tabs v-model:active="activeTab" @change="handleTabChange" class="page-tabs" :duration="0.25" swipeable>
-      <van-tab v-for="tab in tabs" :key="tab.key" :title="tab.name" />
+      <van-tab v-for="tab in tabs" :key="tab.key" :title="t('wallet.' + tab.nameKey)" />
     </van-tabs>
 
     <div class="page-content">
@@ -94,17 +96,17 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
           <!-- 错误兜底 -->
           <div v-else-if="loadError" class="error-state">
             <van-icon name="warn-o" size="48" color="#94A3B8" />
-            <p class="error-text">加载失败，请稍后重试</p>
-            <van-button round plain class="retry-btn" size="small" @click="loadCoupons(activeTab)">重新加载</van-button>
+            <p class="error-text">{{ t('common.requestFailed') }}</p>
+            <van-button round plain class="retry-btn" size="small" @click="loadCoupons(activeTab)">{{ t('common.retry') }}</van-button>
           </div>
 
           <!-- 空状态 -->
           <EmptyState
             v-else-if="coupons.length === 0"
             icon="coupon-o"
-            title="暂无优惠券"
-            desc="参与活动即可领取专属优惠券"
-            btn-text="去看看"
+            :title="t('wallet.noCoupons')"
+            :desc="t('wallet.noCouponsDesc')"
+            :btn-text="t('wallet.goExplore')"
             btn-type="outline"
             @btn-click="handleGoExplore"
           />
@@ -122,15 +124,15 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
                   <span class="value-symbol">¥</span>
                   <span class="value-num">{{ coupon.value }}</span>
                 </div>
-                <div v-if="coupon.minAmount" class="coupon-condition">满{{ coupon.minAmount }}可用</div>
+                <div v-if="coupon.minAmount" class="coupon-condition">{{ t('wallet.minSpend', { n: coupon.minAmount }) }}</div>
               </div>
               <div class="coupon-right">
                 <div class="coupon-title">{{ coupon.title }}</div>
-                <div class="coupon-category">{{ coupon.category || '通用' }}</div>
-                <div class="coupon-date">有效期至 {{ coupon.validUntil }}</div>
+                <div class="coupon-category">{{ coupon.category || t('wallet.general') }}</div>
+                <div class="coupon-date">{{ t('wallet.validUntil') }} {{ coupon.validUntil }}</div>
               </div>
               <div v-if="activeTab === 'unused'" class="coupon-action">
-                <van-button class="use-btn" size="small" @click="handleUse(coupon)">立即使用</van-button>
+                <van-button class="use-btn" size="small" @click="handleUse(coupon)">{{ t('wallet.useNow') }}</van-button>
               </div>
               <div v-else class="coupon-status">
                 <van-icon :name="activeTab === 'used' ? 'checked' : 'clock-o'" size="20" :color="activeTab === 'used' ? '#22c55e' : '#F59E0B'" />

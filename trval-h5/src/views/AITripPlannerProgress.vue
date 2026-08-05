@@ -1,11 +1,13 @@
 ﻿<script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 
 defineOptions({ name: 'AITripPlannerProgress' })
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 const progress = ref(0)
 const currentStep = ref('')
@@ -70,7 +72,7 @@ const connect = () => {
     // 自动重试2次
     for (let retry = 1; retry <= 2; retry++) {
       if (isFinish.value || isStopping.value) return
-      summary.value = `连接失败，正在重试(${retry}/2)...`
+      summary.value = t('agent.retryMsg', { retry })
       await new Promise(r => setTimeout(r, 2000))
       try {
         abortCtrl = new AbortController()
@@ -86,8 +88,8 @@ const connect = () => {
         return // 重连成功
       } catch (e3) { if (e3.name === 'AbortError') return }
     }
-    hasError.value = true; summary.value = '❌ 连接失败，请返回重新规划'
-    showToast({ message: 'AI服务连接失败，请稍后重试', position: 'middle', duration: 2500 })
+    hasError.value = true; summary.value = t('agent.connectFailed')
+    showToast({ message: t('agent.aiConnectFailed'), position: 'middle', duration: 2500 })
   })
 }
 
@@ -117,14 +119,14 @@ const handleEvent = (data) => {
     case 'task-stop':
       if (abortCtrl) { abortCtrl.abort(); abortCtrl = null }
       isFinish.value = true; isStopping.value = false
-      summary.value = '行程生成已终止'
-      showToast({ message: '行程生成已终止', position: 'middle', duration: 1500 })
+      summary.value = t('agent.genTerminated')
+      showToast({ message: t('agent.genTerminated'), position: 'middle', duration: 1500 })
       setTimeout(() => { try { router.back() } catch (e) { router.push('/ai-planner') } }, 800)
       break
     case 'stream-error':
       hasError.value = true
-      summary.value = '❌ ' + (data.message || '生成失败')
-      showToast({ message: data.message || 'AI生成失败，请重试', position: 'middle', duration: 2500 })
+      summary.value = '❌ ' + (data.message || t('agent.genFailed'))
+      showToast({ message: data.message || t('agent.aiGenFailedRetry'), position: 'middle', duration: 2500 })
       break
   }
 }
@@ -141,9 +143,9 @@ const stopFlow = async () => {
       body: JSON.stringify({ taskId: taskId.value }),
     }).catch(() => {})
   }
-  showToast({ message: '正在终止行程生成', position: 'middle', duration: 1200 })
+  showToast({ message: t('agent.terminatingGen'), position: 'middle', duration: 1200 })
   isFinish.value = true
-  summary.value = '行程生成已终止'
+  summary.value = t('agent.genTerminated')
   // 3. 延迟回退
   setTimeout(() => {
     try { router.back() } catch (e) { router.push('/ai-planner') }
@@ -171,7 +173,7 @@ onUnmounted(() => {
     <!-- 顶部 -->
     <div class="pg-header">
       <button class="pg-back" @click="goBack">←</button>
-      <span class="pg-title">AI 行程助手</span>
+      <span class="pg-title">{{ t('agent.title') }}</span>
     </div>
 
     <!-- 偏好标签 -->
@@ -187,7 +189,7 @@ onUnmounted(() => {
       <div class="progress-bar">
         <div class="progress-fill" :style="{ width: progressPercent }"></div>
       </div>
-      <span class="progress-label">线路正在生成中...({{ progressPercent }})</span>
+      <span class="progress-label">{{ t('agent.generatingLine', { pct: progressPercent }) }}</span>
       <span class="collapse-arrow">{{ collapsed ? '▸' : '▾' }}</span>
     </div>
 
@@ -212,7 +214,7 @@ onUnmounted(() => {
     <div class="preview-area" v-if="previewData && Object.keys(previewData).length">
       <!-- 景点 -->
       <div v-if="previewData.spots" class="preview-card spots-card">
-        <div class="pc-title">🏔️ 热门景点</div>
+        <div class="pc-title">🏔️ {{ t('agent.hotSpots') }}</div>
         <div class="spot-scroll">
           <div v-for="(s, i) in previewData.spots" :key="i" class="spot-item">
             <div class="spot-img-plc"></div>
@@ -223,8 +225,8 @@ onUnmounted(() => {
       </div>
       <!-- 酒店 -->
       <div v-if="previewData.count && previewData.range" class="preview-card hotel-card">
-        <div class="pc-title">🏨 酒店筛选</div>
-        <div class="hotel-stat">{{ previewData.count }}家酒店 · {{ previewData.range }}</div>
+        <div class="pc-title">🏨 {{ t('agent.hotelFilter') }}</div>
+        <div class="hotel-stat">{{ t('agent.hotelCount', { count: previewData.count }) }} · {{ previewData.range }}</div>
         <div class="map-placeholder">
           <svg viewBox="0 0 200 120" fill="none">
             <rect width="200" height="120" rx="10" fill="#e8f4f8"/>
@@ -236,7 +238,7 @@ onUnmounted(() => {
       </div>
       <!-- 交通 -->
       <div v-if="previewData.flights" class="preview-card traffic-card">
-        <div class="pc-title">✈️ 交通方案</div>
+        <div class="pc-title">✈️ {{ t('agent.transportPlan') }}</div>
         <div v-for="(f, i) in previewData.flights" :key="i" class="flight-row">
           <span>{{ f.from }} → {{ f.to }}</span>
           <span class="flight-info">{{ f.type }} · {{ f.duration }}</span>
@@ -244,7 +246,7 @@ onUnmounted(() => {
       </div>
       <!-- 贴士 -->
       <div v-if="previewData.tips" class="preview-card tips-card">
-        <div class="pc-title">💡 旅行贴士</div>
+        <div class="pc-title">💡 {{ t('agent.travelTips') }}</div>
         <div v-for="(t, i) in previewData.tips" :key="i" class="tip-item">
           <div class="tip-title">{{ t.title }}</div>
           <div class="tip-content">{{ t.content }}</div>
@@ -260,15 +262,15 @@ onUnmounted(() => {
     <!-- 完成动画 -->
     <div v-if="isFinish && progress >= 100" class="finish-overlay">
       <div class="finish-check">✓</div>
-      <div class="finish-text">行程生成完毕，即将跳转...</div>
+      <div class="finish-text">{{ t('agent.genCompleteJump') }}</div>
     </div>
 
     <!-- 停止 / 重试 -->
     <div class="stop-bar" v-if="!isFinish || hasError">
       <button class="stop-btn" :disabled="isStopping" @click="stopFlow" v-if="!hasError">
-        {{ isStopping ? '正在终止...' : '停止生成' }}
+        {{ isStopping ? t('agent.terminating') : t('agent.stopGenerate') }}
       </button>
-      <button class="stop-btn retry" @click="$router.back()" v-else>返回重新规划</button>
+      <button class="stop-btn retry" @click="$router.back()" v-else>{{ t('agent.returnReplan') }}</button>
     </div>
   </div>
 </template>

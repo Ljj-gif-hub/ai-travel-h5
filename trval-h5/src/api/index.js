@@ -145,6 +145,14 @@ export const hotelApi = {
   bookHotel: (data) => request('/hotel/book', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+export const flightApi = {
+  /** 航班搜索（mock/real 供应方）— GET /api/flight/search */
+  searchFlights: (fromCity, toCity, date) =>
+    request(`/flight/search?fromCity=${encodeURIComponent(fromCity)}&toCity=${encodeURIComponent(toCity)}&date=${date}`),
+  /** 机票下单（需登录）— POST /api/flight/book */
+  bookFlight: (data) => request('/flight/book', { method: 'POST', body: JSON.stringify(data) }),
+};
+
 export const noteApi = {
   /** 社区发现页：分页获取所有用户已发布的游记 */
   getAllNotes: (page = 1, size = 10) => request(`/notes?page=${page}&size=${size}`),
@@ -252,6 +260,16 @@ export const chatApi = {
 export const mapApi = {
   getSuggestion: (keyword) => request(`/map/suggestion?keyword=${encodeURIComponent(keyword)}`),
   geocode: (address) => request(`/map/geocode?address=${encodeURIComponent(address)}`),
+};
+
+export const recommendApi = {
+  /** 个性化/热门目的地推荐 — GET /api/recommend/destinations */
+  getRecommendDestinations: (limit = 10) => request(`/recommend/destinations?limit=${limit}`),
+  /** 通用推荐（收藏/游记驱动）— GET /api/recommend/items */
+  getRecommendItems: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/recommend/items${qs ? `?${qs}` : ''}`);
+  },
 };
 
 export const shareApi = {

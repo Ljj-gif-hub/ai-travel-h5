@@ -229,6 +229,22 @@ travel-java/
 
 > 支付为「可配置对接层」：`payment.provider=mock|alipay|wechat`，未配置商户密钥默认走 mock；填 Key 即切换真实渠道。
 
+### 机票预订 / 智能推荐 / 监控指标（🆕）
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/flight/search` | GET | 航班搜索（fromCity/toCity/date，供应方可切换） |
+| `/api/flight/book` | POST | 机票下单（创建 flight 订单，需登录） |
+| `/api/recommend/items` | GET | 智能推荐（内容+协同+热门混合，登录个性化/未登录热门） |
+| `/api/recommend/destinations` | GET | 目的地推荐（行程目的地 + 城市收藏 + 热门兜底） |
+| `/swagger-ui.html` / `/v3/api-docs` | GET | Swagger/OpenAPI 接口文档 |
+| `/actuator/health` / `/actuator/prometheus` | GET | 健康检查 / Prometheus 监控指标 |
+
+**多数据库**：默认 H2 零配置；`--spring.profiles.active=mysql` 或 `=postgres` 切换，参数全部可经环境变量覆盖。
+**消息队列**：`app.mq.enabled=true` 启用 RabbitMQ 异步处理（订单支付成功事件 → 异步审计落库）；默认关闭走同步降级，无 MQ 也能运行。
+**监控**：`/actuator/prometheus` 暴露 JVM/HTTP/自定义业务指标（AI 调用、行程生成、推荐、MQ 事件）。
+**分布式**：`docker-compose.yml` 编排 MySQL/Redis/RabbitMQ/应用（`--scale app=2` 水平扩容），`deploy/nginx.conf` 提供负载均衡与 SSE 转发示例。
+
 ### 地图数据
 
 | 接口 | 方法 | 说明 |
@@ -270,19 +286,20 @@ travel-java/
 - [x] 安全响应头过滤器
 - [x] 评论回复功能（二级嵌套）
 - [x] 关注/粉丝数据隔离
-- [ ] Swagger/OpenAPI 接口文档
-- [ ] 完善日志系统和监控指标
+- [x] Swagger/OpenAPI 接口文档（springdoc，`/swagger-ui.html` + `/v3/api-docs`）
+- [x] 完善日志系统和监控指标（logback-spring.xml 滚动文件 + Actuator + Prometheus）
 
 ### 中期目标
-- [x] RAG 知识库整合旅游攻略（Agent 内置语料 + 本地向量检索）
+- [x] RAG 知识库整合旅游攻略（Agent 内置语料 + 本地检索）
 - [x] 行程分享功能（8 位短链 + 公开只读快照）
-- [ ] MySQL/PostgreSQL 多数据库支持
-- [ ] 消息队列异步处理
+- [x] MySQL/PostgreSQL 多数据库支持（驱动 + `application-mysql.yml` / `application-postgres.yml` profile）
+- [x] 消息队列异步处理（RabbitMQ + 优雅降级，`app.mq.enabled` 开关）
 
 ### 长期目标
-- [ ] 分布式部署和负载均衡
-- [ ] 智能推荐算法
+- [x] 分布式部署和负载均衡（docker-compose 编排 + nginx 负载均衡示例 + `application-prod.yml`）
+- [x] 智能推荐算法（内容推荐 + 用户协同过滤 + 热门兜底混合引擎，`/api/recommend/*`）
 - [x] 酒店预订对接（`POST /api/hotel/book` 下单 + 可配置对接层）
+- [x] 机票预订对接（`/api/flight/search` + `/api/flight/book` + `FlightProvider` Mock/Real）
 - [x] 第三方支付对接层（`PaymentProvider` 接口 + Mock/Real 双实现，`/api/payment/*`）
 
 ## 📄 许可证

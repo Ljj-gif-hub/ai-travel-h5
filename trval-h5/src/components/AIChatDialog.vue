@@ -1,5 +1,6 @@
 <script setup>
 import { ref, nextTick, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { chatApi, planApi } from '../api'
@@ -13,6 +14,8 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 
 defineOptions({ name: 'AIChatDialog' })
+
+const { t } = useI18n()
 
 /* ==================== Props ==================== */
 const props = defineProps({
@@ -87,18 +90,18 @@ const renderMarkdown = (text) => (text ? md.render(preprocessMarkdown(text)) : '
 
 /* ==================== Quick Questions ==================== */
 const quickQuestions = [
-  { label: '💰 换低价方案', query: '能否帮我调整成更省钱的方案？' },
-  { label: '🍜 增加美食推荐', query: '请多推荐一些当地必吃的美食' },
-  { label: '⏱️ 缩短天数', query: '帮我压缩行程天数' },
-  { label: '👨‍👩‍👧 亲子优化', query: '帮我优化成适合带孩子的亲子游方案' },
+  { label: t('chat.quickCheaper'), query: '能否帮我调整成更省钱的方案？' },
+  { label: t('chat.quickFood'), query: '请多推荐一些当地必吃的美食' },
+  { label: t('chat.quickShorter'), query: '帮我压缩行程天数' },
+  { label: t('chat.quickFamily'), query: '帮我优化成适合带孩子的亲子游方案' },
 ]
 
 /* ==================== Guide Chips ==================== */
 const guideChips = [
-  { label: '💑 情侣旅行推荐', query: '推荐几个适合情侣的国内旅游目的地' },
-  { label: '👨‍👩‍👦 适合带父母', query: '带父母去哪里旅游比较合适？' },
-  { label: '💰 预算3000元', query: '预算3000元可以去哪里玩？' },
-  { label: '🏯 北京三日游', query: '推荐北京三日游攻略' },
+  { label: t('chat.guideCouples'), query: '推荐几个适合情侣的国内旅游目的地' },
+  { label: t('chat.guideParents'), query: '带父母去哪里旅游比较合适？' },
+  { label: t('chat.guideBudget3000'), query: '预算3000元可以去哪里玩？' },
+  { label: t('chat.guideBeijing'), query: '推荐北京三日游攻略' },
 ]
 
 /* ==================== Plan Detection ==================== */
@@ -162,7 +165,7 @@ const initSpeechRecognition = () => {
     recognition.value.interimResults = true
     recognition.value.onstart = () => {
       isListening.value = true
-      showToast('正在聆听...')
+      showToast(t('chat.listening'))
     }
     recognition.value.onresult = (event) => {
       let finalTranscript = ''
@@ -178,11 +181,11 @@ const initSpeechRecognition = () => {
     recognition.value.onerror = (event) => {
       isListening.value = false
       const errors = {
-        'no-speech': '未检测到语音',
-        'audio-capture': '无法访问麦克风',
-        'not-allowed': '麦克风权限被拒绝',
+        'no-speech': t('chat.errNoSpeech'),
+        'audio-capture': t('chat.errAudioCapture'),
+        'not-allowed': t('chat.errNotAllowed'),
       }
-      showToast(errors[event.error] || '语音识别失败')
+      showToast(errors[event.error] || t('chat.recognitionFailed'))
     }
     recognition.value.onend = () => {
       isListening.value = false
@@ -192,7 +195,7 @@ const initSpeechRecognition = () => {
 
 const toggleVoiceInput = () => {
   if (!recognition.value) {
-    showToast('您的浏览器不支持语音识别')
+    showToast(t('chat.voiceNotSupported'))
     return
   }
   if (isListening.value) {
@@ -216,7 +219,7 @@ let sendDebounce = false
 const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || isSending.value) {
-    showToast('请输入内容')
+    showToast(t('chat.inputRequired'))
     return
   }
   if (sendDebounce) return
@@ -302,7 +305,7 @@ const sendMessage = async () => {
     isSending.value = false
     isThinking.value = false
     showQuickBar.value = true
-    showToast('请求失败')
+    showToast(t('chat.requestFailed'))
   }
 }
 
@@ -339,7 +342,7 @@ const savePlan = async () => {
       planData: { content: lastAI.content },
       source: 'home',
     })
-    showToast('行程已保存')
+    showToast(t('chat.planSaved'))
     emit('plan-saved', {
       destination: destination || '未指定',
       budget: budget || '',
@@ -347,7 +350,7 @@ const savePlan = async () => {
       content: lastAI.content,
     })
   } catch (e) {
-    showToast('保存失败，请稍后重试')
+    showToast(t('chat.saveFailed'))
   } finally {
     isSavingPlan.value = false
   }
@@ -381,9 +384,9 @@ const initMessages = () => {
     messages.value = saved.map((m) => (m.type === 'ai' ? { ...m, content: stripLeadingNulls(m.content) } : m))
   } else {
     // 全新会话 → 种子消息
-    messages.value = [{ id: genMsgId(), type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' }]
+    messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
     if (destination && budget && days) {
-      messages.value.push({ id: genMsgId(), type: 'system', content: `📋 已加载：${destination} · ${days}天 · ¥${budget} · 继续问我细节吧～` })
+      messages.value.push({ id: genMsgId(), type: 'system', content: t('chat.loadedInfo', { dest: destination, days: days, budget: budget }) })
     }
   }
 }
@@ -394,10 +397,10 @@ const newConversation = () => {
   createNewSession()
   messages.value = [{
     id: genMsgId(), type: 'system',
-    content: '👋 你好！我是 AI 旅行规划师，全新对话，告诉我你的旅行计划吧～',
+    content: t('chat.greetingNew'),
   }]
   showQuickBar.value = false
-  showToast({ message: '已开启新对话', position: 'top' })
+  showToast({ message: t('chat.newConversationStarted'), position: 'top' })
 }
 
 /* 【修复】清空当前会话 */
@@ -405,10 +408,10 @@ const clearConversation = () => {
   clearCurrentSession()
   messages.value = [{
     id: genMsgId(), type: 'system',
-    content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～',
+    content: t('chat.greeting'),
   }]
   showQuickBar.value = false
-  showToast({ message: '对话已清空', position: 'top' })
+  showToast({ message: t('chat.conversationCleared'), position: 'top' })
 }
 
 /* ==================== Lifecycle ==================== */
@@ -454,13 +457,13 @@ initSpeechRecognition()
       <!-- ======== Header ======== -->
       <div class="dialog-header">
         <div class="header-left">
-          <button class="header-action-btn" @click="newConversation" title="新建对话">
+          <button class="header-action-btn" @click="newConversation" :title="t('chat.newConversation')">
             <van-icon name="add-o" size="18" color="#64748B" />
           </button>
         </div>
-        <span class="header-title">AI 旅行规划师</span>
+        <span class="header-title">{{ t('chat.assistantName') }}</span>
         <div class="header-right">
-          <button class="header-action-btn" @click="clearConversation" title="清空对话">
+          <button class="header-action-btn" @click="clearConversation" :title="t('chat.clearConversation')">
             <van-icon name="delete-o" size="18" color="#EF4444" />
           </button>
           <van-icon name="cross" size="20" color="#64748B" class="header-close" @click="closeDialog" />
@@ -483,8 +486,8 @@ initSpeechRecognition()
                 <path d="M46 68 Q60 78 74 68" fill="none" stroke="rgba(139,92,246,0.25)" stroke-width="2.5" stroke-linecap="round" />
               </svg>
             </div>
-            <p class="guide-heading">和我聊聊你的旅行计划吧 ✈️</p>
-            <p class="guide-hint">输入目的地、预算、天数，我帮你生成专属行程</p>
+            <p class="guide-heading">{{ t('chat.guideHeading') }}</p>
+            <p class="guide-hint">{{ t('chat.guideHint') }}</p>
             <div class="guide-chips">
               <button v-for="(chip, i) in guideChips" :key="i" class="guide-chip" @click="sendQuickQuestion(chip.query)">
                 {{ chip.label }}
@@ -513,7 +516,7 @@ initSpeechRecognition()
                   <!-- Thinking animation -->
                   <div v-if="isThinking && msg === messages[messages.length - 1]" class="thinking">
                     <span class="think-dot" /><span class="think-dot" /><span class="think-dot" />
-                    <span class="think-text">AI正在思考...</span>
+                    <span class="think-text">{{ t('chat.thinking') }}</span>
                   </div>
                   <!-- Rendered markdown -->
                   <div v-else class="md-body" v-html="renderMarkdown(msg.content)" />
@@ -525,7 +528,7 @@ initSpeechRecognition()
             <div v-if="lastAIMessageHasPlan" class="save-plan-row">
               <button class="save-plan-btn" :disabled="isSavingPlan" @click="savePlan">
                 <van-loading v-if="isSavingPlan" size="14" color="#fff" />
-                <span v-else>💾 保存到行程</span>
+                <span v-else>💾 {{ t('chat.saveToPlan') }}</span>
               </button>
             </div>
           </div>
@@ -550,7 +553,7 @@ initSpeechRecognition()
             <input
               v-model="inputText"
               type="text"
-              placeholder="和AI旅行规划师聊聊..."
+              :placeholder="t('chat.inputPlaceholder')"
               class="msg-input"
               @keyup.enter="sendMessage"
               @focus="scrollToBottom(true)"
@@ -569,7 +572,7 @@ initSpeechRecognition()
 
         <!-- Voice toast -->
         <div v-if="isListening" class="voice-toast">
-          <span class="voice-pulse" />正在聆听...
+          <span class="voice-pulse" />{{ t('chat.listening') }}
         </div>
       </div>
     </div>

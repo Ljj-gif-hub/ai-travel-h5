@@ -16,6 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/feedback")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "系统")
 public class FeedbackController {
 
     private static final Logger log = LoggerFactory.getLogger(FeedbackController.class);

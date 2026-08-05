@@ -14,6 +14,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "社交")
 public class FollowController {
 
     private static final Logger log = LoggerFactory.getLogger(FollowController.class);

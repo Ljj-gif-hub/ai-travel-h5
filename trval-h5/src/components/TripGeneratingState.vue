@@ -39,7 +39,7 @@
         <!-- 环形中央文字 -->
         <div class="progress-text">
           <span class="progress-num">{{ displayProgress }}%</span>
-          <span class="progress-label">{{ currentStep }}</span>
+          <span class="progress-label">{{ currentStep || t('components.connecting') }}</span>
         </div>
       </div>
     </div>
@@ -110,7 +110,7 @@
         @click="$emit('stop')"
       >
         <van-icon name="pause-circle-o" size="18" />
-        <span>停止生成</span>
+        <span>{{ t('components.stopGenerating') }}</span>
       </van-button>
     </div>
   </div>
@@ -138,13 +138,16 @@
  */
 
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 /* ==================== Props ==================== */
 const props = defineProps({
   /** 总进度百分比 0-100 */
   progress: { type: Number, default: 0 },
-  /** 当前步骤描述文字 */
-  currentStep: { type: String, default: '正在连接...' },
+  /** 当前步骤描述文字（未传时模板兜底 i18n 文案） */
+  currentStep: { type: String, default: '' },
   /** 步骤列表：{ name: string, progress: number, status: 'wait'|'active'|'done' } */
   stepList: {
     type: Array,

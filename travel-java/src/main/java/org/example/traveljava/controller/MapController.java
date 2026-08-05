@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/map")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "地图")
 public class MapController {
 
     private static final Logger log = LoggerFactory.getLogger(MapController.class);

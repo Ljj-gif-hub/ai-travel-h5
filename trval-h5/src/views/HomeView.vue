@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showLoadingToast, Swipe, SwipeItem } from 'vant'
 
 /*
@@ -19,6 +20,7 @@ import { getToken } from '../utils/auth'
 import { avatarUrl } from '../utils/avatar'
 
 const router = useRouter()
+const { t } = useI18n()
 
 /* ==================== 表单数据 ==================== */
 const destination = ref('')
@@ -32,20 +34,20 @@ const wheelHandlers = ref([])
 /* ==================== 更多产品弹出层 ==================== */
 const showMoreProducts = ref(false)
 const moreProductList = [
-  { name: '签证', icon: 'idcard', color: '#6366F1' },
-  { name: '导游', icon: 'flag-o', color: '#3B82F6' },
-  { name: '游船', icon: 'guide-o', color: '#0891B2' },
-  { name: 'WiFi/电话卡', icon: 'phone-o', color: '#8B5CF6' },
-  { name: '保险', icon: 'shield-o', color: '#22C55E' },
-  { name: '邮寄明信片', icon: 'envelop-o', color: '#F59E0B' },
-  { name: '特产商城', icon: 'gift-o', color: '#EF4444' },
-  { name: '旅拍', icon: 'photo-o', color: '#EC4899' },
-  { name: '自驾服务', icon: 'car-o', color: '#F97316' },
-  { name: '行李寄存', icon: 'bag-o', color: '#14B8A6' },
-  { name: '外币兑换', icon: 'gold-coin-o', color: '#EAB308' },
-  { name: '机场贵宾厅', icon: 'star-o', color: '#A855F7' },
-  { name: '当地体验', icon: 'location-o', color: '#06B6D4' },
-  { name: '健康体检', icon: 'first-aid', color: '#84CC16' },
+  { key: 'visa', icon: 'idcard', color: '#6366F1' },
+  { key: 'guide', icon: 'flag-o', color: '#3B82F6' },
+  { key: 'cruise', icon: 'guide-o', color: '#0891B2' },
+  { key: 'wifi', icon: 'phone-o', color: '#8B5CF6' },
+  { key: 'insurance', icon: 'shield-o', color: '#22C55E' },
+  { key: 'postcard', icon: 'envelop-o', color: '#F59E0B' },
+  { key: 'localGoods', icon: 'gift-o', color: '#EF4444' },
+  { key: 'travelPhoto', icon: 'photo-o', color: '#EC4899' },
+  { key: 'selfDrive', icon: 'car-o', color: '#F97316' },
+  { key: 'luggage', icon: 'bag-o', color: '#14B8A6' },
+  { key: 'currency', icon: 'gold-coin-o', color: '#EAB308' },
+  { key: 'lounge', icon: 'star-o', color: '#A855F7' },
+  { key: 'localExperience', icon: 'location-o', color: '#06B6D4' },
+  { key: 'healthCheck', icon: 'first-aid', color: '#84CC16' },
 ]
 
 /* ==================== 热门目的地快捷标签 ==================== */
@@ -78,7 +80,7 @@ const handleDaysInput = (e) => {
 const handlePeopleInput = (e) => {
   const raw = e.target.value
   let filtered = raw.replace(/\D/g, '')
-  if (filtered && parseInt(filtered) > 50) { filtered = '50'; showToast({ message: '人数最多50人', position: 'middle', duration: 1500 }) }
+  if (filtered && parseInt(filtered) > 50) { filtered = '50'; showToast({ message: t('home.peopleMax50'), position: 'middle', duration: 1500 }) }
   people.value = filtered
   if (e.target.value !== filtered) e.target.value = filtered
 }
@@ -86,25 +88,25 @@ const handlePeopleInput = (e) => {
 const handleBudgetBlur = (e) => {
   const val = e.target.value.trim()
   budget.value = val
-  if (val && parseFloat(val) < 100) showToast({ message: '预算建议不低于100元', position: 'middle', duration: 1500 })
+  if (val && parseFloat(val) < 100) showToast({ message: t('home.budgetMin100Suggest'), position: 'middle', duration: 1500 })
 }
 
 const handleDaysBlur = (e) => {
   const val = e.target.value.trim()
   days.value = val
-  if (val && parseInt(val) < 1) { showToast({ message: '天数不能低于1天', position: 'middle', duration: 1500 }); days.value = ''; e.target.value = '' }
+  if (val && parseInt(val) < 1) { showToast({ message: t('home.daysMin1'), position: 'middle', duration: 1500 }); days.value = ''; e.target.value = '' }
 }
 
 const handlePeopleBlur = (e) => {
   const val = e.target.value.trim()
   people.value = val
-  if (val && (parseInt(val) < 1 || parseInt(val) > 50)) showToast({ message: '人数请输入1-50之间', position: 'middle', duration: 1500 })
+  if (val && (parseInt(val) < 1 || parseInt(val) > 50)) showToast({ message: t('home.peopleRange'), position: 'middle', duration: 1500 })
 }
 
 /* ==================== 快捷入口（6宫格 — 2×3） ==================== */
 const quickEntries = [
   { name: 'AI对话', icon: 'chat-o', color: '#8B5CF6', path: '/messages' },
-  { name: '机票预订', icon: 'plane-o', color: '#34D399', path: '/orders' },
+  { name: '机票预订', icon: 'plane-o', color: '#34D399', path: '/flight-booking' },
   { name: '酒店预订', icon: 'hotel-o', color: '#F59E0B', path: '/hotel-booking' },
   { name: '景点门票', icon: 'orders-o', color: '#FB7185', path: '/orders' },
   { name: '美食攻略', icon: 'star-o', color: '#F97316', path: '/destinations' },
@@ -113,20 +115,20 @@ const quickEntries = [
 
 /* ==================== Layer 2: 服务图标网格 Row 1 ==================== */
 const serviceRow1 = [
-  { name: '酒店', icon: 'hotel-o', color: '#8B5CF6' },
-  { name: '攻略/景点', icon: 'guide-o', color: '#6366F1' },
-  { name: '机票', icon: 'plane-o', color: '#3B82F6' },
-  { name: '火车票', icon: 'train-o', color: '#F59E0B' },
-  { name: '旅游定制', icon: 'backpack-o', color: '#34D399' },
+  { key: 'hotel', icon: 'hotel-o', color: '#8B5CF6' },
+  { key: 'guide', icon: 'guide-o', color: '#6366F1' },
+  { key: 'flight', icon: 'plane-o', color: '#3B82F6' },
+  { key: 'train', icon: 'train-o', color: '#F59E0B' },
+  { key: 'custom', icon: 'backpack-o', color: '#34D399' },
 ]
 
 /* ==================== Layer 2b: 服务图标网格 Row 2 ==================== */
 const serviceRow2 = [
-  { name: '民宿/客栈', icon: 'home-o', color: '#8B5CF6' },
-  { name: '门票玩乐', icon: 'orders-o', color: '#F59E0B' },
-  { name: '接送机', icon: 'bus-o', color: '#3B82F6' },
-  { name: '租车', icon: 'car-o', color: '#F97316' },
-  { name: '跟团游', icon: 'flag-o', color: '#34D399' },
+  { key: 'homestay', icon: 'home-o', color: '#8B5CF6' },
+  { key: 'tickets', icon: 'orders-o', color: '#F59E0B' },
+  { key: 'pickup', icon: 'bus-o', color: '#3B82F6' },
+  { key: 'car', icon: 'car-o', color: '#F97316' },
+  { key: 'tour', icon: 'flag-o', color: '#34D399' },
 ]
 
 /* ==================== Layer 5: 快捷功能标签 ==================== */
@@ -158,22 +160,22 @@ const resolveImage = (keyword) => staticImageMap.value[keyword] || getImageUrl(k
 /* ==================== Layer 6: 双列卡片 ==================== */
 const eventBanner = {
   image: getImageUrl('三亚'),
-  title: '夏日旅行季',
-  label: '热门活动',
+  title: 'home.summerTravel',
+  label: 'home.hotActivity',
   link: '/destination-detail?city=三亚',
 }
 const citySeedCard = {
   image: getImageUrl('北京'),
-  label: '城市种草',
-  cta: 'AI帮我规划',
+  label: 'home.citySeed',
+  cta: 'home.aiPlanForMe',
 }
 
 /* ==================== 默认数据 ==================== */
 const defaultBanners = [
-  { id: 1, image: getImageUrl('大理'), title: '云南大理', subtitle: '风花雪月，苍山洱海', link: '/destination-detail?city=大理' },
-  { id: 2, image: getImageUrl('拉萨'), title: '西藏拉萨', subtitle: '日光之城，心灵之旅', link: '/destination-detail?city=拉萨' },
-  { id: 3, image: getImageUrl('天山'), title: '新疆天山', subtitle: '塞外江南，大美新疆', link: '/destination-detail?city=乌鲁木齐' },
-  { id: 4, image: getImageUrl('三亚'), title: '海南三亚', subtitle: '热带天堂，椰风海韵', link: '/destination-detail?city=三亚' },
+  { id: 1, image: getImageUrl('大理'), title: '云南大理', subtitle: 'home.bannerSubtitle1', link: '/destination-detail?city=大理' },
+  { id: 2, image: getImageUrl('拉萨'), title: '西藏拉萨', subtitle: 'home.bannerSubtitle2', link: '/destination-detail?city=拉萨' },
+  { id: 3, image: getImageUrl('天山'), title: '新疆天山', subtitle: 'home.bannerSubtitle3', link: '/destination-detail?city=乌鲁木齐' },
+  { id: 4, image: getImageUrl('三亚'), title: '海南三亚', subtitle: 'home.bannerSubtitle4', link: '/destination-detail?city=三亚' },
 ]
 
 const defaultDestinations = [
@@ -286,12 +288,12 @@ const seedNotes = [
 ]
 
 const defaultExperiences = [
-  { id: 1, name: '过桥米线', icon: 'food-o', color: '#FCA5A5' },
-  { id: 2, name: '四川火锅', icon: 'flower-o', color: '#EF4444' },
-  { id: 3, name: '潜水体验', icon: 'guide-o', color: '#3B82F6' },
-  { id: 4, name: '滑雪运动', icon: 'photo-o', color: '#60A5FA' },
-  { id: 5, name: '温泉度假', icon: 'smile-o', color: '#FB923C' },
-  { id: 6, name: '徒步旅行', icon: 'flag-o', color: '#22C55E' },
+  { id: 1, key: 'riceNoodles', icon: 'food-o', color: '#FCA5A5' },
+  { id: 2, key: 'hotpot', icon: 'flower-o', color: '#EF4444' },
+  { id: 3, key: 'diving', icon: 'guide-o', color: '#3B82F6' },
+  { id: 4, key: 'skiing', icon: 'photo-o', color: '#60A5FA' },
+  { id: 5, key: 'hotSpring', icon: 'smile-o', color: '#FB923C' },
+  { id: 6, key: 'hiking', icon: 'flag-o', color: '#22C55E' },
 ]
 
 /* ==================== 响应式数据 ==================== */
@@ -400,9 +402,9 @@ const goToCommunity = () => {
 }
 
 const promotionSlides = ref([
-  { image: getImageUrl('迪士尼'), title: '亲子出游季', subtitle: '带娃玩转全国乐园攻略', tag: '👨‍👩‍👧 亲子' },
-  { image: getImageUrl('黄果树瀑布'), title: '贵州深度游', subtitle: '7-8月避暑胜地全攻略', tag: '💦 避暑胜地' },
-  { image: getImageUrl('都江堰'), title: '都江堰', subtitle: '千年水利工程值不值得去？', tag: '📜 历史文化' },
+  { image: getImageUrl('迪士尼'), title: 'home.promoFamilyTitle', subtitle: 'home.promoFamilySubtitle', tag: 'home.promoFamilyTag' },
+  { image: getImageUrl('黄果树瀑布'), title: 'home.promoGuizhouTitle', subtitle: 'home.promoGuizhouSubtitle', tag: 'home.promoGuizhouTag' },
+  { image: getImageUrl('都江堰'), title: 'home.promoDujiangyanTitle', subtitle: 'home.promoDujiangyanSubtitle', tag: 'home.promoDujiangyanTag' },
 ])
 
 const loadNotes = async (reset = false) => {
@@ -482,7 +484,7 @@ const stripHtml = (html) => {
 
 const mapNoteItem = (item) => {
   const isSeedData = !!item.author && typeof item.author === 'object'
-  const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || '旅行者')
+  const authorNickname = isSeedData ? item.author.nickname : (item.authorName || item.nickname || t('home.traveler'))
   const authorAvatar = isSeedData ? item.author.avatar : (item.authorAvatar || item.avatar || avatarUrl(String(item.id || 'fallback'), authorNickname))
   const authorCity = isSeedData ? item.author.city : (item.city || '')
   const authorIsFollowing = isSeedData ? item.author.isFollowing : (item.isFollowing || false)
@@ -529,7 +531,7 @@ const mapNoteItem = (item) => {
     isLiked: item.isLiked || false,
     commentCount: item.commentCount || item.comments || 0,
     tag: item.tag || item.author?.city || authorCity || '',
-    time: item.time || item.date || item.createTime || '刚刚',
+    time: item.time || item.date || item.createTime || t('home.justNow'),
   }
 }
 
@@ -553,7 +555,7 @@ const goToDetail = (note) => {
 const handleLike = async (note) => {
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
   const prevLiked = note.isLiked
@@ -565,14 +567,14 @@ const handleLike = async (note) => {
   } catch (e) {
     note.isLiked = prevLiked
     note.likeCount += prevLiked ? 1 : -1
-    showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('home.operationFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
 const handleFollow = async (author) => {
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
   const newState = !author.isFollowing
@@ -590,7 +592,7 @@ const handleFollow = async (author) => {
     notes.value.forEach(n => {
       if (n.author?.userId === author.userId) n.author.isFollowing = !newState
     })
-    showToast({ message: '操作失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('home.operationFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
@@ -613,12 +615,12 @@ const handleCommentUpload = async (noteId, e) => {
         commentVideos[noteId] = res.data.url
         commentImages[noteId] = ''
       }
-      showToast({ message: res.data.type === 'image' ? '图片已上传' : '视频已上传', position: 'middle', duration: 1200 })
+      showToast({ message: res.data.type === 'image' ? t('home.imageUploaded') : t('home.videoUploaded'), position: 'middle', duration: 1200 })
     } else {
-      showToast({ message: res.message || '上传失败', position: 'middle', duration: 1500 })
+      showToast({ message: res.message || t('home.uploadFailed'), position: 'middle', duration: 1500 })
     }
   } catch (e) {
-    showToast({ message: '上传失败', position: 'middle', duration: 1500 })
+    showToast({ message: t('home.uploadFailed'), position: 'middle', duration: 1500 })
   } finally {
     commentUploading[noteId] = false
   }
@@ -631,7 +633,7 @@ const handleSendComment = async (note) => {
   if (!text && !img && !vid) return
   const token = getToken()
   if (!token) {
-    showToast({ message: '请先登录', position: 'middle', duration: 1500 })
+    showToast({ message: t('common.notLoggedIn'), position: 'middle', duration: 1500 })
     return
   }
   try {
@@ -641,17 +643,17 @@ const handleSendComment = async (note) => {
       commentInputs[note.id] = ''
       commentImages[note.id] = ''
       commentVideos[note.id] = ''
-      showToast({ message: '评论成功', position: 'middle', duration: 1200 })
+      showToast({ message: t('home.commentSuccess'), position: 'middle', duration: 1200 })
     } else {
-      showToast({ message: res.message || '评论失败', position: 'middle', duration: 1500 })
+      showToast({ message: res.message || t('home.commentFailed'), position: 'middle', duration: 1500 })
     }
   } catch (e) {
-    showToast({ message: '评论失败，请重试', position: 'middle', duration: 1500 })
+    showToast({ message: t('home.commentFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
 
 const handleCommunitySearch = () => {
-  showToast({ message: '搜索功能开发中', position: 'middle', duration: 1500 })
+  showToast({ message: t('home.searchInDevelopment'), position: 'middle', duration: 1500 })
 }
 
 const onTabChange = (key) => {
@@ -659,7 +661,7 @@ const onTabChange = (key) => {
   if (key === 'following') {
     const token = getToken()
     if (!token) {
-      showToast({ message: '请先登录查看关注动态', position: 'middle', duration: 1500 })
+      showToast({ message: t('home.loginToViewFollowing'), position: 'middle', duration: 1500 })
       activeTab.value = 'all'
       return
     }
@@ -669,22 +671,22 @@ const onTabChange = (key) => {
 /* ==================== 事件 ==================== */
 const startPlanning = () => {
   try {
-    if (!destination.value || String(destination.value).trim() === '') return showToast({ message: '请输入目的地', position: 'middle' })
-    if (!budget.value || String(budget.value).trim() === '') return showToast({ message: '请输入预算', position: 'middle' })
-    if (!days.value || String(days.value).trim() === '') return showToast({ message: '请输入天数', position: 'middle' })
-    if (Number(days.value) < 1) return showToast({ message: '天数不能低于1天', position: 'middle' })
-    if (Number(budget.value) < 100) return showToast({ message: '预算不能低于100元', position: 'middle' })
-    if (!people.value || String(people.value).trim() === '') return showToast({ message: '请输入人数', position: 'middle' })
-    if (Number(people.value) < 1 || Number(people.value) > 50) return showToast({ message: '人数请输入1-50之间', position: 'middle' })
-    showLoadingToast({ message: 'AI正在规划...', duration: 500, forbidClick: true, loadingType: 'spinner' })
+    if (!destination.value || String(destination.value).trim() === '') return showToast({ message: t('home.enterDestination'), position: 'middle' })
+    if (!budget.value || String(budget.value).trim() === '') return showToast({ message: t('home.enterBudget'), position: 'middle' })
+    if (!days.value || String(days.value).trim() === '') return showToast({ message: t('home.enterDays'), position: 'middle' })
+    if (Number(days.value) < 1) return showToast({ message: t('home.daysMin1'), position: 'middle' })
+    if (Number(budget.value) < 100) return showToast({ message: t('home.budgetMin100'), position: 'middle' })
+    if (!people.value || String(people.value).trim() === '') return showToast({ message: t('home.enterPeople'), position: 'middle' })
+    if (Number(people.value) < 1 || Number(people.value) > 50) return showToast({ message: t('home.peopleRange'), position: 'middle' })
+    showLoadingToast({ message: t('home.aiPlanning'), duration: 500, forbidClick: true, loadingType: 'spinner' })
     setTimeout(() => router.push({ path: '/agent-map', query: { destination: destination.value, budget: budget.value, days: days.value, people: people.value } }), 500)
-  } catch (e) { console.error('startPlanning 失败:', e); showToast({ message: '操作失败，请重试', position: 'middle' }) }
+  } catch (e) { console.error('startPlanning 失败:', e); showToast({ message: t('home.operationFailedRetry'), position: 'middle' }) }
 }
 
 const handleQuickEntry = (entry) => {
   try {
     if (entry?.path) router.push(entry.path)
-    else showToast({ message: '功能开发中', position: 'middle' })
+    else showToast({ message: t('home.featureInDevelopment'), position: 'middle' })
   } catch (e) { console.error('handleQuickEntry 失败:', e) }
 }
 
@@ -692,7 +694,7 @@ const handleQuickEntry = (entry) => {
 const handleHeaderBtn = (type) => {
   try {
     if (type === 'vip') router.push('/profile')
-    else showToast({ message: '积分功能开发中', position: 'middle' })
+    else showToast({ message: t('home.pointsInDevelopment'), position: 'middle' })
   } catch (e) { console.error('handleHeaderBtn 失败:', e) }
 }
 /*
@@ -701,9 +703,9 @@ const handleHeaderBtn = (type) => {
  */
 const handleDestination = (dest) => {
   try {
-    if (!dest || !dest.name) { showToast({ message: '目的地信息异常', position: 'middle' }); return }
+    if (!dest || !dest.name) { showToast({ message: t('home.destinationError'), position: 'middle' }); return }
     router.push({ path: '/destination-detail', query: { city: dest.name } })
-  } catch (e) { console.error('handleDestination 跳转失败:', e); showToast({ message: '跳转失败', position: 'middle' }) }
+  } catch (e) { console.error('handleDestination 跳转失败:', e); showToast({ message: t('home.jumpFailed'), position: 'middle' }) }
 }
 const goToDestinations = () => {
   try { router.push('/destinations') } catch (e) { console.error('goToDestinations 失败:', e) }
@@ -712,12 +714,12 @@ const handleSearchSelect = (item) => { if (item?.text) destination.value = item.
 const searchHistory = computed(() => hotTags.map(c => ({ text: c, url: '' })))
 const handleBannerClick = (banner) => {
   try {
-    if (!banner || !banner.link) { showToast({ message: '活动信息异常', position: 'middle' }); return }
+    if (!banner || !banner.link) { showToast({ message: t('home.activityError'), position: 'middle' }); return }
     router.push(banner.link)
   } catch (e) { console.error('handleBannerClick 失败:', e) }
 }
 const handleExperienceClick = (exp) => {
-  try { showToast({ message: `${exp?.name || '该功能'}开发中`, position: 'middle' }) } catch (e) {}
+  try { showToast({ message: t('home.featureNamedInDevelopment', { name: exp?.key ? t(`home.experiences.${exp.key}`) : t('home.thatFeature') }), position: 'middle' }) } catch (e) {}
 }
 const selectHotTag = (tag) => { destination.value = tag }
 
@@ -733,21 +735,21 @@ const handleCityTagClick = (city) => {
 const handleServiceClick = (item) => {
   try {
     const routes = {
-      '酒店': '/orders',
-      '攻略/景点': '/destinations',
-      '机票': '/orders',
-      '火车票': '/orders',
-      '旅游定制': '/messages',
-      '民宿/客栈': '/orders',
-      '门票玩乐': '/orders',
-      '接送机': '/orders',
-      '租车': '/orders',
-      '跟团游': '/orders',
+      hotel: '/hotel-booking',
+      guide: '/destinations',
+      flight: '/flight-booking',
+      train: '/orders',
+      custom: '/messages',
+      homestay: '/orders',
+      tickets: '/orders',
+      pickup: '/orders',
+      car: '/orders',
+      tour: '/orders',
     }
-    if (routes[item?.name]) {
-      router.push(routes[item.name])
+    if (routes[item?.key]) {
+      router.push(routes[item.key])
     } else {
-      showToast({ message: '功能开发中', position: 'middle' })
+      showToast({ message: t('home.featureInDevelopment'), position: 'middle' })
     }
   } catch (e) { console.error('handleServiceClick 失败:', e) }
 }
@@ -756,7 +758,7 @@ const handleServiceClick = (item) => {
 const handleQuickTab = (tab) => {
   try {
     if (tab?.name === '行程规划') { goToAIChat() }
-    else { showToast({ message: '功能开发中', position: 'middle' }) }
+    else { showToast({ message: t('home.featureInDevelopment'), position: 'middle' }) }
   } catch (e) { console.error('handleQuickTab 失败:', e) }
 }
 
@@ -771,7 +773,7 @@ const handleCitySeedClick = () => {
 
 /* Layer 3: 更多产品点击 */
 const handleMoreProductClick = (product) => {
-  try { showToast({ message: `${product?.name || '该功能'}开发中`, position: 'middle' }) } catch (e) {}
+  try { showToast({ message: t('home.featureNamedInDevelopment', { name: product?.key ? t(`home.products.${product.key}`) : t('home.thatFeature') }), position: 'middle' }) } catch (e) {}
 }
 
 /* 【悬浮按钮】点击防抖：500ms内重复点击忽略，避免快速跳转多次 */
@@ -893,7 +895,7 @@ onUnmounted(() => {
       <div class="hero-text-area">
         <h1 class="hero-title">旅迹</h1>
         <p class="hero-sub-en">TRAVEL TRACE</p>
-        <p class="hero-tagline">奔赴山河，记录专属旅途</p>
+        <p class="hero-tagline">{{ t('home.heroTagline') }}</p>
       </div>
 
       <!-- 右下：两个磨砂半透按钮 -->
@@ -902,13 +904,13 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="3"/>
           </svg>
-          <span>会员</span>
+          <span>{{ t('home.vip') }}</span>
         </button>
         <button class="hero-glass-btn-right" @click="handleHeaderBtn('points')">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
           </svg>
-          <span>积分</span>
+          <span>{{ t('home.points') }}</span>
         </button>
       </div>
     </div>
@@ -919,15 +921,15 @@ onUnmounted(() => {
       <div class="plan-header">
         <span class="plan-icon-wrap">🧭</span>
         <div class="plan-header-text">
-          <span class="plan-title">AI 智能规划</span>
-          <span class="plan-subtitle">告诉我你的想法，剩下的交给我</span>
+          <span class="plan-title">{{ t('home.planTitle') }}</span>
+          <span class="plan-subtitle">{{ t('home.planSubtitle') }}</span>
         </div>
       </div>
 
       <!-- 目的地搜索 — 核心输入 -->
       <div class="plan-search-row">
         <div class="plan-search-wrap">
-          <SearchBar v-model="destination" placeholder="想去哪里？输入目的地" :history="searchHistory" @select="handleSearchSelect" />
+          <SearchBar v-model="destination" :placeholder="t('home.searchDestinationPlaceholder')" :history="searchHistory" @select="handleSearchSelect" />
         </div>
         <button class="plan-loc-btn" @click="openCityPicker">
           <van-icon name="location-o" size="18" color="#7C3AED" />
@@ -947,26 +949,26 @@ onUnmounted(() => {
       <!-- 预算/天数/人数 — 轻量选择器 -->
       <div class="plan-meta-row">
         <div class="plan-meta-item" :class="{ filled: budget }">
-          <span class="plan-meta-label">预算</span>
-          <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" placeholder="不限" class="plan-meta-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
-          <span v-if="budget" class="plan-meta-unit">元</span>
+          <span class="plan-meta-label">{{ t('home.budget') }}</span>
+          <input ref="budgetInputRef" :value="budget || undefined" type="text" inputmode="decimal" :placeholder="t('home.unlimited')" class="plan-meta-input" @input="handleBudgetInput" @blur="handleBudgetBlur" />
+          <span v-if="budget" class="plan-meta-unit">{{ t('common.yuan') }}</span>
         </div>
         <div class="plan-meta-item" :class="{ filled: days }">
-          <span class="plan-meta-label">天数</span>
-          <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" placeholder="不限" class="plan-meta-input" @input="handleDaysInput" @blur="handleDaysBlur" />
-          <span v-if="days" class="plan-meta-unit">天</span>
+          <span class="plan-meta-label">{{ t('home.days') }}</span>
+          <input ref="daysInputRef" :value="days" type="text" inputmode="numeric" :placeholder="t('home.unlimited')" class="plan-meta-input" @input="handleDaysInput" @blur="handleDaysBlur" />
+          <span v-if="days" class="plan-meta-unit">{{ t('common.days') }}</span>
         </div>
         <div class="plan-meta-item" :class="{ filled: people }">
-          <span class="plan-meta-label">人数</span>
-          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" placeholder="不限" class="plan-meta-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
-          <span v-if="people" class="plan-meta-unit">人</span>
+          <span class="plan-meta-label">{{ t('home.people') }}</span>
+          <input ref="peopleInputRef" :value="people" type="text" inputmode="numeric" :placeholder="t('home.unlimited')" class="plan-meta-input" @input="handlePeopleInput" @blur="handlePeopleBlur" />
+          <span v-if="people" class="plan-meta-unit">{{ t('common.people') }}</span>
         </div>
       </div>
 
       <!-- 提交按钮 -->
       <button class="plan-submit btn-tap-scale" @click="startPlanning">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2l9 4.5v3.8c0 5.3-3.5 10.2-9 11.7-5.5-1.5-9-6.4-9-11.7V6.5L12 2z"/></svg>
-        <span>开始智能规划</span>
+        <span>{{ t('home.startPlanning') }}</span>
       </button>
     </div>
 
@@ -977,7 +979,7 @@ onUnmounted(() => {
           <img :src="banner.image" :alt="banner.title" class="banner-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
           <div class="banner-info">
             <span class="banner-name">{{ banner.title }}</span>
-            <span class="banner-slogan">{{ banner.subtitle }}</span>
+            <span class="banner-slogan">{{ t(banner.subtitle) }}</span>
           </div>
         </SwipeItem>
       </Swipe>
@@ -990,13 +992,13 @@ onUnmounted(() => {
           <div class="service-icon-circle" :style="{ background: `${item.color}15` }">
             <van-icon :name="item.icon" :color="item.color" size="22" />
           </div>
-          <span class="service-label">{{ item.name }}</span>
+          <span class="service-label">{{ t('home.serviceItems.' + item.key) }}</span>
         </div>
         <div v-for="(item, idx) in serviceRow2" :key="'s2-'+idx" class="service-item" @click="handleServiceClick(item)">
           <div class="service-icon-circle" :style="{ background: `${item.color}12` }">
             <van-icon :name="item.icon" :color="item.color" size="20" />
           </div>
-          <span class="service-label">{{ item.name }}</span>
+          <span class="service-label">{{ t('home.serviceItems.' + item.key) }}</span>
         </div>
       </div>
       <!-- 更多 -->
@@ -1008,7 +1010,7 @@ onUnmounted(() => {
             <span class="mini-icon" style="background:#fef3c7;color:#F59E0B;">W</span>
             <span class="mini-icon" style="background:#d1fae5;color:#34D399;">保</span>
           </div>
-          <span class="more-products-text">更多产品和服务</span>
+          <span class="more-products-text">{{ t('home.moreProducts') }}</span>
         </div>
         <van-icon name="arrow" size="14" color="var(--text-hint)" />
       </div>
@@ -1017,8 +1019,8 @@ onUnmounted(() => {
     <!-- ==================== 热门目的地 ==================== -->
     <div class="section-card">
       <div class="sec-head">
-        <span class="sec-title">🔥 热门目的地</span>
-        <span class="sec-more" @click="goToDestinations">查看全部 <van-icon name="arrow" size="12" /></span>
+        <span class="sec-title">🔥 {{ t('home.hotDestinations') }}</span>
+        <span class="sec-more" @click="goToDestinations">{{ t('common.viewAll') }} <van-icon name="arrow" size="12" /></span>
       </div>
       <div class="h-scroll">
         <div v-for="(d, i) in hotDestinations" :key="'hd-'+i" class="dest-card" @click="handleDestination(d)">
@@ -1034,15 +1036,15 @@ onUnmounted(() => {
       <div class="event-card" @click="handleEventBannerClick">
         <img :src="eventBanner.image" :alt="eventBanner.title" class="event-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
         <div class="event-overlay">
-          <span class="event-badge">{{ eventBanner.label }}</span>
-          <span class="event-title">{{ eventBanner.title }}</span>
+          <span class="event-badge">{{ t(eventBanner.label) }}</span>
+          <span class="event-title">{{ t(eventBanner.title) }}</span>
         </div>
       </div>
       <div class="city-card" @click="handleCitySeedClick">
         <img :src="citySeedCard.image" :alt="citySeedCard.label" class="city-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
         <div class="city-overlay">
-          <span class="city-badge">{{ citySeedCard.label }}</span>
-          <span class="city-cta">{{ citySeedCard.cta }}</span>
+          <span class="city-badge">{{ t(citySeedCard.label) }}</span>
+          <span class="city-cta">{{ t(citySeedCard.cta) }}</span>
         </div>
       </div>
     </div>
@@ -1060,9 +1062,9 @@ onUnmounted(() => {
                 <div class="ctrip-promo-slide">
                   <img :src="slide.image" class="ctrip-promo-img" loading="lazy" @error="e => { e.target.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22><rect fill=%22%23e2e8f0%22 width=%22400%22 height=%22300%22/><text fill=%22%2394a3b8%22 font-size=%2220%22 font-family=%22sans-serif%22 x=%22200%22 y=%22150%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>' + encodeURIComponent(slide.title) + '</text></svg>') }" />
                   <div class="ctrip-promo-mask" />
-                  <div class="ctrip-promo-tag">{{ slide.tag }}</div>
-                  <div class="ctrip-promo-title">{{ slide.title }}</div>
-                  <div class="ctrip-promo-subtitle">{{ slide.subtitle }}</div>
+                  <div class="ctrip-promo-tag">{{ t(slide.tag) }}</div>
+                  <div class="ctrip-promo-title">{{ t(slide.title) }}</div>
+                  <div class="ctrip-promo-subtitle">{{ t(slide.subtitle) }}</div>
                 </div>
               </SwipeItem>
             </Swipe>
@@ -1122,7 +1124,7 @@ onUnmounted(() => {
                   </div>
                   <div class="ctrip-card-views">
                     <van-icon name="eye-o" size="12" color="var(--text-hint)" />
-                    <span>{{ formatNumber(note.viewCount) }}阅读</span>
+                    <span>{{ formatNumber(note.viewCount) }}{{ t('home.views') }}</span>
                   </div>
                 </div>
               </div>
@@ -1186,7 +1188,7 @@ onUnmounted(() => {
                   </div>
                   <div class="ctrip-card-views">
                     <van-icon name="eye-o" size="12" color="var(--text-hint)" />
-                    <span>{{ formatNumber(note.viewCount) }}阅读</span>
+                    <span>{{ formatNumber(note.viewCount) }}{{ t('home.views') }}</span>
                   </div>
                 </div>
               </div>
@@ -1197,8 +1199,8 @@ onUnmounted(() => {
 
       <!-- 加载更多/没有更多（全宽居中） -->
       <div class="ctrip-feed-footer">
-        <div v-if="loadingMore" class="ctrip-loading-more"><van-loading size="20" color="#8B5CF6" /><span>加载中...</span></div>
-        <div v-else-if="!hasMore && notes.length > 0" class="ctrip-no-more">— 没有更多了 —</div>
+        <div v-if="loadingMore" class="ctrip-loading-more"><van-loading size="20" color="#8B5CF6" /><span>{{ t('common.loading') }}</span></div>
+        <div v-else-if="!hasMore && notes.length > 0" class="ctrip-no-more">— {{ t('common.noMore') }} —</div>
       </div>
 
       <!-- 城市选择器弹窗 -->
@@ -1213,7 +1215,7 @@ onUnmounted(() => {
           :default-index="cityColumns.findIndex(c => c.value === currentCity)"
           @confirm="onCommunityCityConfirm"
           @cancel="showCommunityCityPicker = false"
-          title="选择城市"
+          :title="t('home.selectCity')"
         />
       </van-popup>
     </div>
@@ -1242,7 +1244,7 @@ onUnmounted(() => {
     <!-- ==================== 更多产品 VanPopup ==================== -->
     <van-popup v-model:show="showMoreProducts" position="bottom" round safe-area-inset-bottom :style="{ maxHeight: '60vh' }">
       <div class="more-popup-header">
-        <span class="more-popup-title">更多产品</span>
+        <span class="more-popup-title">{{ t('home.moreProductsTitle') }}</span>
         <van-icon name="cross" size="20" color="var(--text-hint)" @click="showMoreProducts = false" />
       </div>
       <div class="more-popup-grid">
@@ -1255,14 +1257,14 @@ onUnmounted(() => {
           <div class="more-popup-icon" :style="{ background: `${product.color}14` }">
             <van-icon :name="product.icon" :color="product.color" size="22" />
           </div>
-          <span class="more-popup-label">{{ product.name }}</span>
+          <span class="more-popup-label">{{ t('home.products.' + product.key) }}</span>
         </div>
       </div>
     </van-popup>
 
     <!-- ==================== 城市选择器 ==================== -->
     <van-popup v-model:show="showCityPicker" position="bottom" round safe-area-inset-bottom>
-      <van-area ref="cityAreaRef" title="选择城市" :columns-num="2" :area-list="areaList" @confirm="onCityConfirm" @cancel="showCityPicker = false" />
+      <van-area ref="cityAreaRef" :title="t('home.selectCity')" :columns-num="2" :area-list="areaList" @confirm="onCityConfirm" @cancel="showCityPicker = false" />
     </van-popup>
   </div>
 </template>

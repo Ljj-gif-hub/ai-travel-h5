@@ -46,3 +46,7 @@ uploads/*.gif
 ### Application Configuration ###
 src/main/resources/application.yml
 data/
+
+### Runtime logs ###
+logs/
+*.log

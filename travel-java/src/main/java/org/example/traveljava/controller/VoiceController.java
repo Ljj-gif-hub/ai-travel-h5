@@ -19,6 +19,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/voice")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "系统")
 public class VoiceController {
 
     private static final Logger log = LoggerFactory.getLogger(VoiceController.class);

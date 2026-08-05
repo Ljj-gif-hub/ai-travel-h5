@@ -88,6 +88,31 @@ payment:
 hotel:
   mock-full: ${HOTEL_MOCK_FULL:false}
 
+# Swagger/OpenAPI 接口文档
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: ${SPRINGDOC_ENABLED:true}
+  swagger-ui:
+    path: /swagger-ui.html
+
+# 日志（配合 logback-spring.xml）
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+
+# Actuator 监控指标
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: ${HEALTH_SHOW_DETAILS:when-authorized}
+    prometheus:
+      enabled: true
+
 # ============================================
 # 环境变量配置说明
 # ============================================

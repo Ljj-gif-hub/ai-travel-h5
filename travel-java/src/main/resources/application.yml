@@ -44,10 +44,28 @@ spring:
       timeout: ${REDIS_TIMEOUT:6000ms}
       repositories:
         enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # 默认不自动启动消费者，避免本地无 RabbitMQ 时启动报错；连上后再手动开启
+        auto-startup: ${MQ_LISTENER_AUTO_STARTUP:false}
 
 app:
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5177}
+  # 日志输出目录（配合 logback-spring.xml）
+  logging:
+    dir: ${LOG_DIR:logs}
+  # 消息队列：默认关闭（无 RabbitMQ 也可运行，事件同步降级记录）
+  mq:
+    enabled: ${MQ_ENABLED:false}
+    exchange: ${MQ_EXCHANGE:travel.events}
+    queue-orders: ${MQ_QUEUE_ORDERS:travel.orders}
+    routing-orders: ${MQ_ROUTING_ORDERS:order.paid}
   # 限流是否信任反向代理注入的 X-Real-IP（仅当部署在受信代理后时置 true）
   rate-limit:
     trust-proxy: ${RATE_LIMIT_TRUST_PROXY:false}
@@ -154,3 +172,68 @@ payment:
 # 酒店预订配置
 hotel:
   mock-full: ${HOTEL_MOCK_FULL:false}
+
+# ================================================================
+# 第三方预订对接层（与支付层同款「可配置 + 模拟实现」）
+#   provider: mock（默认，本地/内置数据） | real（第三方渠道，需配 endpoint + api-key）
+# ================================================================
+booking:
+  hotel:
+    provider: ${BOOKING_HOTEL_PROVIDER:mock}
+    endpoint: ${BOOKING_HOTEL_ENDPOINT:}
+    api-key: ${BOOKING_HOTEL_API_KEY:}
+  flight:
+    provider: ${BOOKING_FLIGHT_PROVIDER:mock}
+    endpoint: ${BOOKING_FLIGHT_ENDPOINT:}
+    api-key: ${BOOKING_FLIGHT_API_KEY:}
+
+# ================================================================
+# Swagger/OpenAPI 接口文档（springdoc）
+#   UI:   http://localhost:3200/swagger-ui.html
+#   JSON: http://localhost:3200/v3/api-docs
+# ================================================================
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: ${SPRINGDOC_ENABLED:true}
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
+  show-actuator: true
+  paths-to-exclude: /api/agent/**
+
+# ================================================================
+# 日志（配合 logback-spring.xml；级别可经环境变量覆盖）
+# ================================================================
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    org.example.traveljava: ${LOG_LEVEL_APP:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
+
+# ================================================================
+# Actuator 监控指标
+#   Prometheus 抓取: GET /actuator/prometheus
+#   健康检查:        GET /actuator/health
+# ================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: ${HEALTH_SHOW_DETAILS:when-authorized}
+    loggers:
+      enabled: true
+    prometheus:
+      enabled: true
+  health:
+    # Redis / RabbitMQ 均为可降级组件（应用内优雅降级），未部署时不应判定服务不可用
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+  metrics:
+    tags:
+      application: ${spring.application.name}

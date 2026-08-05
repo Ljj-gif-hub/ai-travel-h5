@@ -1,98 +1,37 @@
 /**
- * 中文语言包 — 核心界面文案（B5 i18n）
- * 按模块组织 key；未抽取的页面文案暂保留硬编码中文，fallback 到本语言包。
+ * 中文语言包 — 聚合器
+ * 所有文案按功能模块拆分在 src/locales/zh/*.js，此处统一导入导出。
  */
+import app from './zh/app'
+import settings from './zh/settings'
+import common from './zh/common'
+import auth from './zh/auth'
+import profile from './zh/profile'
+import home from './zh/home'
+import community from './zh/community'
+import note from './zh/note'
+import trips from './zh/trips'
+import planning from './zh/planning'
+import agent from './zh/agent'
+import map from './zh/map'
+import calendar from './zh/calendar'
+import booking from './zh/booking'
+import orders from './zh/orders'
+import payment from './zh/payment'
+import wallet from './zh/wallet'
+import social from './zh/social'
+import destination from './zh/destination'
+import feedback from './zh/feedback'
+import about from './zh/about'
+import share from './zh/share'
+import chat from './zh/chat'
+import components from './zh/components'
+
 export default {
-  app: {
-    name: '智能旅游助手',
-    tabs: { home: '首页', community: '社区', trips: '行程', profile: '我的' },
-  },
-  settings: {
-    theme: '深色模式',
-    themeSystem: '跟随系统',
-    themeLight: '浅色',
-    themeDark: '深色',
-    language: '语言',
-    langZh: '中文',
-    langEn: 'English',
-  },
-  common: {
-    back: '返回',
-    cancel: '取消',
-    confirm: '确认',
-    save: '保存',
-    delete: '删除',
-    retry: '重新加载',
-    loading: '加载中',
-    empty: '暂无数据',
-    search: '搜索',
-    login: '登录',
-    register: '注册',
-    logout: '退出登录',
-  },
-  home: {
-    bannerSubtitle: '探索世界，从这里出发',
-    planTitle: 'AI 规划行程',
-    planSubtitle: '输入目的地，一键生成专属旅行方案',
-    hotDestinations: '热门目的地',
-    communityFeed: '精选游记',
-    services: '出行服务',
-  },
-  trips: {
-    nearby: '周边游',
-    aiPlan: 'AI 规划行程',
-    myTrips: '我的行程',
-    noTrips: '暂无行程',
-    calendar: '行程日历',
-    offlineMap: '离线地图',
-    saved: '已保存',
-  },
-  community: {
-    feed: '社区动态',
-    following: '关注',
-    write: '写游记',
-  },
-  profile: {
-    editProfile: '编辑资料',
-    myOrders: '我的订单',
-    myFavorites: '我的收藏',
-    myCoupons: '优惠券',
-    invite: '邀请好友',
-    feedback: '意见反馈',
-  },
-  orders: {
-    title: '订单中心',
-    all: '全部',
-    flight: '机票',
-    hotel: '酒店',
-    ticket: '门票',
-    pending: '待支付',
-    paid: '已支付',
-    completed: '已完成',
-    cancelled: '已取消',
-    payNow: '立即支付',
-    cancelOrder: '取消',
-  },
-  share: {
-    title: '旅行规划分享',
-    poster: '生成分享海报',
-    posterHide: '收起海报',
-    savePoster: '保存海报',
-    sharePoster: '分享海报',
-    tips: '出行贴士',
-    meals: '餐饮',
-    brand: '—— 由 AI 智能旅游助手生成 ——',
-  },
-  calendar: {
-    title: '行程日历',
-    days: '天',
-    people: '人',
-    hotels: '住宿推荐',
-    viewMap: '在地图查看',
-  },
-  payment: {
-    mockSuccess: '模拟支付成功',
-    paySuccess: '支付成功',
-    payFail: '支付失败',
-  },
+  app, settings, common, auth, profile,
+  home, community, note,
+  trips, planning, agent, map, calendar,
+  booking, orders, payment, wallet,
+  social, destination, feedback, about, share,
+  chat, components,
 }

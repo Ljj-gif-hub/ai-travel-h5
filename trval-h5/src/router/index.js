@@ -156,6 +156,12 @@ const routes = [
     meta: { transition: 'slide-left' },
   },
   {
+    path: '/flight-booking',
+    name: 'FlightBooking',
+    component: () => import('../views/FlightBookingView.vue'),
+    meta: { transition: 'slide-left' },
+  },
+  {
     path: '/share/:token',
     name: 'ShareLanding',
     component: () => import('../views/ShareLandingView.vue'),

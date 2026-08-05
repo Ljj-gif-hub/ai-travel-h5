@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router';
 import { showToast, showLoadingToast, closeToast, RadioGroup, Radio } from 'vant';
 import { getToken } from '../utils/auth';
 import { feedbackApi } from '../api';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
+const { t } = useI18n();
 
 const goBack = () => {
   router.back();
@@ -21,17 +23,17 @@ const feedbackForm = reactive({
 const isLoading = ref(false);
 
 const feedbackTypes = [
-  { label: '功能建议', value: 'suggestion' },
-  { label: 'Bug反馈', value: 'bug' },
-  { label: '体验优化', value: 'experience' },
-  { label: '其他', value: 'other' },
+  { label: t('feedback.typeSuggestion'), value: 'suggestion' },
+  { label: t('feedback.typeBug'), value: 'bug' },
+  { label: t('feedback.typeExperience'), value: 'experience' },
+  { label: t('feedback.typeOther'), value: 'other' },
 ];
 
 const maxImages = 3;
 
 const addImage = () => {
   if (feedbackForm.images.length >= maxImages) {
-    showToast(`最多只能上传${maxImages}张图片`);
+    showToast(t('feedback.maxImages', { n: maxImages }));
     return;
   }
   const mockImage = `/images/default-placeholder.png`;
@@ -44,17 +46,17 @@ const removeImage = (index) => {
 
 const submitFeedback = async () => {
   if (!feedbackForm.type) {
-    showToast('请选择反馈类型');
+    showToast(t('feedback.needType'));
     return;
   }
   if (!feedbackForm.content.trim()) {
-    showToast('请描述您的问题');
+    showToast(t('feedback.needContent'));
     return;
   }
 
   isLoading.value = true;
   const toast = showLoadingToast({
-    message: '提交中...',
+    message: t('feedback.submitting'),
     duration: 0,
     position: 'middle',
     forbidClick: true,
@@ -71,7 +73,7 @@ const submitFeedback = async () => {
     if (response.code === 0) {
       closeToast();
       showToast({
-        message: '提交成功',
+        message: t('feedback.submitSuccess'),
         position: 'middle',
       });
       setTimeout(() => {
@@ -79,11 +81,11 @@ const submitFeedback = async () => {
       }, 1000);
     } else {
       closeToast();
-      showToast(response.message || '提交失败');
+      showToast(response.message || t('feedback.submitFail'));
     }
   } catch (error) {
     closeToast();
-    showToast('提交失败');
+    showToast(t('feedback.submitFail'));
   } finally {
     isLoading.value = false;
   }
@@ -93,8 +95,8 @@ const submitFeedback = async () => {
 <template>
   <div class="feedback-page">
     <van-nav-bar
-      title="反馈建议"
-      left-text="返回"
+      :title="t('feedback.title')"
+      :left-text="t('common.back')"
       left-arrow
       safe-area-inset-top
       @click-left="goBack"
@@ -102,7 +104,7 @@ const submitFeedback = async () => {
 
     <div class="page-content">
       <van-cell-group inset class="form-group">
-        <van-cell title="反馈类型">
+        <van-cell :title="t('feedback.type')">
           <template #right-icon>
             <van-radio-group v-model="feedbackForm.type" direction="horizontal">
               <van-radio
@@ -117,14 +119,14 @@ const submitFeedback = async () => {
 
         <van-field
           v-model="feedbackForm.content"
-          label="问题描述"
-          placeholder="请详细描述您的问题或建议..."
+          :label="t('feedback.problemLabel')"
+          :placeholder="t('feedback.problemPlaceholder')"
           type="textarea"
           :rows="5"
           maxlength="500"
         />
 
-        <van-cell title="截图">
+        <van-cell :title="t('feedback.screenshot')">
           <template #right-icon>
             <div class="images-wrap">
               <div
@@ -160,8 +162,8 @@ const submitFeedback = async () => {
 
         <van-field
           v-model="feedbackForm.contact"
-          label="联系方式"
-          placeholder="请输入手机号或邮箱（选填）"
+          :label="t('feedback.contactLabel')"
+          :placeholder="t('feedback.contactPlaceholder')"
         />
       </van-cell-group>
 
@@ -173,7 +175,7 @@ const submitFeedback = async () => {
           :loading="isLoading"
           @click="submitFeedback"
         >
-          提交反馈
+          {{ t('feedback.submit') }}
         </van-button>
       </div>
     </div>

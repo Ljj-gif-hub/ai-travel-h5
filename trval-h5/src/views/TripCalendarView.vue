@@ -6,6 +6,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { useTripStore } from '../stores/trip'
 import { planApi } from '../api'
@@ -14,6 +15,7 @@ import EmptyState from '../components/EmptyState.vue'
 const router = useRouter()
 const route = useRoute()
 const store = useTripStore()
+const { t } = useI18n()
 
 const plan = ref(null)
 const loading = ref(true)
@@ -24,8 +26,8 @@ const goBack = () => router.back()
 function computeDate(offset, base) {
   const d = base ? new Date(base) : new Date()
   d.setDate(d.getDate() + offset)
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-  return { dateStr: `${d.getMonth() + 1}月${d.getDate()}日`, weekday: `周${weekdays[d.getDay()]}` }
+  const weekdays = [t('calendar.week0'), t('calendar.week1'), t('calendar.week2'), t('calendar.week3'), t('calendar.week4'), t('calendar.week5'), t('calendar.week6')]
+  return { dateStr: t('calendar.dateStr', { month: d.getMonth() + 1, day: d.getDate() }), weekday: t('calendar.weekday', { day: weekdays[d.getDay()] }) }
 }
 
 const days = computed(() => {
@@ -49,7 +51,7 @@ const totalCost = computed(() => {
 const stripTags = (name) => (name || '').replace(/【[^】]*】/g, '').trim()
 
 const goMap = () => {
-  showToast('行程地图')
+  showToast(t('calendar.tripMap'))
   router.push('/agent-map')
 }
 
@@ -80,24 +82,24 @@ onMounted(async () => {
 
 <template>
   <div class="calendar-page">
-    <van-nav-bar title="行程日历" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('calendar.title')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <div v-if="loading" class="center"><van-loading color="#8B5CF6" size="28" /></div>
 
     <div v-else-if="!plan || !plan.dayPlans || plan.dayPlans.length === 0" class="center">
-      <EmptyState icon="calendar-o" title="暂无行程数据" desc="请先生成或加载一个行程" />
+      <EmptyState icon="calendar-o" :title="t('calendar.noPlan')" :desc="t('calendar.noPlanHint')" />
     </div>
 
     <div v-else class="content">
       <!-- 概览卡 -->
       <div class="overview-card">
-        <div class="ov-title">{{ plan.destination }} · {{ plan.days }} 天</div>
+        <div class="ov-title">{{ plan.destination }} · {{ plan.days }} {{ t('common.days') }}</div>
         <div class="ov-meta">
-          <span v-if="plan.people">{{ plan.people }} 人</span>
-          <span v-if="totalCost != null">预算 ¥{{ totalCost }}</span>
+          <span v-if="plan.people">{{ plan.people }} {{ t('common.people') }}</span>
+          <span v-if="totalCost != null">{{ t('calendar.budget') }} ¥{{ totalCost }}</span>
         </div>
         <p v-if="plan.overview" class="ov-desc">{{ plan.overview }}</p>
-        <van-button size="mini" round plain type="primary" class="map-btn" @click="goMap">在地图查看</van-button>
+        <van-button size="mini" round plain type="primary" class="map-btn" @click="goMap">{{ t('calendar.viewMap') }}</van-button>
       </div>
 
       <!-- 日期条 -->
@@ -118,7 +120,7 @@ onMounted(async () => {
         <div v-if="d.day_title" class="day-title">{{ d.day_title }}</div>
 
         <div v-for="(slot, si) in (d.timeSlots || [])" :key="si" class="slot-row">
-          <div class="slot-label" :class="`t-${slot.time_of_day || 'am'}`">{{ slot.time_of_day || '上午' }}</div>
+          <div class="slot-label" :class="`t-${slot.time_of_day || 'am'}`">{{ slot.time_of_day || t('calendar.morning') }}</div>
           <div class="slot-body">
             <div class="slot-name">{{ stripTags(slot.attraction) }}</div>
             <div class="slot-meta">
@@ -131,17 +133,17 @@ onMounted(async () => {
         </div>
 
         <div v-if="d.meals && d.meals.length" class="meals-block">
-          <div class="meals-title">🍽 餐饮</div>
+          <div class="meals-title">🍽 {{ t('calendar.meals') }}</div>
           <div v-for="(m, mi) in d.meals" :key="mi" class="meal">{{ m }}</div>
         </div>
       </div>
 
       <!-- 酒店 -->
       <div v-if="plan.hotels && plan.hotels.length" class="hotel-card">
-        <div class="hotel-title">🏨 住宿推荐</div>
+        <div class="hotel-title">🏨 {{ t('calendar.hotels') }}</div>
         <div v-for="(h, hi) in plan.hotels" :key="hi" class="hotel-item">
           <span class="hotel-name">{{ h.name }}</span>
-          <span class="hotel-price">¥{{ h.price_per_night || h.total_price || '' }}/晚</span>
+          <span class="hotel-price">¥{{ h.price_per_night || h.total_price || '' }}/{{ t('common.night') }}</span>
         </div>
       </div>
     </div>

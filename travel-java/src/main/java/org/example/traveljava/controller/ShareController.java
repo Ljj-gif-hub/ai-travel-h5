@@ -18,6 +18,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/share")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "分享")
 public class ShareController {
 
     private static final Logger log = LoggerFactory.getLogger(ShareController.class);

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { filterXss } from '../utils/security';
@@ -8,6 +9,7 @@ import { noteApi, commentApi, uploadApi, followApi } from '../api';
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const goBack = () => {
   try { router.back() } catch (e) { router.push('/notes') }
@@ -31,24 +33,24 @@ const showShareSheet = ref(false)
 const expandedGroups = ref(new Set())
 
 const shareOptions = [
-  { name: '微信好友', icon: 'wechat', color: '#07C160' },
-  { name: '朋友圈', icon: 'cluster-o', color: '#07C160' },
-  { name: '复制链接', icon: 'link-o', color: '#8B5CF6' },
-  { name: '保存图片', icon: 'photo-o', color: '#3B82F6' },
-  { name: 'QQ好友', icon: 'chat-o', color: '#12B7F5' },
-  { name: '微博', icon: 'share-o', color: '#E6162D' },
+  { key: 'wechat', label: t('note.shareWechat'), icon: 'wechat', color: '#07C160' },
+  { key: 'moments', label: t('note.shareMoments'), icon: 'cluster-o', color: '#07C160' },
+  { key: 'copyLink', label: t('note.shareCopyLink'), icon: 'link-o', color: '#8B5CF6' },
+  { key: 'saveImage', label: t('note.shareSaveImage'), icon: 'photo-o', color: '#3B82F6' },
+  { key: 'qq', label: t('note.shareQQ'), icon: 'chat-o', color: '#12B7F5' },
+  { key: 'weibo', label: t('note.shareWeibo'), icon: 'share-o', color: '#E6162D' },
 ]
 
 const handleShare = (option) => {
   showShareSheet.value = false
-  if (option.name === '复制链接') {
+  if (option.key === 'copyLink') {
     navigator.clipboard?.writeText(window.location.href)
-      .then(() => showToast('链接已复制'))
-      .catch(() => showToast('复制失败，请手动复制'))
-  } else if (option.name === '保存图片') {
-    showToast('长按图片即可保存')
+      .then(() => showToast(t('note.linkCopied')))
+      .catch(() => showToast(t('note.copyFailedManual')))
+  } else if (option.key === 'saveImage') {
+    showToast(t('note.longPressSave'))
   } else {
-    showToast(`分享到${option.name}功能开发中`)
+    showToast(t('note.shareToDev', { n: option.label }))
   }
 }
 
@@ -72,12 +74,12 @@ const cancelReply = () => {
   commentImage.value = ''
   commentVideo.value = ''
 }
-const inputPlaceholder = computed(() => replyTo.value ? `回复 用户${replyTo.value.userId}：` : '写评论')
+const inputPlaceholder = computed(() => replyTo.value ? t('note.replyUserPlaceholder', { n: replyTo.value.userId }) : t('note.writeComment'))
 
 /* ==================== 评论分组（抖音风格） ==================== */
 const findUserById = (id) => {
   const x = comments.value.find(c => c.id === id)
-  return x ? `用户${x.userId}` : '用户'
+  return x ? t('note.user') + x.userId : t('note.user')
 }
 const findRootId = (c) => {
   if (!c.parentId) return c.id
@@ -160,31 +162,31 @@ const toggleHeart = () => {
 }
 
 const handleFollow = async () => {
-  if (!getToken()) { showToast('请先登录'); return }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
   followLoading.value = true
   try {
     if (isFollowing.value) {
       await followApi.unfollow(note.value.userId || note.value.authorId)
-      isFollowing.value = false; showToast('已取消关注')
+      isFollowing.value = false; showToast(t('note.unfollowed'))
     } else {
       await followApi.follow(note.value.userId || note.value.authorId)
-      isFollowing.value = true; showToast('关注成功')
+      isFollowing.value = true; showToast(t('note.followSuccess'))
     }
-  } catch (e) { showToast('操作失败') }
+  } catch (e) { showToast(t('note.opFailed')) }
   finally { followLoading.value = false }
 }
 
 const loadNote = async () => {
   const id = route.query.id;
-  if (!id) { showToast('游记不存在'); router.replace('/notes'); return }
+  if (!id) { showToast(t('note.noteNotExist')); router.replace('/notes'); return }
   isLoading.value = true;
   try {
     const res = await noteApi.getNoteDetail(id);
     if (res.code === 0) {
       note.value = res.data;
       isFollowing.value = !!res.data.isFollowing;
-    } else { showToast(res.message || '获取游记失败') }
-  } catch (e) { showToast('加载失败') }
+    } else { showToast(res.message || t('note.getNoteFailed')) }
+  } catch (e) { showToast(t('note.loadFailed')) }
   finally { isLoading.value = false }
 };
 
@@ -209,7 +211,7 @@ const loadComments = async () => {
 };
 
 const handleLike = async () => {
-  if (!getToken()) { showToast('请先登录'); return }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
   const prevLiked = note.value.isLiked;
   note.value.isLiked = !note.value.isLiked;
   note.value.likes = (note.value.likes || 0) + (note.value.isLiked ? 1 : -1);
@@ -218,12 +220,12 @@ const handleLike = async () => {
     if (res.code === 0) {
       note.value.likes = res.data.likes;
       note.value.isLiked = res.data.isLiked;
-      showToast(note.value.isLiked ? '点赞成功' : '已取消点赞');
+      showToast(note.value.isLiked ? t('note.likeSuccess') : t('note.unliked'));
     } else { throw new Error(res.message) }
   } catch (e) {
     note.value.isLiked = prevLiked;
     note.value.likes = (note.value.likes || 0) + (prevLiked ? 1 : -1);
-    showToast('操作失败');
+    showToast(t('note.opFailed'));
   }
 };
 
@@ -236,9 +238,9 @@ const handleUpload = async (e) => {
     if (res.code === 0) {
       if (res.data.type === 'image') { commentImage.value = res.data.url; commentVideo.value = '' }
       else { commentVideo.value = res.data.url; commentImage.value = '' }
-      showToast(res.data.type === 'image' ? '图片已上传' : '视频已上传');
-    } else { showToast(res.message || '上传失败') }
-  } catch (e) { showToast('上传失败') }
+      showToast(res.data.type === 'image' ? t('note.imageUploaded') : t('note.videoUploaded'));
+    } else { showToast(res.message || t('note.uploadFailed')) }
+  } catch (e) { showToast(t('note.uploadFailed')) }
   finally { isUploading.value = false; if (fileInput.value) fileInput.value.value = '' }
 };
 
@@ -249,7 +251,7 @@ const handleSendComment = async () => {
   const img = commentImage.value;
   const vid = commentVideo.value;
   if (!text && !img && !vid) return;
-  if (!getToken()) { showToast('请先登录'); return }
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
   isSending.value = true;
   try {
     const parentId = replyTo.value?.id || null
@@ -259,9 +261,9 @@ const handleSendComment = async () => {
       replyTo.value = null
       comments.value.push(res.data);
       note.value.comments = (note.value.comments || 0) + 1;
-      showToast(parentId ? '回复成功' : '评论成功');
-    } else { showToast(res.message || '评论失败') }
-  } catch (e) { showToast('评论失败') }
+      showToast(parentId ? t('note.replySuccess') : t('note.commentSuccess'));
+    } else { showToast(res.message || t('note.commentFailed')) }
+  } catch (e) { showToast(t('note.commentFailed')) }
   finally { isSending.value = false }
 };
 
@@ -271,9 +273,9 @@ const handleDeleteComment = async (comment) => {
     if (res.code === 0) {
       comments.value = comments.value.filter(c => c.id !== comment.id);
       note.value.comments = Math.max(0, (note.value.comments || 1) - 1);
-      showToast('已删除');
-    } else { showToast(res.message || '删除失败') }
-  } catch (e) { showToast('删除失败') }
+      showToast(t('note.deleted'));
+    } else { showToast(res.message || t('note.deleteFailed')) }
+  } catch (e) { showToast(t('note.deleteFailed')) }
 };
 
 const handleEdit = () => { router.push(`/write-note?id=${note.value.id}`) };
@@ -292,11 +294,11 @@ onMounted(() => {
       <div class="nav-left" @click="goBack"><van-icon name="arrow-left" size="22" color="#1f2937" /></div>
       <div class="nav-center">
         <van-image round width="30" height="30" :src="note.authorAvatar || 'https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png'" fit="cover" class="nav-avatar" />
-        <span class="nav-username">{{ note.authorName || '匿名用户' }}</span>
+        <span class="nav-username">{{ note.authorName || t('note.anonymousUser') }}</span>
       </div>
       <div class="nav-right">
         <button type="button" class="follow-btn" :class="{ followed: isFollowing }" :disabled="followLoading" @click.stop="handleFollow">
-          {{ isFollowing ? '已关注' : '+关注' }}
+          {{ isFollowing ? t('note.followed') : t('note.follow') }}
         </button>
       </div>
     </div>
@@ -327,17 +329,17 @@ onMounted(() => {
 
       <!-- 评论区（分组显示） -->
       <div class="comments-section">
-        <div class="comments-title">全部评论 ({{ comments.length }})</div>
-        <div v-if="comments.length === 0" class="no-comments">暂无评论，来说两句吧</div>
+        <div class="comments-title">{{ t('note.allComments', { n: comments.length }) }}</div>
+        <div v-if="comments.length === 0" class="no-comments">{{ t('note.noComments') }}</div>
         <template v-for="g in groupedComments" :key="g.parent.id">
           <div class="comment-item">
             <van-image round width="28px" height="28px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
             <div class="comment-body">
-              <div class="comment-top"><span class="comment-user">用户{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
+              <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
               <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
               <van-image v-if="g.parent.image" :src="g.parent.image" fit="cover" width="100%" class="comment-media-img" />
               <video v-if="g.parent.video" :src="g.parent.video" controls preload="none" class="comment-media-video"></video>
-              <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">回复</button>
+              <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">{{ t('note.reply') }}</button>
             </div>
             <van-icon v-if="currentUserId === g.parent.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(g.parent)" />
           </div>
@@ -345,18 +347,18 @@ onMounted(() => {
             <div v-for="(r, i) in g.replies" :key="r.id" v-show="i < 2 || expandedGroups.has(g.parent.id)" class="comment-item is-reply">
               <van-image round width="20px" height="20px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
               <div class="comment-body">
-                <div class="comment-top"><span class="comment-user">用户{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
+                <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
                 <div class="comment-content" v-if="withMention(r).mention || withMention(r).content">
                   <span v-if="withMention(r).mention" class="comment-mention">{{ withMention(r).mention }}</span>{{ withMention(r).content }}
                 </div>
                 <van-image v-if="r.image" :src="r.image" fit="cover" width="100%" class="comment-media-img" />
                 <video v-if="r.video" :src="r.video" controls preload="none" class="comment-media-video"></video>
-                <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">回复</button>
+                <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">{{ t('note.reply') }}</button>
               </div>
               <van-icon v-if="currentUserId === r.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(r)" />
             </div>
             <button v-if="g.replies.length > 2" type="button" class="expand-replies-btn" @click="toggleGroup(g.parent.id)">
-              {{ expandedGroups.has(g.parent.id) ? '收起' : `展开剩下的 ${g.replies.length - 2} 条回复` }}
+              {{ expandedGroups.has(g.parent.id) ? t('note.collapse') : t('note.expandRemainingReplies', { n: g.replies.length - 2 }) }}
             </button>
           </template>
         </template>
@@ -365,7 +367,7 @@ onMounted(() => {
 
     <!-- 底部操作栏 -->
     <div class="bottom-bar">
-      <button type="button" class="comment-oval-btn" @click="openDrawer()">写评论</button>
+      <button type="button" class="comment-oval-btn" @click="openDrawer()">{{ t('note.writeComment') }}</button>
       <div class="bottom-actions">
         <div class="action-item" :class="{ liked: note.isLiked }" @click="handleLike">
           <van-icon :name="note.isLiked ? 'good-job' : 'good-job-o'" size="24" /><span>{{ note.likes || 0 }}</span>
@@ -374,10 +376,10 @@ onMounted(() => {
           <van-icon name="chat-o" size="24" /><span>{{ note.comments || 0 }}</span>
         </div>
         <div class="action-item" @click="showShareSheet = true">
-          <van-icon name="share-o" size="24" /><span>分享</span>
+          <van-icon name="share-o" size="24" /><span>{{ t('note.share') }}</span>
         </div>
         <div class="action-item" :class="{ hearted: isHearted }" @click="toggleHeart">
-          <van-icon :name="isHearted ? 'like' : 'like-o'" size="24" /><span>{{ heartCount || '喜欢' }}</span>
+          <van-icon :name="isHearted ? 'like' : 'like-o'" size="24" /><span>{{ heartCount || t('note.like') }}</span>
         </div>
       </div>
     </div>
@@ -386,20 +388,20 @@ onMounted(() => {
     <van-popup v-model:show="showCommentsDrawer" position="bottom" :style="{ height: '65%', borderRadius: '20px 20px 0 0' }" round safe-area-inset-bottom>
       <div class="comments-drawer">
         <div class="comments-drawer-header">
-          <span class="comments-drawer-title">全部评论 ({{ comments.length }})</span>
+          <span class="comments-drawer-title">{{ t('note.allComments', { n: comments.length }) }}</span>
           <van-icon name="cross" size="20" color="#94a3b8" @click="showCommentsDrawer = false" />
         </div>
         <div class="comments-drawer-body">
-          <div v-if="comments.length === 0" class="no-comments">暂无评论，来说两句吧</div>
+          <div v-if="comments.length === 0" class="no-comments">{{ t('note.noComments') }}</div>
           <template v-for="g in groupedComments" :key="'d'+g.parent.id">
             <div class="comment-item">
               <van-image round width="28px" height="28px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
               <div class="comment-body">
-                <div class="comment-top"><span class="comment-user">用户{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
+                <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
                 <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
                 <van-image v-if="g.parent.image" :src="g.parent.image" fit="cover" width="100%" class="comment-media-img" />
                 <video v-if="g.parent.video" :src="g.parent.video" controls preload="none" class="comment-media-video"></video>
-                <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">回复</button>
+                <button type="button" class="comment-reply-btn" @click="openDrawer({ id: g.parent.id, userId: g.parent.userId })">{{ t('note.reply') }}</button>
               </div>
               <van-icon v-if="currentUserId === g.parent.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(g.parent)" />
             </div>
@@ -407,24 +409,24 @@ onMounted(() => {
               <div v-for="(r, i) in g.replies" :key="r.id" v-show="i < 2 || expandedGroups.has(g.parent.id)" class="comment-item is-reply">
                 <van-image round width="20px" height="20px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
                 <div class="comment-body">
-                  <div class="comment-top"><span class="comment-user">用户{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
+                  <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
                   <div class="comment-content" v-if="withMention(r).mention || withMention(r).content">
                     <span v-if="withMention(r).mention" class="comment-mention">{{ withMention(r).mention }}</span>{{ withMention(r).content }}
                   </div>
                   <van-image v-if="r.image" :src="r.image" fit="cover" width="100%" class="comment-media-img" />
                   <video v-if="r.video" :src="r.video" controls preload="none" class="comment-media-video"></video>
-                  <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">回复</button>
+                  <button type="button" class="comment-reply-btn" @click="openDrawer({ id: r.id, userId: r.userId })">{{ t('note.reply') }}</button>
                 </div>
                 <van-icon v-if="currentUserId === r.userId" name="delete-o" size="16" color="#999" class="comment-delete" @click="handleDeleteComment(r)" />
               </div>
               <button v-if="g.replies.length > 2" type="button" class="expand-replies-btn" @click="toggleGroup(g.parent.id)">
-                {{ expandedGroups.has(g.parent.id) ? '收起' : `展开剩下的 ${g.replies.length - 2} 条回复` }}
+                {{ expandedGroups.has(g.parent.id) ? t('note.collapse') : t('note.expandRemainingReplies', { n: g.replies.length - 2 }) }}
               </button>
             </template>
           </template>
         </div>
         <div class="comments-drawer-footer">
-          <button type="button" class="comment-oval-btn drawer-write-btn" @click="openDrawer()">写评论</button>
+          <button type="button" class="comment-oval-btn drawer-write-btn" @click="openDrawer()">{{ t('note.writeComment') }}</button>
         </div>
       </div>
     </van-popup>
@@ -432,14 +434,14 @@ onMounted(() => {
     <!-- 分享面板 -->
     <van-popup v-model:show="showShareSheet" position="bottom" :style="{ borderRadius: '20px 20px 0 0' }" round safe-area-inset-bottom>
       <div class="share-sheet">
-        <div class="share-sheet-title">分享至</div>
+        <div class="share-sheet-title">{{ t('note.shareTo') }}</div>
         <div class="share-grid">
           <div v-for="opt in shareOptions" :key="opt.name" class="share-option" @click="handleShare(opt)">
             <div class="share-icon-circle" :style="{ background: opt.color }"><van-icon :name="opt.icon" size="22" color="#fff" /></div>
-            <span class="share-label">{{ opt.name }}</span>
+            <span class="share-label">{{ opt.label }}</span>
           </div>
         </div>
-        <button type="button" class="share-cancel" @click="showShareSheet = false">取消</button>
+        <button type="button" class="share-cancel" @click="showShareSheet = false">{{ t('common.cancel') }}</button>
       </div>
     </van-popup>
 
@@ -448,7 +450,7 @@ onMounted(() => {
       <div class="drawer-content">
         <div class="drawer-input-area">
           <div v-if="replyTo" class="reply-indicator">
-            <span class="reply-indicator-text">回复 <strong>用户{{ replyTo.userId }}</strong></span>
+            <span class="reply-indicator-text">{{ t('note.reply') }} <strong>{{ t('note.user') }}{{ replyTo.userId }}</strong></span>
             <van-icon name="cross" size="14" color="#94a3b8" @click="cancelReply" class="reply-cancel" />
           </div>
           <div class="media-preview-row" v-if="commentImage || commentVideo">
@@ -471,7 +473,7 @@ onMounted(() => {
                 <span class="textarea-icon"><van-icon name="smile-o" size="16" /></span>
               </div>
             </div>
-            <span class="drawer-send-btn" :class="{ active: canSend }" @click="canSend && handleSendComment()">发送</span>
+            <span class="drawer-send-btn" :class="{ active: canSend }" @click="canSend && handleSendComment()">{{ t('note.send') }}</span>
           </div>
         </div>
       </div>

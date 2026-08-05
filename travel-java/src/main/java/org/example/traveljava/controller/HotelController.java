@@ -25,6 +25,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/hotel")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "电商")
 public class HotelController {
 
     private static final Logger log = LoggerFactory.getLogger(HotelController.class);

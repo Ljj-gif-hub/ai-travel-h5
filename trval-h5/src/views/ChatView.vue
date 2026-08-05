@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { ref, nextTick, onMounted, onUnmounted, onDeactivated, onActivated, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showDialog, showConfirmDialog } from 'vant'
 
 /*
@@ -17,6 +18,7 @@ import 'highlight.js/styles/github.css'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 /* ==================== 规划参数 ==================== */
 const destination = route.query.destination || ''
@@ -77,10 +79,10 @@ const updatePageHeight = () => {
 
 /* ==================== 快捷问题 ==================== */
 const quickQuestions = [
-  { label: '💰 换低价方案', query: '能否帮我调整成更省钱的方案？' },
-  { label: '🍜 增加美食推荐', query: '请多推荐一些当地必吃的美食' },
-  { label: '⏱️ 缩短天数', query: '帮我压缩行程天数' },
-  { label: '👨‍👩‍👧 亲子优化', query: '帮我优化成适合带孩子的亲子游方案' },
+  { label: t('chat.quickCheaper'), query: '能否帮我调整成更省钱的方案？' },
+  { label: t('chat.quickFood'), query: '请多推荐一些当地必吃的美食' },
+  { label: t('chat.quickShorter'), query: '帮我压缩行程天数' },
+  { label: t('chat.quickFamily'), query: '帮我优化成适合带孩子的亲子游方案' },
 ]
 
 /* ==================== Markdown 渲染 ==================== */
@@ -117,22 +119,22 @@ const loadMessagesFromStorage = async () => {
     const saved = localStorage.getItem(STORAGE_KEY())
     if (saved) {
       const parsed = JSON.parse(saved)
-      if (Array.isArray(parsed) && parsed.length > 0) { messages.value = parsed; showToast({ message: '历史记录已恢复', position: 'top' }); return true }
+      if (Array.isArray(parsed) && parsed.length > 0) { messages.value = parsed; showToast({ message: t('chat.historyRestored'), position: 'top' }); return true }
     }
-    showToast({ message: '暂无历史记录', position: 'top' })
-  } catch (e) { localStorage.removeItem(STORAGE_KEY()); showToast({ message: '加载失败', position: 'top' }) }
+    showToast({ message: t('chat.noHistory'), position: 'top' })
+  } catch (e) { localStorage.removeItem(STORAGE_KEY()); showToast({ message: t('chat.loadFailed'), position: 'top' }) }
   return false
 }
 
 const saveMessagesToStorage = () => {
   if (!getToken()) return
-  try { localStorage.setItem(STORAGE_KEY(), JSON.stringify(messages.value)) } catch (e) { showToast('存储空间不足') }
+  try { localStorage.setItem(STORAGE_KEY(), JSON.stringify(messages.value)) } catch (e) { showToast(t('chat.storageFull')) }
 }
 
 const checkLogin = async () => {
   if (!getToken()) {
     try {
-      await showDialog({ title: '需要登录', message: '此功能需要登录后才能使用，是否立即登录？', confirmButtonText: '去登录', cancelButtonText: '取消' })
+      await showDialog({ title: t('chat.loginRequired'), message: t('chat.loginRequiredMsg'), confirmButtonText: t('chat.goLogin'), cancelButtonText: t('common.cancel') })
       localStorage.setItem('redirectUrl', '/chat'); router.push('/login'); return false
     } catch { return false }
   }
@@ -142,9 +144,9 @@ const checkLogin = async () => {
 const clearChat = async () => {
   if (!(await checkLogin())) return
   try {
-    await showConfirmDialog({ title: '清空对话', message: '确定要清空所有对话记录吗？', confirmButtonText: '清空', cancelButtonText: '取消' })
-    messages.value = [{ id: 1, type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' }]
-    localStorage.removeItem(STORAGE_KEY()); showToast('对话已清空'); await nextTick(); scrollToBottom(true)
+    await showConfirmDialog({ title: t('chat.clearChat'), message: t('chat.clearChatMsg'), confirmButtonText: t('chat.clearConfirm'), cancelButtonText: t('common.cancel') })
+    messages.value = [{ id: 1, type: 'system', content: t('chat.greeting') }]
+    localStorage.removeItem(STORAGE_KEY()); showToast(t('chat.conversationCleared')); await nextTick(); scrollToBottom(true)
   } catch { /* 取消 */ }
 }
 
@@ -194,7 +196,7 @@ const initSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     recognition.value = new SpeechRecognition()
     recognition.value.lang = 'zh-CN'; recognition.value.continuous = false; recognition.value.interimResults = true
-    recognition.value.onstart = () => { isListening.value = true; showToast('正在聆听...') }
+    recognition.value.onstart = () => { isListening.value = true; showToast(t('chat.listening')) }
     recognition.value.onresult = (event) => {
       let finalTranscript = ''; let interimTranscript = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -204,20 +206,20 @@ const initSpeechRecognition = () => {
       if (interimTranscript) inputText.value = finalTranscript + interimTranscript
       if (finalTranscript) inputText.value = finalTranscript
     }
-    recognition.value.onerror = (event) => { isListening.value = false; const errors = { 'no-speech': '未检测到语音', 'audio-capture': '无法访问麦克风', 'not-allowed': '麦克风权限被拒绝' }; showToast(errors[event.error] || '语音识别失败') }
+    recognition.value.onerror = (event) => { isListening.value = false; const errors = { 'no-speech': t('chat.errNoSpeech'), 'audio-capture': t('chat.errAudioCapture'), 'not-allowed': t('chat.errNotAllowed') }; showToast(errors[event.error] || t('chat.recognitionFailed')) }
     recognition.value.onend = () => { isListening.value = false }
   }
 }
 
 const toggleVoiceInput = () => {
-  if (!recognition.value) { showToast('您的浏览器不支持语音识别'); return }
+  if (!recognition.value) { showToast(t('chat.voiceNotSupported')); return }
   if (isListening.value) recognition.value.stop(); else { inputText.value = ''; recognition.value.start() }
 }
 
 /* ==================== 发送消息 ==================== */
 const sendMessage = async () => {
   const text = inputText.value.trim()
-  if (!text || isSending.value) { showToast('请输入内容'); return }
+  if (!text || isSending.value) { showToast(t('chat.inputRequired')); return }
   if (sendDebounce) return // 节流：500ms内重复点击忽略
   sendDebounce = true
   setTimeout(() => { sendDebounce = false }, 500)
@@ -269,15 +271,15 @@ const sendMessage = async () => {
     isSending.value = false; isThinking.value = false; showQuickBar.value = true; saveMessagesToStorage()
   } catch (e) {
     if (e?.name === 'AbortError') return // SSE被主动中断，不提示错误
-    isSending.value = false; isThinking.value = false; showQuickBar.value = true; showToast('请求失败')
+    isSending.value = false; isThinking.value = false; showQuickBar.value = true; showToast(t('chat.requestFailed'))
   }
 }
 
 /* ==================== 生命周期：视口 + 键盘监听 ==================== */
 onMounted(async () => {
   if (getToken()) await loadMessagesFromStorage()
-  if (messages.value.length === 0) messages.value = [{ id: 1, type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' }]
-  if (destination && budget && days) messages.value.push({ id: generateUniqueId(), type: 'system', content: `📋 已加载：${destination} · ${days}天 · ¥${budget} · 继续问我细节吧～` })
+  if (messages.value.length === 0) messages.value = [{ id: 1, type: 'system', content: t('chat.greeting') }]
+  if (destination && budget && days) messages.value.push({ id: generateUniqueId(), type: 'system', content: t('chat.loadedInfo', { dest: destination, days: days, budget: budget }) })
 
   // 【关键修复】监听 visualViewport 变化，处理软键盘弹出/收起
   updatePageHeight()
@@ -336,7 +338,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
       <template #title>
         <div class="nav-title-row">
           <span class="nav-ai-icon">🤖</span>
-          <span class="nav-title-text">AI 旅行规划师</span>
+          <span class="nav-title-text">{{ t('chat.assistantName') }}</span>
         </div>
       </template>
       <template #right>
@@ -361,13 +363,13 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
               <path d="M46 68 Q60 78 74 68" fill="none" stroke="rgba(139,92,246,0.25)" stroke-width="2.5" stroke-linecap="round" />
             </svg>
           </div>
-          <p class="guide-heading">和我聊聊你的旅行计划吧 ✈️</p>
-          <p class="guide-hint">输入目的地、预算、天数，我帮你生成专属行程</p>
+          <p class="guide-heading">{{ t('chat.guideHeading') }}</p>
+          <p class="guide-hint">{{ t('chat.guideHint') }}</p>
           <div class="guide-chips">
-            <button class="guide-chip" @click="sendQuickQuestion('推荐几个适合情侣的国内旅游目的地')">💑 情侣旅行推荐</button>
-            <button class="guide-chip" @click="sendQuickQuestion('带父母去哪里旅游比较合适？')">👨‍👩‍👦 适合带父母</button>
-            <button class="guide-chip" @click="sendQuickQuestion('预算3000元可以去哪里玩？')">💰 预算3000元</button>
-            <button class="guide-chip" @click="sendQuickQuestion('推荐北京三日游攻略')">🏯 北京三日游</button>
+            <button class="guide-chip" @click="sendQuickQuestion('推荐几个适合情侣的国内旅游目的地')">{{ t('chat.guideCouples') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion('带父母去哪里旅游比较合适？')">{{ t('chat.guideParents') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion('预算3000元可以去哪里玩？')">{{ t('chat.guideBudget3000') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion('推荐北京三日游攻略')">{{ t('chat.guideBeijing') }}</button>
           </div>
         </div>
 
@@ -391,7 +393,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
               <div class="ai-bubble" :class="{ streaming: msg.isStreaming }">
                 <div v-if="isThinking && msg === messages[messages.length - 1]" class="thinking">
                   <span class="think-dot" /><span class="think-dot" /><span class="think-dot" />
-                  <span class="think-text">AI正在思考...</span>
+                  <span class="think-text">{{ t('chat.thinking') }}</span>
                 </div>
                 <div v-else class="md-body" v-html="renderMarkdown(msg.content)" />
               </div>
@@ -418,7 +420,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
           <input
             v-model="inputText"
             type="text"
-            placeholder="和AI旅行规划师聊聊..."
+            :placeholder="t('chat.inputPlaceholder')"
             class="msg-input"
             @keyup.enter="sendMessage"
             @focus="scrollToBottom(true)"
@@ -432,7 +434,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 
       <!-- 语音提示 -->
       <div v-if="isListening" class="voice-toast">
-        <span class="voice-pulse" />正在聆听...
+        <span class="voice-pulse" />{{ t('chat.listening') }}
       </div>
     </div>
   </div>

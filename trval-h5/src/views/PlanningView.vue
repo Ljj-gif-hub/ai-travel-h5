@@ -3,7 +3,7 @@
     <div class="page-container">
       <van-nav-bar
         class="page-navbar"
-        title="AI 行程规划"
+        :title="t('planning.title')"
         left-arrow
         @click-left="goBack"
       />
@@ -19,7 +19,7 @@
               loading="lazy"
               @error="handleDestinationImageError"
             />
-            <div class="image-badge">热门推荐</div>
+            <div class="image-badge">{{ t('planning.hotRecommend') }}</div>
           </div>
           
           <div class="overview-info-section">
@@ -27,7 +27,7 @@
               <div class="overview-item">
                 <van-icon name="location-o" color="#7c3aed" size="18" />
                 <div class="item-text">
-                  <span class="label">目的地</span>
+                  <span class="label">{{ t('planning.destination') }}</span>
                   <span class="value">{{ destination }}</span>
                 </div>
               </div>
@@ -35,8 +35,8 @@
               <div class="overview-item">
                 <van-icon name="calendar-o" color="#7c3aed" size="18" />
                 <div class="item-text">
-                  <span class="label">天数</span>
-                  <span class="value highlight">{{ days }} 天</span>
+                  <span class="label">{{ t('planning.daysLabel') }}</span>
+                  <span class="value highlight">{{ days }} {{ t('common.days') }}</span>
                 </div>
               </div>
             </div>
@@ -45,7 +45,7 @@
               <div class="overview-item">
                 <van-icon name="balance-o" color="#7c3aed" size="18" />
                 <div class="item-text">
-                  <span class="label">预算</span>
+                  <span class="label">{{ t('planning.budget') }}</span>
                   <span class="value highlight">¥{{ budget }}</span>
                 </div>
               </div>
@@ -53,8 +53,8 @@
               <div class="overview-item">
                 <van-icon name="friends-o" color="#7c3aed" size="18" />
                 <div class="item-text">
-                  <span class="label">人数</span>
-                  <span class="value">{{ people }}人</span>
+                  <span class="label">{{ t('planning.people') }}</span>
+                  <span class="value">{{ people }}{{ t('common.people') }}</span>
                 </div>
               </div>
             </div>
@@ -68,11 +68,11 @@
         <div class="section-header">
           <div class="header-left">
             <van-icon name="magic-o" color="#7c3aed" size="18" />
-            <span class="section-title">AI 行程规划</span>
+            <span class="section-title">{{ t('planning.title') }}</span>
           </div>
           <div class="header-right">
-            <van-tag v-if="!isLoading" type="success" plain round size="small" class="status-badge">已完成</van-tag>
-            <van-tag v-else type="primary" plain round size="small" class="status-badge">生成中...</van-tag>
+            <van-tag v-if="!isLoading" type="success" plain round size="small" class="status-badge">{{ t('planning.completed') }}</van-tag>
+            <van-tag v-else type="primary" plain round size="small" class="status-badge">{{ t('planning.generating') }}</van-tag>
             <van-button
               v-if="structuredPlan && !isLoading"
               size="mini"
@@ -85,14 +85,14 @@
               @click="savePlan"
             >
               <van-icon :name="isSaved ? 'success' : 'bookmark-o'" size="12" />
-              {{ isSaved ? '已保存' : '保存' }}
+              {{ isSaved ? t('trips.saved') : t('common.save') }}
             </van-button>
           </div>
         </div>
 
         <div v-if="isLoading" class="loading-state">
           <div class="loading-spinner"></div>
-          <span>AI 正在为你规划行程...</span>
+          <span>{{ t('planning.planningLoading') }}</span>
         </div>
 
         <!-- 流式模式：逐天渲染（复用原有 CSS class，保证样式一致） -->
@@ -104,8 +104,8 @@
                 <span class="day-label">DAY</span>
               </div>
               <div class="day-info">
-                <h3 class="day-title">{{ day.dayTitle || '第'+(i+1)+'天' }}</h3>
-                <p class="day-subtitle">探索 {{ destination }}</p>
+                <h3 class="day-title">{{ day.dayTitle || t('planning.dayN', { n: i+1 }) }}</h3>
+                <p class="day-subtitle">{{ t('planning.explore') }} {{ destination }}</p>
               </div>
             </div>
             <div v-if="day.timeSlots" class="timeline">
@@ -147,17 +147,17 @@
 
               <!-- 流式预算+贴士卡片：使用统一 class 复用 scoped CSS -->
           <div v-if="budgetData" class="section-card" :style="{ animation: 'fadeInDay 0.4s ease forwards' }">
-            <div class="section-header"><div class="header-left"><van-icon name="balance-list-o" color="#52c41a" size="18"/><span class="section-title">预算明细</span></div></div>
+            <div class="section-header"><div class="header-left"><van-icon name="balance-list-o" color="#52c41a" size="18"/><span class="section-title">{{ t('planning.budgetDetail') }}</span></div></div>
             <div class="budget-list">
-              <div class="budget-item"><span class="budget-label">交通费用</span><span class="budget-amount">¥{{ budgetData.trafficCost }}</span></div><div class="budget-divider"></div>
-              <div class="budget-item"><span class="budget-label">住宿费用</span><span class="budget-amount">¥{{ budgetData.hotelCost }}</span></div><div class="budget-divider"></div>
-              <div class="budget-item"><span class="budget-label">餐饮费用</span><span class="budget-amount">¥{{ budgetData.foodCost }}</span></div><div class="budget-divider"></div>
-              <div class="budget-item"><span class="budget-label">其他杂费</span><span class="budget-amount">¥{{ budgetData.otherCost }}</span></div><div class="budget-divider"></div>
-              <div class="budget-total"><span>总计</span><span class="total-amount">¥{{ budgetData.totalBudget }}</span></div>
+              <div class="budget-item"><span class="budget-label">{{ t('planning.trafficCost') }}</span><span class="budget-amount">¥{{ budgetData.trafficCost }}</span></div><div class="budget-divider"></div>
+              <div class="budget-item"><span class="budget-label">{{ t('planning.hotelCost') }}</span><span class="budget-amount">¥{{ budgetData.hotelCost }}</span></div><div class="budget-divider"></div>
+              <div class="budget-item"><span class="budget-label">{{ t('planning.foodCost') }}</span><span class="budget-amount">¥{{ budgetData.foodCost }}</span></div><div class="budget-divider"></div>
+              <div class="budget-item"><span class="budget-label">{{ t('planning.otherCost') }}</span><span class="budget-amount">¥{{ budgetData.otherCost }}</span></div><div class="budget-divider"></div>
+              <div class="budget-total"><span>{{ t('planning.total') }}</span><span class="total-amount">¥{{ budgetData.totalBudget }}</span></div>
             </div>
           </div>
           <div v-if="tipList.length > 0" class="section-card" :style="{ animation: 'fadeInDay 0.4s ease forwards' }">
-            <div class="section-header"><div class="header-left"><van-icon name="lightbulb-o" color="#faad14" size="18"/><span class="section-title">温馨提示</span></div></div>
+            <div class="section-header"><div class="header-left"><van-icon name="lightbulb-o" color="#faad14" size="18"/><span class="section-title">{{ t('planning.tipsTitle') }}</span></div></div>
             <div class="tips-list">
               <div v-for="(tip, ti) in tipList" :key="ti" class="tip-item"><van-icon name="check-circle" color="#52c41a" size="16"/><span class="tip-text">{{ tip }}</span></div>
             </div>
@@ -172,8 +172,8 @@
                 <span class="day-label">DAY</span>
               </div>
               <div class="day-info">
-                <h3 class="day-title">{{ dayPlan.dayTitle || `第${dayPlan.day}天` }}</h3>
-                <p class="day-subtitle">探索 {{ destination }}</p>
+                <h3 class="day-title">{{ dayPlan.dayTitle || t('planning.dayN', { n: dayPlan.day }) }}</h3>
+                <p class="day-subtitle">{{ t('planning.explore') }} {{ destination }}</p>
               </div>
             </div>
 
@@ -210,7 +210,7 @@
                           <path d="M20 20 Q40 10 60 20" stroke="#ccdde4" stroke-width="1.5" fill="none" />
                           <path d="M100 100 Q120 90 140 100" stroke="#ccdde4" stroke-width="1.5" fill="none" />
                         </svg>
-                        <span class="loading-text">图片加载中</span>
+                        <span class="loading-text">{{ t('planning.imageLoading') }}</span>
                       </div>
                       <!-- success: 渲染图片 -->
                       <img
@@ -230,7 +230,7 @@
                           <line x1="60" y1="54" x2="100" y2="54" stroke="#cbd5e1" stroke-width="1.2" />
                           <circle cx="70" cy="66" r="6" stroke="#cbd5e1" stroke-width="1.2" fill="none" />
                           <path d="M75 66 L85 66" stroke="#cbd5e1" stroke-width="1.2" />
-                          <text x="80" y="96" text-anchor="middle" fill="#94a3b8" font-size="9">图片加载失败，点击重试</text>
+                          <text x="80" y="96" text-anchor="middle" fill="#94a3b8" font-size="9">{{ t('planning.imageLoadFailedRetry') }}</text>
                         </svg>
                       </div>
                     </div>
@@ -268,13 +268,13 @@
         <div v-else-if="errorMsg" class="error-state">
           <van-icon name="cross-circle" size="32" color="#ff4d4f" />
           <p>{{ errorMsg }}</p>
-          <van-button type="primary" size="small" @click="fetchTravelPlan">重试</van-button>
+          <van-button type="primary" size="small" @click="fetchTravelPlan">{{ t('common.tryAgain') }}</van-button>
         </div>
 
         <div v-else class="empty-state">
           <van-icon name="info-o" size="24" color="#ccc" />
-          <span>暂无行程规划内容</span>
-          <p class="empty-hint">AI行程生成失败，请返回重新生成行程</p>
+          <span>{{ t('planning.emptyContent') }}</span>
+          <p class="empty-hint">{{ t('planning.emptyHint') }}</p>
         </div>
       </div>
 
@@ -283,41 +283,41 @@
           <div class="section-header">
             <div class="header-left">
               <van-icon name="balance-list-o" color="#52c41a" size="18" />
-              <span class="section-title">预算明细</span>
+              <span class="section-title">{{ t('planning.budgetDetail') }}</span>
             </div>
           </div>
           <div class="budget-chart">
             <div v-if="structuredPlan?.budgetDetail" class="chart-bars">
               <div class="bar-item">
-                <div class="bar-label">交通</div>
+                <div class="bar-label">{{ t('planning.budgetTransport') }}</div>
                 <div class="bar-track">
                   <div class="bar-fill bar-transport" :style="{ width: getBudgetPercent(structuredPlan.budgetDetail.transportation) + '%' }"></div>
                 </div>
                 <div class="bar-value">¥{{ structuredPlan.budgetDetail.transportation }}</div>
               </div>
               <div class="bar-item">
-                <div class="bar-label">住宿</div>
+                <div class="bar-label">{{ t('planning.budgetHotel') }}</div>
                 <div class="bar-track">
                   <div class="bar-fill bar-accommodation" :style="{ width: getBudgetPercent(structuredPlan.budgetDetail.accommodation) + '%' }"></div>
                 </div>
                 <div class="bar-value">¥{{ structuredPlan.budgetDetail.accommodation }}</div>
               </div>
               <div class="bar-item">
-                <div class="bar-label">餐饮</div>
+                <div class="bar-label">{{ t('planning.budgetFood') }}</div>
                 <div class="bar-track">
                   <div class="bar-fill bar-food" :style="{ width: getBudgetPercent(structuredPlan.budgetDetail.food) + '%' }"></div>
                 </div>
                 <div class="bar-value">¥{{ structuredPlan.budgetDetail.food }}</div>
               </div>
               <div class="bar-item">
-                <div class="bar-label">门票</div>
+                <div class="bar-label">{{ t('planning.budgetTickets') }}</div>
                 <div class="bar-track">
                   <div class="bar-fill bar-tickets" :style="{ width: getBudgetPercent(structuredPlan.budgetDetail.tickets) + '%' }"></div>
                 </div>
                 <div class="bar-value">¥{{ structuredPlan.budgetDetail.tickets }}</div>
               </div>
               <div class="bar-item">
-                <div class="bar-label">其他</div>
+                <div class="bar-label">{{ t('planning.budgetOther') }}</div>
                 <div class="bar-track">
                   <div class="bar-fill bar-other" :style="{ width: getBudgetPercent(structuredPlan.budgetDetail.other) + '%' }"></div>
                 </div>
@@ -326,27 +326,27 @@
             </div>
             <div v-else class="budget-list">
               <div class="budget-item">
-                <span class="budget-label">交通费用</span>
+                <span class="budget-label">{{ t('planning.trafficCost') }}</span>
                 <span class="budget-amount">¥{{ Math.round(budget * 0.3) }}</span>
               </div>
               <div class="budget-divider"></div>
               <div class="budget-item">
-                <span class="budget-label">住宿费用</span>
+                <span class="budget-label">{{ t('planning.hotelCost') }}</span>
                 <span class="budget-amount">¥{{ Math.round(budget * 0.4) }}</span>
               </div>
               <div class="budget-divider"></div>
               <div class="budget-item">
-                <span class="budget-label">餐饮费用</span>
+                <span class="budget-label">{{ t('planning.foodCost') }}</span>
                 <span class="budget-amount">¥{{ Math.round(budget * 0.2) }}</span>
               </div>
               <div class="budget-divider"></div>
               <div class="budget-item">
-                <span class="budget-label">其他杂费</span>
+                <span class="budget-label">{{ t('planning.otherCost') }}</span>
                 <span class="budget-amount">¥{{ Math.round(budget * 0.1) }}</span>
               </div>
               <div class="budget-divider"></div>
               <div class="budget-total">
-                <span>总计</span>
+                <span>{{ t('planning.total') }}</span>
                 <span class="total-amount">¥{{ budget }}</span>
               </div>
             </div>
@@ -357,7 +357,7 @@
           <div class="section-header">
             <div class="header-left">
               <van-icon name="lightbulb-o" color="#faad14" size="18" />
-              <span class="section-title">温馨提示</span>
+              <span class="section-title">{{ t('planning.tipsTitle') }}</span>
             </div>
           </div>
           <div class="tips-list">
@@ -382,14 +382,14 @@
       @click="structuredPlan && copyPlan"
     >
       <van-icon name="documents-o" size="16" />
-      <span>复制行程</span>
+      <span>{{ t('planning.copyPlan') }}</span>
     </div>
-    <div 
+    <div
       class="action-btn ai-btn"
       @click="openChatPanel"
     >
       <van-icon name="service-o" size="16" />
-      <span>咨询AI助手</span>
+      <span>{{ t('planning.askAI') }}</span>
     </div>
   </div>
 
@@ -405,7 +405,7 @@
       <div class="chat-panel-header">
         <div class="chat-panel-title">
           <van-icon name="service-o" color="#7c3aed" size="18" />
-          <span>AI 旅游助手</span>
+          <span>{{ t('planning.aiAssistant') }}</span>
         </div>
         <van-button
           size="mini"
@@ -415,17 +415,17 @@
           @click="showChatPanel = false"
         >
           <van-icon name="eye-o" size="12" />
-          查看规划
+          {{ t('planning.viewPlan') }}
         </van-button>
       </div>
 
       <div class="chat-panel-body">
         <div v-if="chatMessages.length === 0" class="chat-guide">
           <van-icon name="comment-o" class="chat-guide-icon" />
-          <p class="chat-guide-title">向 AI 助手开始对话吧！</p>
+          <p class="chat-guide-title">{{ t('planning.chatStart') }}</p>
           <p class="chat-guide-desc">
-            当前行程：{{ destination }} · {{ days }}天 · ¥{{ budget }}<br/>
-            可询问景点细节、美食推荐、交通建议等
+            {{ t('planning.chatCurrentTrip') }}{{ destination }} · {{ days }}{{ t('common.days') }} · ¥{{ budget }}<br/>
+            {{ t('planning.chatGuideHint') }}
           </p>
           <div class="chat-quick-questions">
             <van-button
@@ -434,9 +434,9 @@
               type="primary"
               size="small"
               class="chat-q-btn"
-              @click="sendQuickQuestion(`${destination}有哪些必去景点？`)"
+              @click="sendQuickQuestion(t('planning.qMustSee', { destination }))"
             >
-              必去景点
+              {{ t('planning.mustSee') }}
             </van-button>
             <van-button
               round
@@ -444,9 +444,9 @@
               type="primary"
               size="small"
               class="chat-q-btn"
-              @click="sendQuickQuestion(`${destination}有什么特色美食？`)"
+              @click="sendQuickQuestion(t('planning.qFood', { destination }))"
             >
-              特色美食
+              {{ t('planning.specialFood') }}
             </van-button>
             <van-button
               round
@@ -454,9 +454,9 @@
               type="primary"
               size="small"
               class="chat-q-btn"
-              @click="sendQuickQuestion(`${days}天的行程如何安排更合理？`)"
+              @click="sendQuickQuestion(t('planning.qItinerary', { days }))"
             >
-              行程建议
+              {{ t('planning.itineraryAdvice') }}
             </van-button>
           </div>
         </div>
@@ -485,7 +485,7 @@
                   <div class="chat-thinking-dots">
                     <span></span><span></span><span></span>
                   </div>
-                  <span class="chat-thinking-text">正在思考...</span>
+                  <span class="chat-thinking-text">{{ t('planning.thinking') }}</span>
                 </div>
                 <div
                   v-else
@@ -502,7 +502,7 @@
         <div class="chat-input-box">
           <van-field
             v-model="chatInput"
-            placeholder="询问景点细节、美食、交通..."
+            :placeholder="t('planning.chatPlaceholder')"
             clearable
             @keyup.enter="sendChatMessage"
             class="chat-input-field"
@@ -515,7 +515,7 @@
             @click="sendChatMessage"
           >
             <van-loading v-if="isSending" size="14px" color="#fff" />
-            <span v-else>发送</span>
+            <span v-else>{{ t('planning.send') }}</span>
           </van-button>
         </div>
       </div>
@@ -525,6 +525,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   NavBar, Button, Icon, Tag, Field, Loading, Popup, showToast, showLoadingToast, showSuccessToast, closeToast
 } from 'vant'
@@ -535,6 +536,7 @@ import { planApi, sceneApi, chatApi } from '../api'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 // ============ 流式模式 ============
 const streamMode = ref(route.query.streamMode === 'true')
@@ -594,10 +596,10 @@ const handleStreamEvent = (data) => {
       break
     case 'task-stop':
       if (detailAbort.value) { detailAbort.value.abort() }
-      showToast('行程生成已终止，仅展示已生成天数')
+      showToast(t('planning.generationStopped'))
       break
     case 'stream-error':
-      showToast('生成失败：' + (data.message || ''))
+      showToast(t('planning.genFailedPrefix') + (data.message || ''))
       if (detailAbort.value) { detailAbort.value.abort() }
       break
   }
@@ -919,11 +921,11 @@ const loadPendingImages = () => {
 }
 
 const defaultTips = [
-  '随身携带身份证件，以备不时之需',
-  '提前预订热门景点门票，避免排队',
-  '关注当地天气预报，准备合适衣物',
-  '准备常用药品，如感冒药、肠胃药',
-  '保管好个人财物，注意安全'
+  t('planning.tip1'),
+  t('planning.tip2'),
+  t('planning.tip3'),
+  t('planning.tip4'),
+  t('planning.tip5'),
 ]
 
 const displayTips = computed(() => {
@@ -946,7 +948,7 @@ const fetchTravelPlan = async () => {
   fetchCityImage(destination.value)
 
   showLoadingToast({
-    message: 'AI 正在为你规划行程...',
+    message: t('planning.planningLoading'),
     forbidClick: true,
     loadingType: 'spinner',
   })
@@ -974,18 +976,18 @@ const fetchTravelPlan = async () => {
       })
       
       closeToast()
-      showSuccessToast('行程规划已完成')
+      showSuccessToast(t('planning.planComplete'))
     } else {
-      throw new Error(result.message || '生成失败')
+      throw new Error(result.message || t('planning.genFailed'))
     }
   } catch (error) {
     clearTimeout(timeoutId)
     console.error('行程规划请求失败:', error)
-    
+
     if (error.name === 'AbortError') {
-      errorMsg.value = '请求超时，请稍后重试'
+      errorMsg.value = t('planning.requestTimeout')
     } else {
-      errorMsg.value = error.message || 'AI 规划失败，请稍后重试'
+      errorMsg.value = error.message || t('planning.planFailed')
     }
     showToast(errorMsg.value)
   } finally {
@@ -1012,13 +1014,13 @@ const savePlan = async () => {
 
     if (result.code === 0) {
       isSaved.value = true
-      showSuccessToast('规划已保存')
+      showSuccessToast(t('planning.planSaved'))
     } else {
-      showToast(result.message || '保存失败')
+      showToast(result.message || t('planning.saveFailed'))
     }
   } catch (error) {
     console.error('保存规划失败:', error)
-    showToast('保存失败，请稍后重试')
+    showToast(t('planning.saveFailedRetry'))
   } finally {
     isSavingPlan.value = false
   }
@@ -1027,7 +1029,7 @@ const savePlan = async () => {
 const copyPlan = async () => {
   if (!structuredPlan.value) return
   
-  let text = `【${destination.value}${days.value}天旅行规划】\n\n`
+  let text = `【${t('planning.tripPlanTitle', { dest: destination.value, days: days.value })}】\n\n`
   structuredPlan.value.dayPlans.forEach(day => {
     text += `--- ${day.dayTitle} ---\n`
     day.timeSlots.forEach(slot => {
@@ -1045,7 +1047,7 @@ const copyPlan = async () => {
   try {
     await navigator.clipboard.writeText(text)
     showToast({
-      message: '已复制到剪贴板',
+      message: t('planning.copiedToClipboard'),
       position: 'top',
       style: { 
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
@@ -1056,7 +1058,7 @@ const copyPlan = async () => {
       },
     })
   } catch (err) {
-    showToast('复制失败，请手动复制')
+    showToast(t('planning.copyFailed'))
   }
 }
 
@@ -1152,7 +1154,7 @@ const buildPlanContext = () => {
 const sendChatMessage = async () => {
   const text = chatInput.value.trim()
   if (!text || isSending.value) {
-    if (!text) showToast('请输入内容')
+    if (!text) showToast(t('planning.enterContent'))
     return
   }
 
@@ -1277,7 +1279,7 @@ const sendChatMessage = async () => {
   } catch (e) {
     isSending.value = false
     isThinking.value = false
-    showToast('请求失败')
+    showToast(t('planning.requestFailed'))
   }
 }
 
@@ -1309,11 +1311,11 @@ const loadSavedPlan = async (planId) => {
         initImageStatus()
       })
     } else {
-      throw new Error(result.message || '加载失败')
+      throw new Error(result.message || t('planning.loadFailed'))
     }
   } catch (error) {
     console.error('加载保存的规划失败:', error)
-    errorMsg.value = '加载保存的规划失败'
+    errorMsg.value = t('planning.loadSavedFailed')
     showToast(errorMsg.value)
   } finally {
     isLoading.value = false

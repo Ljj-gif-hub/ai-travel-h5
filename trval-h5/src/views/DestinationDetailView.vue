@@ -3,7 +3,7 @@
     <div class="page-container">
       <van-nav-bar
         :title="city"
-        left-text="返回"
+        :left-text="t('common.back')"
         left-arrow
         safe-area-inset-top
         class="nav-bar"
@@ -25,12 +25,12 @@
         <div class="map-section">
           <div class="section-header">
             <van-icon name="location-o" size="18" color="#9333ea" />
-            <span class="section-title">城市地图</span>
+            <span class="section-title">{{ t('destination.cityMap') }}</span>
           </div>
           <div id="map-container" class="map-container"></div>
           <div v-if="mapError" class="map-fallback">
             <van-icon name="warning-o" size="20" color="#f59e0b" />
-            <span>地图加载失败，请检查网络</span>
+            <span>{{ t('destination.mapError') }}</span>
           </div>
         </div>
 
@@ -39,17 +39,17 @@
             <div class="section-icon-wrapper">
               <van-icon name="guide-o" size="18" color="#fff" />
             </div>
-            <span class="section-title">热门景点</span>
-            <span class="section-count" v-if="attractions.length">{{ attractions.length }}个</span>
+            <span class="section-title">{{ t('destination.hotAttractions') }}</span>
+            <span class="section-count" v-if="attractions.length">{{ attractions.length }}{{ t('destination.countSuffix') }}</span>
           </div>
 
           <div v-if="isLoadingAttractions" class="loading-state">
-            <van-loading size="28px" color="#9333ea">加载中...</van-loading>
+            <van-loading size="28px" color="#9333ea">{{ t('common.loading') }}</van-loading>
           </div>
 
           <div v-else-if="attractions.length === 0" class="empty-state">
             <van-icon name="bookmark-o" size="40" color="#d0d0d0" />
-            <p class="empty-title">暂无景点数据</p>
+            <p class="empty-title">{{ t('destination.noAttractions') }}</p>
           </div>
 
           <div v-else class="attractions-list">
@@ -106,8 +106,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { NavBar, Rate, Loading, Icon } from 'vant'
 import { getHotDestinations, getCityAttractions } from '../api/destination'
 import { sanitizeHtml, getProxyImageUrl } from '../utils/security'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
+const { t } = useI18n()
 const router = useRouter()
 
 const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'

@@ -6,12 +6,14 @@
  */
 import { ref, onMounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { planApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 
 /* ==================== 列表数据 ==================== */
 const plans = ref([])
@@ -58,13 +60,13 @@ const fetchPlans = async () => {
     if (response.code === 0) {
       plans.value = response.data || []
     } else {
-      showToast(response.message || '加载失败')
+      showToast(response.message || t('trips.loadFailed'))
     }
   } catch (error) {
     console.error('获取规划列表失败:', error)
     plans.value = []
     if (error?.response?.status === 502) loadError.value = true
-    else showToast('加载失败')
+    else showToast(t('trips.loadFailed'))
   } finally {
     isLoading.value = false
   }
@@ -81,17 +83,17 @@ const viewPlan = (plan) => {
 const confirmDelete = async (plan) => {
   try {
     await showConfirmDialog({
-      title: '删除规划',
-      message: `确定要删除「${plan.destination}」的规划吗？此操作不可恢复。`,
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+      title: t('trips.deletePlanTitle'),
+      message: t('trips.confirmDeletePlan', { name: plan.destination }),
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
     })
     const response = await planApi.deletePlan(plan.id)
     if (response.code === 0) {
-      showToast('已删除')
+      showToast(t('trips.deleted'))
       plans.value = plans.value.filter(p => p.id !== plan.id)
     } else {
-      showToast(response.message || '删除失败')
+      showToast(response.message || t('trips.deleteFailed'))
     }
   } catch (e) { /* 用户取消 */ }
 }
@@ -107,7 +109,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 <template>
   <div class="page-shell animate-fade-in">
     <!-- 顶部导航 -->
-    <van-nav-bar title="我的规划" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
+    <van-nav-bar :title="t('trips.myPlans')" left-arrow safe-area-inset-top class="nav-bar" @click-left="goBack" />
 
     <div class="page-content">
       <!-- 骨架屏加载 -->
@@ -116,17 +118,17 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
       <!-- 错误兜底 -->
       <div v-else-if="loadError" class="error-state">
         <van-icon name="warn-o" size="48" color="#94A3B8" />
-        <p class="error-text">加载失败，请稍后重试</p>
-        <van-button round plain type="primary" size="small" class="retry-btn" @click="fetchPlans">重新加载</van-button>
+        <p class="error-text">{{ t('trips.loadFailedRetry') }}</p>
+        <van-button round plain type="primary" size="small" class="retry-btn" @click="fetchPlans">{{ t('common.retry') }}</van-button>
       </div>
 
       <!-- 空状态 -->
       <EmptyState
         v-else-if="plans.length === 0"
         icon="todo-list-o"
-        title="暂无保存的规划"
-        desc="生成行程后点击保存按钮即可在这里查看"
-        btn-text="去生成规划"
+        :title="t('trips.noSavedPlans')"
+        :desc="t('trips.noSavedPlansHint')"
+        :btn-text="t('trips.goCreatePlan')"
         btn-type="gradient"
         @btn-click="goHome"
       />
@@ -139,7 +141,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
               <van-icon name="location-o" color="#8B5CF6" size="16" />
               <span class="destination-name">{{ plan.destination }}</span>
             </div>
-            <van-tag type="primary" plain round size="small">{{ plan.days }}天</van-tag>
+            <van-tag type="primary" plain round size="small">{{ plan.days }}{{ t('common.days') }}</van-tag>
           </div>
 
           <div class="plan-card-body">
@@ -150,7 +152,7 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
               </div>
               <div class="plan-info-item">
                 <van-icon name="friends-o" size="14" color="#8B5CF6" />
-                <span>{{ plan.people || 2 }}人</span>
+                <span>{{ plan.people || 2 }}{{ t('common.people') }}</span>
               </div>
               <div class="plan-info-item">
                 <van-icon name="clock-o" size="14" color="#94A3B8" />
@@ -166,10 +168,10 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
 
           <div class="plan-card-actions">
             <van-button size="small" plain round class="action-btn" @click.stop="viewPlan(plan)">
-              <van-icon name="eye-o" size="12" /> 查看
+              <van-icon name="eye-o" size="12" /> {{ t('trips.view') }}
             </van-button>
             <van-button size="small" plain round class="action-btn delete-btn" @click.stop="confirmDelete(plan)">
-              <van-icon name="delete-o" size="12" /> 删除
+              <van-icon name="delete-o" size="12" /> {{ t('common.delete') }}
             </van-button>
           </div>
         </div>

@@ -4,6 +4,9 @@
  * 渐变背景 + 目的地/天数 + 每日景点列表，导出 PNG 供保存/系统分享
  */
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   plan: { type: Object, default: null },
@@ -46,15 +49,15 @@ function drawPoster() {
   // 顶部标题
   ctx.fillStyle = 'rgba(255,255,255,0.85)'
   ctx.font = `bold 26px ${FONT}`
-  ctx.fillText('AI 智能旅游助手', 60, 110)
+  ctx.fillText(t('components.posterBrand'), 60, 110)
 
   // 目的地大标题
   ctx.fillStyle = '#fff'
   ctx.font = `bold 66px ${FONT}`
-  ctx.fillText(plan.destination || '旅行', 60, 240)
+  ctx.fillText(plan.destination || t('components.travel'), 60, 240)
   ctx.font = `26px ${FONT}`
   ctx.fillStyle = 'rgba(255,255,255,0.9)'
-  ctx.fillText(`${plan.days || 3} 天旅行规划 · ${plan.people || 2} 人同行`, 62, 292)
+  ctx.fillText(t('components.posterDaysPeople', { days: plan.days || 3, people: plan.people || 2 }), 62, 292)
 
   // 每日行程
   const dayPlans = plan.dayPlans || []
@@ -82,7 +85,7 @@ function drawPoster() {
   // 底部
   ctx.fillStyle = 'rgba(255,255,255,0.9)'
   ctx.font = `24px ${FONT}`
-  ctx.fillText('— 旅行规划 · 从这里出发 —', 60, H - 48)
+  ctx.fillText(t('components.posterFooter'), 60, H - 48)
   ctx.textBaseline = 'alphabetic'
 
   posterUrl.value = canvas.toDataURL('image/png')
@@ -93,7 +96,7 @@ function download() {
   if (!posterUrl.value) return
   const a = document.createElement('a')
   a.href = posterUrl.value
-  a.download = `行程海报-${props.plan?.destination || 'travel'}.png`
+  a.download = `${t('components.posterFileName')}-${props.plan?.destination || 'travel'}.png`
   a.click()
 }
 
@@ -103,7 +106,7 @@ async function share() {
     const blob = await (await fetch(posterUrl.value)).blob()
     const file = new File([blob], 'poster.png', { type: 'image/png' })
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: '我的旅行规划' })
+      await navigator.share({ files: [file], title: t('components.myTripPlan') })
     } else {
       download()
     }
@@ -119,8 +122,8 @@ defineExpose({ download, share, drawPoster })
   <div class="poster-wrap">
     <canvas ref="canvasRef" class="poster-canvas" />
     <div class="poster-actions">
-      <van-button size="small" round plain type="primary" @click="download">保存海报</van-button>
-      <van-button size="small" round type="primary" @click="share">分享海报</van-button>
+      <van-button size="small" round plain type="primary" @click="download">{{ t('components.savePoster') }}</van-button>
+      <van-button size="small" round type="primary" @click="share">{{ t('components.sharePoster') }}</van-button>
     </div>
   </div>
 </template>
