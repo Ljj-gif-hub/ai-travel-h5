@@ -151,22 +151,20 @@ public class AgentProxyController {
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .retrieve()
                     .bodyToFlux(String.class)
-                    .map(chunk -> {
-                        // Spring 的 SSE reader 会剥掉 data: 前缀（chunk 是裸 JSON），这里补回，保证前端能解析
-                        if (chunk != null && !chunk.trim().isEmpty()) {
-                            return "data: " + chunk.trim() + "\n\n";
-                        }
-                        return "";
-                    })
+                    // 只透传裸 JSON，data: 前缀由本接口 produces=text/event-stream 的
+                    // SSE 编码器统一补一个（此处再拼 data: 会输出双重前缀 data:data:，
+                    // 前端 JSON.parse 失败，永久卡在"正在连接 AI Agent"）。
+                    .filter(chunk -> chunk != null && !chunk.trim().isEmpty())
+                    .map(String::trim)
                     .onErrorResume(e -> {
                         log.error("Agent SSE 流异常", e);
-                        // 安全：不透传内部异常；用固定 JSON 保证 SSE 帧不被异常换行拆坏
-                        return Flux.just("data: {\"event_type\":\"error\",\"message\":\"Agent 服务异常，请稍后重试\"}\n\n");
+                        // 安全：不透传内部异常；裸 JSON，前缀交给 SSE 编码器补
+                        return Flux.just("{\"event_type\":\"error\",\"message\":\"Agent 服务异常，请稍后重试\"}");
                     });
         } catch (Exception e) {
             log.error("Agent SSE 连接失败", e);
             return Flux.just(
-                "data: {\"event_type\":\"error\",\"message\":\"无法连接Agent服务\"}\n\n"
+                "{\"event_type\":\"error\",\"message\":\"无法连接Agent服务\"}"
             );
         }
     }
