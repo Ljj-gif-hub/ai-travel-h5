@@ -114,6 +114,9 @@ services:
       APP_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请设置 ADMIN_PASSWORD}
       # AI 供应商 Key（可选，配置后可用真实 LLM）
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # custom = Agnes（OpenAI 兼容，免费；application.yml 已预设 base-url/model）
+      CUSTOM_AI_KEY: ${CUSTOM_AI_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
       # 地图 Key（可选）
       AMAP_WEB_KEY: ${AMAP_WEB_KEY:-}
       BAIDU_MAP_AK: ${BAIDU_MAP_AK:-}
