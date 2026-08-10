@@ -656,7 +656,18 @@ onMounted(() => {
   if (!savedId && !destCity.value) { router.replace('/trips'); return }
   if (savedId) { loadSavedPlan(savedId) } else { initMap(); startGeneration() }
 })
-onBeforeUnmount(() => { if (streamAbort) streamAbort(); cancelMapZoom(); if (declutterTimer) clearTimeout(declutterTimer) })
+/** 销毁地图实例释放内存：AMap 不销毁会保留 WebGL 上下文/瓦片缓存/事件监听，
+ *  每次进入地图页都泄漏几十 MB，逛几页后标签页被系统杀掉显示 out of memory */
+function destroyMap() {
+  try { if (mapInstance && typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch {}
+  mapInstance = null
+  markerInstances.forEach(mk => { try { if (mk && mk.setMap) mk.setMap(null) } catch {} })
+  markerInstances = []
+  for (const k of Object.keys(markerByName)) delete markerByName[k]
+  markerPrimary.clear()
+}
+
+onBeforeUnmount(() => { if (streamAbort) streamAbort(); cancelMapZoom(); if (declutterTimer) clearTimeout(declutterTimer); destroyMap() })
 /** 回退到上一个界面（无历史时兜底回 /trips，避免空白页） */
 function goBackToPrev() {
   if (window.history.length <= 1) router.replace('/trips')

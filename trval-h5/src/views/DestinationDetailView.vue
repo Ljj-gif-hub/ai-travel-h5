@@ -242,7 +242,16 @@ const loadMapSDK = async (provider) => {
 }
 
 const pendingIntervals = []
-onUnmounted(() => { pendingIntervals.forEach(clearInterval); pendingIntervals.length = 0 })
+onUnmounted(() => {
+  pendingIntervals.forEach(clearInterval); pendingIntervals.length = 0
+  // 销毁地图实例释放内存（AMap/BMapGL 用 destroy，Leaflet 用 remove），
+  // 否则每次进入本页泄漏几十 MB，累积导致标签页 out of memory
+  try {
+    if (mapInstance && typeof mapInstance.destroy === 'function') mapInstance.destroy()
+    else if (mapInstance && typeof mapInstance.remove === 'function') mapInstance.remove()
+  } catch {}
+  mapInstance = null
+})
 
 const loadAmap = () => new Promise(resolve => {
   if (window.AMap) { resolve(true); return }

@@ -1110,6 +1110,13 @@ onUnmounted(() => {
     abortSSE()
     abortSSE = null
   }
+  // 销毁地图实例释放内存（AMap/BMapGL 用 destroy，Leaflet 用 remove），
+  // 否则每次进入地图页泄漏几十 MB，累积导致标签页 out of memory
+  try {
+    if (mapInstance && typeof mapInstance.destroy === 'function') mapInstance.destroy()
+    else if (mapInstance && typeof mapInstance.remove === 'function') mapInstance.remove()
+  } catch {}
+  mapInstance = null
   store.resetState()
 })
 </script>

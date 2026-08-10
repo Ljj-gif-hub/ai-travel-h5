@@ -38,11 +38,13 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,json}'],
-        globIgnores: ['**/demos/**'],
+        // 只 precache 应用代码与图标，排除大目录：182MB 景点图/demos/showcase
+        // 全量预缓存会让 SW 安装写 205MB 缓存，低端设备直接内存/存储压力 → 标签页 OOM
+        globIgnores: ['**/demos/**', '**/showcase/**', '**/images/**'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        // 离线兜底页：断网导航时返回 offline.html
-        navigateFallback: `${mode === 'production' ? '/ai-travel-h5/' : '/'}offline.html`,
-        navigateFallbackDenylist: [/^\/api\//],
+        // 离线兜底页：部署在根路径（base:'/'），旧配置指向不存在的 /ai-travel-h5/ 是错的
+        navigateFallback: '/offline.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/.*/i,
