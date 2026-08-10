@@ -54,7 +54,7 @@ public class Hotel {
     private String imageUrl;
 
     /** 酒店设施列表，以JSON数组字符串形式存储，如：["WiFi","停车场","健身房"] */
-    @Column(columnDefinition = "CLOB")
+    @Column(columnDefinition = "LONGTEXT")
     private String amenities;
 
     /** 记录创建时间 */

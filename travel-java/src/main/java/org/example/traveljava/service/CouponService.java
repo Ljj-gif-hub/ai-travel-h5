@@ -97,6 +97,10 @@ public class CouponService {
         if (!order.getUserId().equals(userId)) {
             throw new IllegalArgumentException("无权使用该订单的优惠券");
         }
+        // 只允许在待支付订单上使用，已支付/已完成/已取消订单不可再套用
+        if (!"pending".equals(order.getStatus())) {
+            throw new IllegalArgumentException("当前订单状态不可使用优惠券");
+        }
         if (order.getPrice() < coupon.getMinAmount()) {
             throw new IllegalArgumentException("订单金额未达优惠券使用门槛");
         }
@@ -107,9 +111,31 @@ public class CouponService {
             throw new IllegalArgumentException("优惠券已被使用");
         }
 
+        // 抵扣金额并记录到订单（price 减去优惠额，最低到 0）
+        long discount = Math.min(coupon.getValue().longValue(), order.getPrice());
+        order.setPrice(order.getPrice() - discount);
+        order.setCouponId(couponId);
+        order.setCouponValue((int) discount);
+        orderRepository.save(order);
+
         Coupon saved = couponRepository.findById(couponId)
                 .orElseThrow(() -> new IllegalArgumentException("优惠券不存在"));
-        log.info("使用优惠券：userId={}, couponId={}, orderId={}", userId, couponId, orderId);
+        log.info("使用优惠券：userId={}, couponId={}, orderId={}, 抵扣={}元", userId, couponId, orderId, discount);
         return saved;
+    }
+
+    /** 订单取消/作废时释放占用的优惠券，供再次使用 */
+    @Transactional
+    public void releaseByOrder(Long orderId) {
+        if (orderId == null) return;
+        for (Coupon c : couponRepository.findByOrderId(orderId)) {
+            if ("used".equals(c.getStatus())) {
+                c.setStatus("unused");
+                c.setUsedAt(null);
+                c.setOrderId(null);
+                couponRepository.save(c);
+                log.info("释放优惠券：couponId={}, orderId={}", c.getId(), orderId);
+            }
+        }
     }
 }

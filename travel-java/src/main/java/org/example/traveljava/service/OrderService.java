@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class OrderService {
@@ -32,10 +33,12 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final TravelEventPublisher eventPublisher;
+    private final CouponService couponService;
 
-    public OrderService(OrderRepository orderRepository, TravelEventPublisher eventPublisher) {
+    public OrderService(OrderRepository orderRepository, TravelEventPublisher eventPublisher, CouponService couponService) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
+        this.couponService = couponService;
     }
 
     public List<Order> getOrders(Long userId) {
@@ -108,7 +111,8 @@ public class OrderService {
     public Order createOrder(Long userId, Map<String, Object> params) {
         Order order = new Order();
         order.setUserId(userId);
-        order.setOrderNo("ORD" + System.currentTimeMillis() + (int)(Math.random() * 1000));
+        // 订单号使用随机不可枚举的 UUID 片段（防枚举/防伪造回调）
+        order.setOrderNo("ORD" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase());
 
         String type = (String) params.get("type");
         if (type == null || !VALID_TYPES.contains(type)) {
@@ -207,6 +211,10 @@ public class OrderService {
 
         order.setStatus(status);
         Order saved = orderRepository.save(order);
+        // 作废订单时释放其占用的优惠券
+        if ("cancelled".equals(status)) {
+            couponService.releaseByOrder(orderId);
+        }
         log.info("更新订单状态：orderId={}, status={}", orderId, status);
         return saved;
     }
@@ -227,6 +235,8 @@ public class OrderService {
 
         order.setStatus("cancelled");
         orderRepository.save(order);
+        // 释放优惠券，供再次使用
+        couponService.releaseByOrder(order.getId());
         log.info("取消订单：orderId={}", orderId);
     }
 }

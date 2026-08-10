@@ -36,12 +36,18 @@ public class PostService {
     }
 
     /**
-     * 【修复】社区广场：返回所有用户的动态（而非仅当前用户）
+     * 【修复】社区广场：分页返回所有用户的动态（而非全表加载）
      * 每篇动态附带作者信息（昵称、头像、userId）和当前用户是否已点赞
      * 批量查询作者与点赞，消除 N+1；images 反序列化为数组返回
+     *
+     * @return { list, total, page, size, hasMore }
      */
-    public List<Map<String, Object>> getPosts(Long currentUserId) {
-        List<Post> posts = postRepository.findAllByOrderByCreatedAtDesc();
+    public Map<String, Object> getPosts(Long currentUserId, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        org.springframework.data.domain.Page<Post> postPage = postRepository
+                .findAllByOrderByCreatedAtDesc(org.springframework.data.domain.PageRequest.of(safePage, safeSize));
+        List<Post> posts = postPage.getContent();
         List<Map<String, Object>> result = new ArrayList<>();
 
         // 批量作者信息
@@ -80,7 +86,14 @@ public class PostService {
 
             result.add(item);
         }
-        return result;
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("list", result);
+        resp.put("total", postPage.getTotalElements());
+        resp.put("page", safePage);
+        resp.put("size", safeSize);
+        resp.put("hasMore", safePage + 1 < postPage.getTotalPages());
+        return resp;
     }
 
     /** 数据库里 images 存的是 JSON 数组字符串，反序列化为数组返回 */

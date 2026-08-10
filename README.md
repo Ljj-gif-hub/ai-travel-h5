@@ -101,6 +101,28 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.4 — 2026-08-06）
+
+### 🔒 安全加固（第 1 步）
+- **支付安全**：`mock-pay` 生产关闭（`payment.mock-pay-enabled=false`）、真实渠道回调 fail-closed 拒签、订单号随机不可枚举
+- **Actuator**：生产只暴露 health/info/metrics/prometheus，移除 `env`/`loggers`
+- **默认管理员口令**：未显式配置 `ADMIN_PASSWORD` 拒绝启动
+- **Agent 鉴权**：agent-service 增加共享密钥/JWT 校验；移除 vite/nginx 直连绕过，统一走 Spring 透传；`user_id` 服务端绑定防伪造
+- **CORS**：移除 SSE 硬编码 `*`，统一走白名单
+- **异常收敛**：AI/代理/控制器不再把 `e.getMessage()` 透传前端
+- **AK 日志**：百度 AK 与响应体日志脱敏/降级
+- **机票防篡改**：下单金额改为服务端重新报价
+
+### 🐛 界面 bug 修复（第 2 步）
+- 修复 3 个高严重 bug：评论回复展开崩溃、首页死路由、机票日期选择失效
+- 修复 6 个中严重 bug：`/planning` 丢 query、日历地图跳转、目的地头图占位、AI 对话中断持久化、语音未接线、视频播放图标重复
+
+### 🔧 功能闭环（第 3 步）
+- docker-compose 编排 agent-service（`--scale` 支持）；JWT 登出黑名单生效；优惠券使用闭环（校验 pending + 抵扣 + 取消释放）；清理记忆乱码；远程知识库未配置明确报错；规划偏好字段完整透传
+
+### ⚡ 性能（第 4 步）
+- 动态接口分页；推荐接口缓存行程热度；Agent 同步代理加超时
+
 ## 🆕 最近更新（v4.3 — 2026-08-05）
 
 ### 🔧 工程化基础设施补全（后端）

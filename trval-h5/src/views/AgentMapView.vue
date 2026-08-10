@@ -465,6 +465,8 @@ async function startGeneration(adjustment = '') {
     companion: route.query.companion || '',
     styles: route.query.styles ? route.query.styles.split(',') : [],
     hotel_level: route.query.hotel_level || '舒适型', pace: route.query.pace || '适中',
+    schedule: route.query.schedule || '', cabin: route.query.cabin || '',
+    months: route.query.months ? route.query.months.split(',').map(Number).filter(Boolean) : [],
     // 记忆层标识：Agent 据此读取长期偏好 + 会话上下文
     user_id: getUserShortId(), session_id: getSessionId(),
     // 行程调整需求：Agent 在规划时应用

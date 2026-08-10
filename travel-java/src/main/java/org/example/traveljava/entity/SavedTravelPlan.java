@@ -19,7 +19,7 @@ public class SavedTravelPlan {
     private Long budget;
     private Integer people;
 
-    @Column(columnDefinition = "CLOB")
+    @Column(columnDefinition = "LONGTEXT")
     private String planJson;
 
     /** 规划来源: home(首页快捷规划) / trip(行程界面AI规划) */

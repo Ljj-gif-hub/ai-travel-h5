@@ -26,6 +26,13 @@ public class JwtUtil {
     @Value("${jwt.expiration:86400000}")
     private Long expiration;
 
+    /** 注销黑名单（退出登录后的 token 失效） */
+    private final TokenBlacklist tokenBlacklist;
+
+    public JwtUtil(TokenBlacklist tokenBlacklist) {
+        this.tokenBlacklist = tokenBlacklist;
+    }
+
     @PostConstruct
     public void validate() {
         if (secret == null || secret.isBlank() || secret.length() < 32) {
@@ -76,6 +83,10 @@ public class JwtUtil {
 
     private Claims extractAllClaims(String token) {
         try {
+            // 黑名单检查放解析汇聚点：所有走 extractUsername/extractUserId 的接口都会命中
+            if (tokenBlacklist.isBlacklisted(token)) {
+                throw new AuthException("登录已失效，请重新登录");
+            }
             return Jwts.parser()
                     .verifyWith(getSigningKey())
                     .build()
@@ -83,6 +94,8 @@ public class JwtUtil {
                     .getPayload();
         } catch (ExpiredJwtException e) {
             throw new AuthException("登录已过期，请重新登录");
+        } catch (AuthException e) {
+            throw e;
         } catch (JwtException e) {
             throw new AuthException("登录信息无效，请重新登录");
         }
@@ -135,6 +148,9 @@ public class JwtUtil {
 
     public Boolean validateToken(String token) {
         try {
+            if (tokenBlacklist.isBlacklisted(token)) {
+                return false; // 已注销的 token 视为无效
+            }
             extractAllClaims(token);
             return !isTokenExpired(token);
         } catch (Exception e) {

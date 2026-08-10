@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.Map;
 
 /**
@@ -42,6 +43,10 @@ public class AgentProxyController {
     @Value("${agent.service.url:http://localhost:3201}")
     private String agentServiceUrl;
 
+    /** 与 Agent 服务约定的共享密钥（透传时附加 X-Agent-Key，防绕过本服务直接调用） */
+    @Value("${app.agent.api-key:}")
+    private String agentApiKey;
+
     public AgentProxyController(ObjectMapper objectMapper, JwtUtil jwtUtil) {
         this.objectMapper = objectMapper;
         this.jwtUtil = jwtUtil;
@@ -58,8 +63,12 @@ public class AgentProxyController {
         try {
             String response = agentWebClient.get()
                     .uri(agentServiceUrl + "/api/agent/health")
+                    .headers(h -> {
+                        if (agentApiKey != null && !agentApiKey.isBlank()) h.set("X-Agent-Key", agentApiKey);
+                    })
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(5))
                     .block();
             Map<String, Object> result = objectMapper.readValue(response, Map.class);
             result.put("proxyStatus", "ok");
@@ -86,10 +95,16 @@ public class AgentProxyController {
         try {
             String response = agentWebClient.post()
                     .uri(agentServiceUrl + "/api/agent/plan")
+                    .headers(h -> {
+                        if (agentApiKey != null && !agentApiKey.isBlank()) h.set("X-Agent-Key", agentApiKey);
+                        if (authHeader != null && !authHeader.isBlank()) h.set("Authorization", authHeader);
+                    })
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(String.class)
+                    // 超时兜底，避免同步代理长时间占用 Tomcat 线程
+                    .timeout(Duration.ofSeconds(120))
                     .block();
 
             @SuppressWarnings("unchecked")
@@ -97,10 +112,11 @@ public class AgentProxyController {
             return result;
 
         } catch (Exception e) {
-            log.error("Agent 同步规划失败: {}", e.getMessage());
+            log.error("Agent 同步规划失败", e);
+            // 安全：不向外透传内部异常细节
             return Map.of(
                 "code", -1,
-                "message", "Agent 规划服务暂时不可用: " + e.getMessage()
+                "message", "Agent 规划服务暂时不可用，请稍后重试"
             );
         }
     }
@@ -121,11 +137,15 @@ public class AgentProxyController {
 
         response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         response.setHeader("X-Accel-Buffering", "no");
-        response.setHeader("Access-Control-Allow-Origin", "*");
+        // CORS 由全局 WebConfig 白名单统一处理（不在此硬编码 *）
 
         try {
             return agentWebClient.post()
                     .uri(agentServiceUrl + "/api/agent/plan/stream-sse")
+                    .headers(h -> {
+                        if (agentApiKey != null && !agentApiKey.isBlank()) h.set("X-Agent-Key", agentApiKey);
+                        if (authHeader != null && !authHeader.isBlank()) h.set("Authorization", authHeader);
+                    })
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(body)
                     .accept(MediaType.TEXT_EVENT_STREAM)
@@ -139,12 +159,12 @@ public class AgentProxyController {
                         return "";
                     })
                     .onErrorResume(e -> {
-                        log.error("Agent SSE 流异常: {}", e.getMessage());
-                        return Flux.just("data: {\"event_type\":\"error\",\"message\":\"Agent服务异常: " +
-                                e.getMessage().replace("\"", "\\\"") + "\"}\n\n");
+                        log.error("Agent SSE 流异常", e);
+                        // 安全：不透传内部异常；用固定 JSON 保证 SSE 帧不被异常换行拆坏
+                        return Flux.just("data: {\"event_type\":\"error\",\"message\":\"Agent 服务异常，请稍后重试\"}\n\n");
                     });
         } catch (Exception e) {
-            log.error("Agent SSE 连接失败: {}", e.getMessage());
+            log.error("Agent SSE 连接失败", e);
             return Flux.just(
                 "data: {\"event_type\":\"error\",\"message\":\"无法连接Agent服务\"}\n\n"
             );

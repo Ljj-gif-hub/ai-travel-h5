@@ -42,7 +42,7 @@ public class Landmark {
     private Double longitude;
 
     /** 地标简介描述 */
-    @Column(columnDefinition = "CLOB")
+    @Column(columnDefinition = "LONGTEXT")
     private String description;
 
     /** 地图图标URL */

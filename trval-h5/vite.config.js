@@ -6,7 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { resolve } from 'path'
 
 export default defineConfig(({ mode }) => ({
-  base: mode === 'production' ? '/ai-travel-h5/' : '/',
+  // 生产部署：Nginx 托管在站点根路径（此前 /ai-travel-h5/ 是给 GitHub Pages 子路径用的）
+  base: '/',
   plugins: [
     vue(),
     Components({
@@ -80,14 +81,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     proxy: {
       '/uploads': { target: 'http://localhost:3200', changeOrigin: true },
-      '/api/agent': {
-        // Agent SSE 流式直连 Python 服务，避免 Spring Boot 二次代理导致 resp.body 为 null
-        target: 'http://localhost:3201',
-        changeOrigin: true,
-        timeout: 600000,
-        proxyTimeout: 600000,
-        ws: false,
-      },
+      // 安全：Agent 请求统一走 Spring Boot（/api/agent → 3200 → 3201），
+      // 由 Spring 透传 JWT 鉴权 + 附加共享密钥，禁止前端直连 Python Agent。
       '/api': {
         target: 'http://localhost:3200',
         changeOrigin: true,

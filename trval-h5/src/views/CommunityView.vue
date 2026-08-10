@@ -691,7 +691,6 @@ onBeforeUnmount(() => {
                 >
                   <video :src="url" :data-video="`${note.id}-${idx}`" class="card-img" preload="metadata" muted playsinline :controls="!!playingVideos[`${note.id}-${idx}`]" />
                   <div v-if="!playingVideos[`${note.id}-${idx}`]" class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
-                  <div class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
                 </div>
                 <div
                   v-else-if="idx === 4 && note.images.length > 5"

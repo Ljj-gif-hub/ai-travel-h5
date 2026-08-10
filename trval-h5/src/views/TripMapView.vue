@@ -912,9 +912,11 @@ const handleStopGeneration = async () => {
  */
 const onVoiceResult = (text) => {
   if (!text) return
-  // 如果有已完成的行程，发送到 AI 对话
-  console.log('[语音] 识别结果:', text)
-  showToast(t('map.voiceRecognition', { text }))
+  // 语音输入 → 跳转 AI 对话页并自动发送该问题（U8 接线）
+  const dest = (store.state.planData && store.state.planData.destination) || store.state.destination || ''
+  const budget = store.state.budget || ''
+  const days = store.state.days || ''
+  router.push({ path: '/chat', query: { q: text, destination: dest, budget, days } })
 }
 
 /* ==================== 操作按钮逻辑 ==================== */

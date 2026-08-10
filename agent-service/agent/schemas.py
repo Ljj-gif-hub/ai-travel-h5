@@ -21,6 +21,8 @@ class TravelRequest(BaseModel):
     hotel_level: str = Field(default="舒适型", description="酒店档次", examples=["经济型", "舒适型", "豪华型"])
     pace: str = Field(default="适中", description="行程节奏", examples=["轻松", "适中", "紧凑"])
     months: List[int] = Field(default_factory=list, description="出行月份（1-12）", examples=[[4, 5]])
+    schedule: str = Field(default="", description="作息偏好（如早起/夜猫子）")
+    cabin: str = Field(default="", description="航班舱位偏好（如经济舱/商务舱）")
     # ---- 记忆层标识（可选）：用于长期用户偏好 + 短期会话上下文 ----
     user_id: Optional[str] = Field(default=None, description="用户ID（长期记忆键）")
     session_id: Optional[str] = Field(default=None, description="会话ID（短期记忆键）")

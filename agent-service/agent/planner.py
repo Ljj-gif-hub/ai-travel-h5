@@ -108,6 +108,23 @@ class TravelAgentPlanner:
         self._has_llm = bool(os.getenv("LLM_API_KEY", ""))
         # RAG 知识库检索器（内置攻略 / 未来外部语料库）
         self.knowledge = create_knowledge_provider()
+        # MCP 外部工具（可选依赖，惰性加载）
+        self._mcp_loader = None
+        self._mcp_tools_cache: Optional[List] = None
+
+    async def _mcp_tools(self) -> List:
+        """加载外部 MCP 服务器工具（缓存）。MCP 未启用/不可用/失败时返回空列表。"""
+        if self._mcp_tools_cache is not None:
+            return self._mcp_tools_cache
+        try:
+            if self._mcp_loader is None:
+                from .mcp_bridge import McpToolLoader
+                self._mcp_loader = McpToolLoader()
+            self._mcp_tools_cache = await self._mcp_loader.get_tools()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[MCP] 工具加载异常（降级为空）: %s", e)
+            self._mcp_tools_cache = []
+        return self._mcp_tools_cache
 
     # ==================== 流式主循环 ====================
 
@@ -540,7 +557,9 @@ class TravelAgentPlanner:
         }[role]
         try:
             llm = _build_llm(temperature=0.3)
-            agent = create_react_agent(llm, [tool], prompt=role_system)
+            # 子智能体使用主工具 + MCP 外部工具（MCP 未启用时为空列表，行为不变）
+            mcp_tools = await self._mcp_tools()
+            agent = create_react_agent(llm, [tool] + mcp_tools, prompt=role_system)
             result = await agent.ainvoke(
                 {"messages": [("human", task)]},
                 config={"recursion_limit": 6},
@@ -692,6 +711,9 @@ class TravelAgentPlanner:
         pace = req.get("pace", "适中")
         adjustment = req.get("adjustment", "")
         origin = req.get("origin", "深圳")
+        months = req.get("months", [])
+        schedule = req.get("schedule", "")
+        cabin = req.get("cabin", "")
 
         research_text = research.get("summary", "")
         # 记忆层上下文（长期偏好 + 会话记忆）注入规划 prompt
@@ -709,6 +731,8 @@ class TravelAgentPlanner:
 - 人群：{companion if companion else '无特殊要求'}
 - 偏好：{', '.join(styles) if styles else '综合体验'}
 - 酒店：{hotel_level} | 节奏：{pace}
+- 出行月份：{months if months else '不限'}
+- 航班舱位偏好：{cabin if cabin else '默认'} | 作息偏好：{schedule if schedule else '无'}
 - 调整需求：{adjustment if adjustment else '无（按原需求规划）'}
 
 ## 规划要求

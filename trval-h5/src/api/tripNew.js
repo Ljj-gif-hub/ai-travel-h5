@@ -52,7 +52,6 @@ export const tripNewApi = {
     let lastProgress = 0
     let streamClosed = false  // cleanup() 后停止继续读流，避免 reader=null 时报错
 
-    console.log('[SSE] 单端点POST开始:', params.destination)
     fetch(`${BASE}/travel/trip/generate/stream`, {
       method: 'POST',
       headers: {
@@ -65,7 +64,6 @@ export const tripNewApi = {
       signal: controller.signal,
     })
       .then(async (resp) => {
-        console.log('[SSE] 响应:', resp.status, resp.headers.get('content-type'))
         if (!resp.ok) {
           const text = await resp.text().catch(() => '')
           throw new Error(`HTTP ${resp.status}: ${text}`)
@@ -78,7 +76,6 @@ export const tripNewApi = {
         while (true) {
           const { done, value } = await reader.read()
           if (done) {
-            console.log('[SSE] 流结束')
             // 流提前关闭 — 如果进度已达100则视为完成，否则报错
             if (lastProgress >= 100) {
               if (onComplete) onComplete({ progress: 100, stepName: '全部完成' })
@@ -89,7 +86,6 @@ export const tripNewApi = {
           }
 
           const chunk = decoder.decode(value, { stream: true })
-          console.log('[SSE] chunk(' + chunk.length + 'B):', chunk.substring(0, 150))
           buffer += chunk
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
@@ -107,7 +103,6 @@ export const tripNewApi = {
 
             try {
               const data = JSON.parse(jsonStr)
-              console.log('[SSE] event:', data.eventType, data.progress != null ? data.progress + '%' : '')
               if (!data.eventType) continue
 
               switch (data.eventType) {

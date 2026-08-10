@@ -26,19 +26,37 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import uvicorn
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
-from sse_starlette.sse import EventSourceResponse
 
-from agent.planner import TravelAgentPlanner
-from agent.schemas import TravelRequest, AgentEvent
+# 必须先加载 .env，再导入 agent 模块（permissions/mcp 在导入时读取环境变量）
+load_dotenv()
+
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
+from sse_starlette.sse import EventSourceResponse  # noqa: E402
+
+from agent.planner import TravelAgentPlanner  # noqa: E402
+from agent.schemas import TravelRequest, AgentEvent  # noqa: E402
+from agent.permissions import permission_manager  # noqa: E402
+from agent.tools import ALL_TOOLS  # noqa: E402
+from agent.mcp_bridge import McpToolLoader, start_mcp_server  # noqa: E402
+from agent.auth import agent_auth_middleware  # noqa: E402
 
 # ==================== 初始化 ====================
 
-load_dotenv()
+# MCP 客户端加载器（从环境变量读取配置，惰性连接）
+_mcp_loader = McpToolLoader()
+
+
+def _verified_user_id(request: Request):
+    """从鉴权中间件拿到已验证的 user_id（无则为 None）。"""
+    state = getattr(request, "state", None)
+    if state is None:
+        return None
+    return getattr(state, "verified_user_id", None)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,10 +64,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("travel-agent")
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """应用启动钩子：按配置自动拉起 MCP 服务端（后台线程，失败不阻塞）。"""
+    if os.getenv("MCP_SERVER_ENABLED", "").lower() == "true":
+        start_mcp_server()
+    yield
+
+
 app = FastAPI(
     title="Travel Agent Service",
     description="AI 旅游规划 Agent — 自主搜索、规划、校验、优化的智能体服务",
-    version="1.0.0",
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 # CORS（允许前端直连 Agent 服务）
@@ -67,6 +95,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 鉴权中间件：保护所有 /api/agent/* 端点（共享密钥或 JWT）
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    return await agent_auth_middleware(request, call_next)
+
 
 STREAM_HEADERS = {
     "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -103,21 +137,44 @@ async def health():
     return {
         "status": "ok",
         "service": "travel-agent",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "components": {
             "llm": "✅ 已配置" if llm_ok else "⚠️ 未配置（将使用降级方案）",
             "tavily_search": "✅ 已配置" if tavily_ok else "⚠️ 未配置（搜索将使用 LLM 知识库）",
             "amap": "✅ 已配置" if amap_ok else "⚠️ 未配置（通勤距离将估算）",
         },
+        "mcp": {
+            "client": _mcp_loader.summary(),
+            "server": {
+                "enabled": os.getenv("MCP_SERVER_ENABLED", "").lower() == "true",
+                "running": getattr(start_mcp_server, "_started", False),
+                "transport": os.getenv("MCP_SERVER_TRANSPORT", "streamable-http"),
+                "port": int(os.getenv("MCP_SERVER_PORT", "3202")),
+            },
+        },
+        "permission": permission_manager.summary(),
         "endpoints": {
             "sync": "POST /api/agent/plan",
             "stream": "POST /api/agent/plan/stream",
+            "permissions": "GET /api/agent/permissions",
+        },
+    }
+
+
+@app.get("/api/agent/permissions")
+async def permissions():
+    """工具权限策略 + 当前可用工具一览。"""
+    return {
+        "policy": permission_manager.summary(),
+        "tools": {
+            "core": [t.name for t in ALL_TOOLS],
+            "mcp_client": _mcp_loader.summary(),
         },
     }
 
 
 @app.post("/api/agent/plan")
-async def generate_plan_sync(req: TravelRequest):
+async def generate_plan_sync(req: TravelRequest, request: Request):
     """
     同步生成完整旅行方案 — 等待全部完成后返回 JSON
 
@@ -131,8 +188,12 @@ async def generate_plan_sync(req: TravelRequest):
         logger.info(f"同步规划: {req.destination} {req.days}天")
 
     try:
+        data = req.model_dump()
+        verified = _verified_user_id(request)
+        if verified:
+            data["user_id"] = verified  # 以服务端验证的 user_id 为准，防伪造越权
         planner = TravelAgentPlanner(
-            req.model_dump(),
+            data,
             debug=os.getenv("DEBUG", "").lower() == "true",
             demo=demo_mode,
         )
@@ -167,7 +228,7 @@ async def generate_plan_sync(req: TravelRequest):
 
 
 @app.post("/api/agent/plan/stream")
-async def generate_plan_stream(req: TravelRequest):
+async def generate_plan_stream(req: TravelRequest, request: Request):
     """
     SSE 流式生成旅行方案 — 实时推送 Agent 的每一步思考和操作
 
@@ -190,12 +251,17 @@ async def generate_plan_stream(req: TravelRequest):
     else:
         logger.info(f"流式规划: {req.destination} {req.days}天")
 
+    data = req.model_dump()
+    verified = _verified_user_id(request)
+    if verified:
+        data["user_id"] = verified  # 以服务端验证的 user_id 为准
+
     async def event_generator():
         # 立即发送连接确认，确保浏览器收到流式响应头
         yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
         try:
             planner = TravelAgentPlanner(
-                req.model_dump(),
+                data,
                 debug=os.getenv("DEBUG", "").lower() == "true",
                 demo=demo_mode,
             )
@@ -244,6 +310,9 @@ async def generate_plan_stream_raw(request: Request):
     body["days"] = days
 
     demo_mode = os.getenv("DEMO_MODE", "").lower() == "true" or not os.getenv("LLM_API_KEY")
+    verified = _verified_user_id(request)
+    if verified:
+        body["user_id"] = verified  # 以服务端验证的 user_id 为准
     logger.info(f"{'🔶 Demo' if demo_mode else ''}原始SSE规划: {destination} {days}天")
 
     async def raw_generator():

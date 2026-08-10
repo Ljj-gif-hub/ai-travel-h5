@@ -24,4 +24,7 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     @Query("update Coupon c set c.status = 'used', c.usedAt = :now, c.orderId = :orderId " +
             "where c.id = :id and c.status = 'unused'")
     int claimCoupon(@Param("id") Long id, @Param("now") LocalDateTime now, @Param("orderId") Long orderId);
+
+    /** 查询某订单占用的优惠券（取消订单时释放用） */
+    List<Coupon> findByOrderId(Long orderId);
 }

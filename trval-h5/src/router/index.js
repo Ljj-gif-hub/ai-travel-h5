@@ -37,7 +37,8 @@ const routes = [
   /* ==================== 行程子页面（slide-left） ==================== */
   {
     path: '/planning',
-    redirect: '/trip-map',
+    // 保留 query（savedPlanId/destination/days 等），否则跳转后行程信息丢失会误触发默认生成
+    redirect: (to) => ({ path: '/trip-map', query: to.query }),
   },
   {
     path: '/ai-planner',
@@ -222,7 +223,9 @@ const routes = [
   /* ==================== 旧路由兼容重定向 ==================== */
   {
     path: '/chat',
-    redirect: '/profile',
+    name: 'Chat',
+    component: () => import('../views/ChatView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
   },
   {
     path: '/Profile',

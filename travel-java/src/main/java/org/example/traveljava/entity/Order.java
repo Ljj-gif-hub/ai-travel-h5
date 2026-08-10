@@ -2,6 +2,7 @@ package org.example.traveljava.entity;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "orders")
@@ -71,6 +72,13 @@ public class Order {
     @Column(name = "quantity")
     private Integer quantity = 1;
 
+    /** 使用优惠券：优惠券 ID 与抵扣金额（抵扣后 price 已减去该值） */
+    @Column(name = "coupon_id")
+    private Long couponId;
+
+    @Column(name = "coupon_value")
+    private Integer couponValue;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -82,7 +90,8 @@ public class Order {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (orderNo == null) {
-            orderNo = "ORD" + System.currentTimeMillis();
+            // 随机不可枚举，避免可预测订单号被利用（防伪造支付回调）
+            orderNo = "ORD" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
         }
     }
 
@@ -265,5 +274,21 @@ public class Order {
 
     public void setPaidAt(LocalDateTime paidAt) {
         this.paidAt = paidAt;
+    }
+
+    public Long getCouponId() {
+        return couponId;
+    }
+
+    public void setCouponId(Long couponId) {
+        this.couponId = couponId;
+    }
+
+    public Integer getCouponValue() {
+        return couponValue;
+    }
+
+    public void setCouponValue(Integer couponValue) {
+        this.couponValue = couponValue;
     }
 }

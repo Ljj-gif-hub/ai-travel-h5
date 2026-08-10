@@ -36,25 +36,27 @@ export function filterXss(content) {
 }
 
 export function getProxyImageUrl(url) {
-  if (!url || typeof url !== 'string') {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
     return '/images/default-placeholder.png'
   }
-  
+
   if (url.startsWith('/')) {
     return url
   }
-  
+
   if (url.startsWith('/api/proxy/image')) {
     return url
   }
-  
+
   try {
     const urlObj = new URL(url)
     const allowedDomains = ['api.map.baidu.com', 'map.baidu.com', 'restapi.amap.com', 'webapi.amap.com']
-    if (!allowedDomains.includes(urlObj.host)) {
-      return '/images/default-placeholder.png'
+    // 地图域走服务端代理（解决跨域/防盗链）；其余域由浏览器直接加载，
+    // 不再替换成占位图（否则所有第三方/AI 生成图片都会变成默认占位图）
+    if (allowedDomains.includes(urlObj.host)) {
+      return `/api/proxy/image?url=${encodeURIComponent(url)}`
     }
-    return `/api/proxy/image?url=${encodeURIComponent(url)}`
+    return url
   } catch {
     return '/images/default-placeholder.png'
   }

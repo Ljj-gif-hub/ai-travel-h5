@@ -14,10 +14,13 @@
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
 import threading
+
+logger = logging.getLogger("travel-agent.knowledge")
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -146,21 +149,34 @@ class BuiltinGuideProvider(KnowledgeProvider):
 
 class RemoteCorpusProvider(KnowledgeProvider):
     """预留：对接未来外部语料库/语义检索服务（HTTP）。
-    未配置 KNOWLEDGE_REMOTE_URL 时静默降级返回空，不阻断主流程。"""
+    KNOWLEDGE_SOURCE=remote 时启用；未配置 KNOWLEDGE_REMOTE_URL 会明确告警，
+    不再静默返回空（避免误以为已接入外部知识库）。"""
 
     source_name = "外部语料库"
 
     def __init__(self, base_url: str = ""):
         self.base_url = base_url or os.getenv("KNOWLEDGE_REMOTE_URL", "")
+        self._warned = False
+
+    def _warn_once(self, msg: str) -> None:
+        if not self._warned:
+            logger.warning(msg)
+            self._warned = True
 
     def retrieve(self, destination: str, query: str = "", top_k: int = 3) -> List[Chunk]:
         if not self.base_url:
+            self._warn_once("[知识库] KNOWLEDGE_SOURCE=remote 但未配置 KNOWLEDGE_REMOTE_URL，本次无攻略参考")
             return []
         # TODO: 调用外部语料库检索接口（HTTP），返回 Chunk 列表
+        self._warn_once("[知识库] 外部语料库检索尚未实现（TODO），本次无攻略参考")
         return []
 
     def build_context(self, destination: str, query: str = "", top_k: int = 3) -> str:
-        return ""
+        if not self.base_url:
+            self._warn_once("[知识库] KNOWLEDGE_SOURCE=remote 但未配置 KNOWLEDGE_REMOTE_URL，本次无攻略参考")
+            return "（外部知识库未配置，无本地攻略参考）"
+        self._warn_once("[知识库] 外部语料库检索尚未实现（TODO）")
+        return "（外部知识库检索尚未接入，无本地攻略参考）"
 
 
 # ==================== 工厂 + 全局单例 ====================

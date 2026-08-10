@@ -1,10 +1,11 @@
 /**
  * agent.js — Agent 旅游规划 API 封装
- * SSE 走 Vite 代理 /api/agent → localhost:3200 (Spring Boot) → localhost:3201 (Python)
+ * 统一走 Spring Boot 透传：/api/agent → 3200 (JWT鉴权+共享密钥) → 3201 (Python)
  */
 import { getToken } from '../utils/auth'
 
-const BASE = '/api'
+// 与 api/index.js 保持一致：生产走 VITE_API_BASE，开发默认 /api
+const BASE = import.meta.env.VITE_API_BASE || '/api'
 
 /**
  * SSE 流式 Agent 规划 — XMLHttpRequest + onprogress

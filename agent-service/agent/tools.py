@@ -490,6 +490,15 @@ def calculate_budget(items_json: str) -> str:
 
 
 # ==================== 工具注册表 ====================
+# 全部工具套上 Permission 权限包装（默认 open 模式无影响，
+# 配置 PERMISSION_MODE=blocklist/allowlist 后生效）。
+
+from .permissions import permission_manager  # noqa: E402
+
+search_attractions_info = permission_manager.guard(search_attractions_info)
+search_hotels_info = permission_manager.guard(search_hotels_info)
+get_commute_info = permission_manager.guard(get_commute_info)
+calculate_budget = permission_manager.guard(calculate_budget)
 
 ALL_TOOLS = [
     search_attractions_info,

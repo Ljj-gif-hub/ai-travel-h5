@@ -24,6 +24,8 @@ const { t } = useI18n()
 const destination = route.query.destination || ''
 const budget = route.query.budget || ''
 const days = route.query.days || ''
+/** 语音识别预填：从行程地图页语音输入跳转而来时自动发送 */
+const initialQuery = route.query.q || ''
 
 /* ==================== 状态 ==================== */
 const messages = ref([])
@@ -280,6 +282,12 @@ onMounted(async () => {
   if (getToken()) await loadMessagesFromStorage()
   if (messages.value.length === 0) messages.value = [{ id: 1, type: 'system', content: t('chat.greeting') }]
   if (destination && budget && days) messages.value.push({ id: generateUniqueId(), type: 'system', content: t('chat.loadedInfo', { dest: destination, days: days, budget: budget }) })
+
+  // 【语音入口】从行程地图页语音跳转而来：预填并自动发送
+  if (initialQuery) {
+    inputText.value = initialQuery
+    setTimeout(() => { sendMessage(); }, 400)
+  }
 
   // 【关键修复】监听 visualViewport 变化，处理软键盘弹出/收起
   updatePageHeight()

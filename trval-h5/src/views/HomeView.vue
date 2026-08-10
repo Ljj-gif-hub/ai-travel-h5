@@ -105,7 +105,7 @@ const handlePeopleBlur = (e) => {
 
 /* ==================== 快捷入口（6宫格 — 2×3） ==================== */
 const quickEntries = [
-  { name: 'AI对话', icon: 'chat-o', color: '#8B5CF6', path: '/messages' },
+  { name: 'AI对话', icon: 'chat-o', color: '#8B5CF6', path: '/chat' },
   { name: '机票预订', icon: 'plane-o', color: '#34D399', path: '/flight-booking' },
   { name: '酒店预订', icon: 'hotel-o', color: '#F59E0B', path: '/hotel-booking' },
   { name: '景点门票', icon: 'orders-o', color: '#FB7185', path: '/orders' },
@@ -739,7 +739,7 @@ const handleServiceClick = (item) => {
       guide: '/destinations',
       flight: '/flight-booking',
       train: '/orders',
-      custom: '/messages',
+      custom: '/chat',
       homestay: '/orders',
       tickets: '/orders',
       pickup: '/orders',

@@ -73,7 +73,7 @@ public class SceneImageController {
             return Result.ok(image);
         } catch (Exception e) {
             log.error("获取景点图片失败: scenicName={}", scenicName, e);
-            return Result.fail("获取图片失败：" + e.getMessage());
+            return Result.fail("获取图片失败，请稍后重试");
         }
     }
 }

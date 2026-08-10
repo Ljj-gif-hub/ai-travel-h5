@@ -3,6 +3,7 @@ package org.example.traveljava.service;
 import org.example.traveljava.entity.User;
 import org.example.traveljava.repository.UserRepository;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.TokenBlacklist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -21,11 +22,13 @@ public class UserService {
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final TokenBlacklist tokenBlacklist;
 
-    public UserService(UserRepository userRepository, JwtUtil jwtUtil) {
+    public UserService(UserRepository userRepository, JwtUtil jwtUtil, TokenBlacklist tokenBlacklist) {
         this.userRepository = userRepository;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = new BCryptPasswordEncoder();
+        this.tokenBlacklist = tokenBlacklist;
     }
 
     @Transactional
@@ -155,6 +158,14 @@ public class UserService {
 
     @Transactional
     public void logout(String token) {
-        log.info("用户退出登录");
+        // 把 token 加入黑名单，使其立即失效（到 token 自然过期为止）
+        try {
+            long ttl = jwtUtil.extractExpiration(token).getTime() - System.currentTimeMillis();
+            tokenBlacklist.blacklist(token, ttl);
+            log.info("用户退出登录，token 已加入黑名单");
+        } catch (Exception e) {
+            // 黑名单失败不阻断退出（token 过期后自然失效）
+            log.warn("退出登录黑名单失效失败: {}", e.getMessage());
+        }
     }
 }

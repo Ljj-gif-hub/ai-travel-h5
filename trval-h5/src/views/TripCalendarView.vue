@@ -51,8 +51,10 @@ const totalCost = computed(() => {
 const stripTags = (name) => (name || '').replace(/【[^】]*】/g, '').trim()
 
 const goMap = () => {
-  showToast(t('calendar.tripMap'))
-  router.push('/agent-map')
+  // 带 destination/savedPlanId 跳地图，避免 AgentMapView 因无参数被弹回 /trips
+  const dest = plan.value?.destination || ''
+  const id = route.query.savedPlanId || store.state.savedPlanId || ''
+  router.push({ path: '/agent-map', query: { destination: dest, savedPlanId: id } })
 }
 
 onMounted(async () => {

@@ -57,6 +57,9 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5177}
+  # Agent 微服务透传共享密钥（AgentProxyController 附加 X-Agent-Key，防绕过本服务直连 Agent）
+  agent:
+    api-key: ${AGENT_API_KEY:}
   # 日志输出目录（配合 logback-spring.xml）
   logging:
     dir: ${LOG_DIR:logs}
@@ -156,6 +159,8 @@ map:
 # ================================================================
 payment:
   provider: ${PAYMENT_PROVIDER:mock}
+  # 模拟支付确认端点（开发默认开启；生产 profile 强制关闭，防免单）
+  mock-pay-enabled: ${PAYMENT_MOCK_PAY_ENABLED:true}
   mock:
     secret: ${PAYMENT_MOCK_SECRET:dev-mock-secret}
   alipay:

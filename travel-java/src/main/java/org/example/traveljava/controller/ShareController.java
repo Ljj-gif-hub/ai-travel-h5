@@ -57,9 +57,12 @@ public class ShareController {
     public Result<Map<String, Object>> get(@PathVariable String token) {
         try {
             return Result.ok(shareService.getSharedPlan(token));
-        } catch (Exception e) {
-            log.warn("读取分享失败：token={}, err={}", token, e.getMessage());
+        } catch (IllegalArgumentException e) {
+            // 业务校验信息（如"分享不存在"）直接返回，其余异常不外泄
             return Result.fail(e.getMessage());
+        } catch (Exception e) {
+            log.warn("读取分享失败：token={}", token, e);
+            return Result.fail("分享不存在或已失效");
         }
     }
 }

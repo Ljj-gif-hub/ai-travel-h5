@@ -587,7 +587,8 @@ public class BaiduMapService implements MapService {
         try {
             String urlStr = PLACE_SEARCH_URL + "?query=" + java.net.URLEncoder.encode("景点", "UTF-8") + "&region=" + java.net.URLEncoder.encode(cityName.trim(), "UTF-8") + "&output=json&page_size=20&ak=" + ak;
 
-            log.info("请求URL: {}", urlStr);
+            // 安全：不打印完整 URL（含 ak 密钥），仅脱敏后 debug 输出
+            log.debug("请求URL(已脱敏): {}", urlStr.replaceAll("ak=[^&]+", "ak=***"));
             
             java.net.URL url = new java.net.URL(urlStr);
             java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
@@ -604,10 +605,9 @@ public class BaiduMapService implements MapService {
             reader.close();
             conn.disconnect();
             
-            log.info("HTTP响应码: {}", conn.getResponseCode());
+            log.debug("HTTP响应码: {}", conn.getResponseCode());
             String responseBody = response.toString();
-            log.info("响应长度: {}", responseBody.length());
-            log.info("响应前500字符: {}", responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody);
+            log.debug("响应长度: {}", responseBody.length());
             
             return parseAttractionsResponse(responseBody);
         } catch (Exception e) {
@@ -630,7 +630,8 @@ public class BaiduMapService implements MapService {
         try {
             String urlStr = PLACE_SEARCH_URL + "?query=" + java.net.URLEncoder.encode("景点", "UTF-8") + "&location=" + lat + "," + lng + "&radius=" + radius + "&output=json&page_size=20&ak=" + ak;
 
-            log.info("请求URL: {}", urlStr);
+            // 安全：不打印完整 URL（含 ak 密钥），仅脱敏后 debug 输出
+            log.debug("请求URL(已脱敏): {}", urlStr.replaceAll("ak=[^&]+", "ak=***"));
             
             java.net.URL url = new java.net.URL(urlStr);
             java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
@@ -662,14 +663,13 @@ public class BaiduMapService implements MapService {
             return result;
         }
 
-        log.info("百度地图Place API响应长度: {}", response.length());
-        log.info("百度地图Place API响应前500字符: {}", response.length() > 500 ? response.substring(0, 500) + "..." : response);
+        log.debug("百度地图Place API响应长度: {}", response.length());
 
         try {
             JsonNode root = objectMapper.readTree(response);
             int status = root.has("status") ? root.get("status").asInt() : -1;
 
-            log.info("百度地图Place API status: {}", status);
+            log.debug("百度地图Place API status: {}", status);
 
             if (status != 0) {
                 log.warn("百度地图Place API返回错误, status={}", status);
@@ -677,12 +677,12 @@ public class BaiduMapService implements MapService {
             }
 
             JsonNode results = root.get("results");
-            log.info("百度地图Place API results节点: {}", results == null ? "null" : (results.isArray() ? "array, size=" + results.size() : "not array"));
+            log.debug("百度地图Place API results节点: {}", results == null ? "null" : (results.isArray() ? "array, size=" + results.size() : "not array"));
 
             if (results != null && results.isArray()) {
                 for (JsonNode item : results) {
                     String name = item.has("name") ? item.get("name").asText() : "";
-                    log.info("景点名称: {}", name);
+                    log.debug("景点名称: {}", name);
                     if (name.isEmpty()) {
                         continue;
                     }

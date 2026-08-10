@@ -89,20 +89,21 @@ const preprocessMarkdown = (text) => {
 const renderMarkdown = (text) => (text ? md.render(preprocessMarkdown(text)) : '')
 
 /* ==================== Quick Questions ==================== */
-const quickQuestions = [
+// 用 computed：切换语言后快捷问题/引导项即时更新，而非 setup 期一次性求值
+const quickQuestions = computed(() => [
   { label: t('chat.quickCheaper'), query: '能否帮我调整成更省钱的方案？' },
   { label: t('chat.quickFood'), query: '请多推荐一些当地必吃的美食' },
   { label: t('chat.quickShorter'), query: '帮我压缩行程天数' },
   { label: t('chat.quickFamily'), query: '帮我优化成适合带孩子的亲子游方案' },
-]
+])
 
 /* ==================== Guide Chips ==================== */
-const guideChips = [
+const guideChips = computed(() => [
   { label: t('chat.guideCouples'), query: '推荐几个适合情侣的国内旅游目的地' },
   { label: t('chat.guideParents'), query: '带父母去哪里旅游比较合适？' },
   { label: t('chat.guideBudget3000'), query: '预算3000元可以去哪里玩？' },
   { label: t('chat.guideBeijing'), query: '推荐北京三日游攻略' },
-]
+])
 
 /* ==================== Plan Detection ==================== */
 const hasPlanContent = (content) => {
@@ -357,8 +358,22 @@ const savePlan = async () => {
 }
 
 /* ==================== Dialog Controls ==================== */
+/** 保存会话前处理：最后一条若仍在流式生成（被中断），先标记为已中断再持久化，
+ *  避免重开时恢复半截的流式气泡 / isStreaming 残留 */
+const saveSessionMessagesSafe = () => {
+  const list = messages.value
+  if (Array.isArray(list) && list.length) {
+    const last = list[list.length - 1]
+    if (last && last.type === 'ai' && last.isStreaming) {
+      last.isStreaming = false
+      last.interrupted = true
+    }
+  }
+  saveCurrentSessionMessages(list)
+}
+
 const closeDialog = () => {
-  saveCurrentSessionMessages(messages.value)
+  saveSessionMessagesSafe()
   localVisible.value = false
   emit('close')
   if (abortController) { abortController.abort(); abortController = null }
@@ -393,7 +408,7 @@ const initMessages = () => {
 
 /* 【修复】新建会话 */
 const newConversation = () => {
-  saveCurrentSessionMessages(messages.value) // 先保存当前
+  saveSessionMessagesSafe() // 先保存当前
   createNewSession()
   messages.value = [{
     id: genMsgId(), type: 'system',
@@ -426,7 +441,7 @@ watch(
       scrollToBottom(true)
     } else {
       // 【修复】关闭时保存会话，不断开SSE连接（由closeDialog处理）
-      saveCurrentSessionMessages(messages.value)
+      saveSessionMessagesSafe()
       if (abortController) {
         abortController.abort()
         abortController = null

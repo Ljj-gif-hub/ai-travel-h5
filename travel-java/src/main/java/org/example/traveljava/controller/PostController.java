@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -34,7 +33,9 @@ public class PostController {
      * 未登录也可浏览，但不会标记点赞状态
      */
     @GetMapping
-    public Result<List<Map<String, Object>>> getPosts(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public Result<Map<String, Object>> getPosts(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                                                @RequestParam(defaultValue = "0") int page,
+                                                @RequestParam(defaultValue = "10") int size) {
         try {
             Long userId = null;
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -48,8 +49,7 @@ public class PostController {
                 }
             }
 
-            List<Map<String, Object>> result = postService.getPosts(userId);
-            return Result.ok(result);
+            return Result.ok(postService.getPosts(userId, page, size));
         } catch (Exception e) {
             log.error("获取动态列表失败", e);
             return Result.fail("获取动态列表失败");

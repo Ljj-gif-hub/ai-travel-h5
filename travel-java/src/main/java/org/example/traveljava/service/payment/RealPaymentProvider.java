@@ -34,9 +34,10 @@ public class RealPaymentProvider implements PaymentProvider {
 
     @Override
     public boolean verifyNotify(Map<String, String> params) {
-        // TODO: 接入渠道验签（支付宝 RSA2 / 微信平台证书）
-        log.warn("[{}支付] 回调验签未实现，已放行", provider);
-        return true;
+        // 安全：真实渠道验签未实现前必须 fail-closed（拒绝），绝不能放行。
+        // 接入渠道后在此实现 支付宝 RSA2 / 微信平台证书 验签，通过才返回 true。
+        log.error("[{}支付] 回调验签未实现，已拒绝该回调（防伪造支付）", provider);
+        throw new UnsupportedOperationException("真实支付渠道验签未实现，已拒绝回调");
     }
 
     @Override

@@ -61,7 +61,7 @@ public class TripAIController {
             return Result.ok(resp);
         } catch (Exception e) {
             log.error("AI生成行程失败", e);
-            return Result.fail("生成失败：" + e.getMessage());
+            return Result.fail("生成失败，请稍后重试");
         }
     }
 
@@ -85,7 +85,7 @@ public class TripAIController {
             resp.put("planId", planId);
             return Result.ok(resp);
         } catch (Exception e) {
-            return Result.fail("优化失败：" + e.getMessage());
+            return Result.fail("优化失败，请稍后重试");
         }
     }
 
@@ -110,7 +110,7 @@ public class TripAIController {
             String reply = aiService.chat(messages);
             return Result.ok(reply);
         } catch (Exception e) {
-            return Result.fail("AI回复失败：" + e.getMessage());
+            return Result.fail("AI 回复失败，请稍后重试");
         }
     }
 
@@ -134,7 +134,7 @@ public class TripAIController {
             resp.put("remarks", result);
             return Result.ok(resp);
         } catch (Exception e) {
-            return Result.fail("生成失败：" + e.getMessage());
+            return Result.fail("生成失败，请稍后重试");
         }
     }
 
@@ -159,7 +159,7 @@ public class TripAIController {
             resp.put("inspiration", result);
             return Result.ok(resp);
         } catch (Exception e) {
-            return Result.fail("生成失败：" + e.getMessage());
+            return Result.fail("生成失败，请稍后重试");
         }
     }
 
@@ -209,7 +209,7 @@ public class TripAIController {
             return Result.ok(planService.toResponseMap(planService.savePlan(userId, request)));
         } catch (Exception e) {
             log.error("保存AI行程失败", e);
-            return Result.fail("保存失败：" + e.getMessage());
+            return Result.fail("保存失败，请稍后重试");
         }
     }
 }

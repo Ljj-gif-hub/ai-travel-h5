@@ -478,7 +478,7 @@ public class TravelController {
         response.setHeader("Pragma", "no-cache");
         response.setHeader("Expires", "0");
         response.setHeader("X-Accel-Buffering", "no");
-        response.setHeader("Access-Control-Allow-Origin", "*");
+        // CORS 由全局 WebConfig 白名单统一处理（不在此硬编码 *）
         response.setBufferSize(0); // 禁用响应缓冲，强制实时输出
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
 
@@ -606,7 +606,7 @@ public class TravelController {
         response.setHeader("Expires", "0");
         response.setHeader("Connection", "keep-alive");
         response.setHeader("X-Accel-Buffering", "no");
-        response.setHeader("Access-Control-Allow-Origin", "*");
+        // CORS 由全局 WebConfig 白名单统一处理（不在此硬编码 *）
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
 
         SseEmitter emitter = new SseEmitter(600_000L);

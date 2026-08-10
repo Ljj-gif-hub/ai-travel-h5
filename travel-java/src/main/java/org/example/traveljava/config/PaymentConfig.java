@@ -34,6 +34,12 @@ public class PaymentConfig {
     /** 支付渠道：mock / alipay / wechat */
     private String provider = "mock";
 
+    /**
+     * 是否允许公开的模拟支付确认端点（GET /api/payment/mock-pay）。
+     * 生产环境必须关闭（prod profile 置 false），否则任何人可凭订单号把任意订单标记为已支付。
+     */
+    private boolean mockPayEnabled = true;
+
     /** 模拟支付配置 */
     private MockConfig mock = new MockConfig();
 
@@ -47,6 +53,9 @@ public class PaymentConfig {
 
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
+
+    public boolean isMockPayEnabled() { return mockPayEnabled; }
+    public void setMockPayEnabled(boolean mockPayEnabled) { this.mockPayEnabled = mockPayEnabled; }
 
     public MockConfig getMock() { return mock; }
     public void setMock(MockConfig mock) { this.mock = mock; }

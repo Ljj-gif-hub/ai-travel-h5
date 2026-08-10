@@ -1,6 +1,6 @@
 # 🤖 AI Travel Agent
 
-> 基于 LangChain + FastAPI 的旅游规划智能体。ReAct 推理 + Tavily 实时搜索 + 高德地图 + 自动预算校验 + 记忆层（长期用户偏好 + 短期会话上下文 + 调研缓存）。
+> 基于 LangChain + FastAPI 的旅游规划智能体。ReAct 推理 + Tavily 实时搜索 + 高德地图 + 自动预算校验 + 记忆层（长期用户偏好 + 短期会话上下文 + 调研缓存）+ **MCP 协议**（客户端/服务端）+ **工具权限控制**。
 
 ## 🎯 核心能力
 
@@ -73,6 +73,53 @@
 | 注入 | `_phase_plan` 在规划 Prompt 中注入「## 本地攻略参考」，`research_notes` 追加来源 |
 | 预留 | `KnowledgeProvider` 接口 + `KNOWLEDGE_SOURCE=builtin\|remote`，未来外部语料库实现同接口即接入 |
 
+### 🔌 MCP（Model Context Protocol）
+
+Agent 同时是 **MCP 客户端** 与 **MCP 服务端**（`mcp` / `langchain-mcp-adapters` 为可选依赖，未安装优雅降级）：
+
+**作为客户端**：接入外部 MCP 服务器，把其工具动态加载为 LangChain 工具，供 ReAct 循环调用（并套用权限包装）。
+```bash
+MCP_ENABLED=true
+MCP_CLIENT_SERVERS=demo=http://localhost:9000/mcp,weather=http://localhost:9001/mcp   # 名字=URL，逗号分隔
+```
+
+**作为服务端**：把自身工具暴露为 MCP 服务，供其他客户端调用。
+```bash
+MCP_SERVER_ENABLED=true           # 随服务自启
+# 或独立运行：python -m agent.mcp_server
+MCP_SERVER_TRANSPORT=streamable-http   # streamable-http | sse
+MCP_SERVER_PORT=3202              # streamable-http 端点 /mcp，sse 端点 /sse
+```
+
+暴露的 MCP 工具：`search_attractions` / `search_hotels` / `get_commute` / `calculate_budget` / `retrieve_guide`（知识库 RAG）。
+
+### 🔐 Permission 工具权限控制
+
+按策略决定 Agent 能否调用某个工具，防止 LLM 误用高风险操作。核心工具在注册时自动套上权限包装，MCP 外部工具同样受控。
+
+| 配置 | 说明 |
+|------|------|
+| `PERMISSION_MODE=open` | （默认）所有工具可调用 |
+| `PERMISSION_MODE=blocklist` | 黑名单：`TOOL_BLOCKLIST` 中的工具被拒绝 |
+| `PERMISSION_MODE=allowlist` | 白名单：仅 `TOOL_ALLOWLIST` 中的工具可调用 |
+
+- 被拒绝的调用返回 `{"error":"PERMISSION_DENIED", ...}` 给 LLM（可感知并改走其他工具），不中断 Agent 循环
+- 查看策略：`GET /api/agent/permissions`
+- 例：`PERMISSION_MODE=blocklist` + `TOOL_BLOCKLIST=calculate_budget` → 预算核算工具被禁用
+
+### 🔑 Agent 服务鉴权（安全）
+
+Agent 服务不再裸奔：所有 `/api/agent/*` 请求必须通过以下之一（`agent/auth.py` 中间件）：
+
+| 方式 | 说明 |
+|------|------|
+| `X-Agent-Key` | 与 `AGENT_API_KEY` 一致（后端透传时附加的共享密钥） |
+| `Authorization: Bearer <JWT>` | 与后端 `JWT_SECRET` 同密钥签发；校验通过后把 `userId` 与请求绑定，防伪造 `user_id` 越权读写记忆 |
+
+- 前端 → Spring Boot（JWT 鉴权 + 附加共享密钥）→ Python Agent，**禁止直连**（vite/nginx 直连绕过已移除）
+- 未配置 `AGENT_API_KEY` 且无有效 JWT 时请求返回 401
+- 本地开发示例：后端与 Agent 均设 `AGENT_API_KEY=xxx`；如需 JWT 绑定设 `AGENT_JWT_SECRET=JWT_SECRET`
+
 ### Demo 模式
 
 未配置 LLM API Key 时自动启用，内置 8 城真实数据（成都/北京/上海/杭州/大理/三亚/西安/重庆），零依赖即可完整体验 5 阶段流程。
@@ -105,6 +152,9 @@ cp .env.example .env
 | `LLM_MODEL` | ❌ | 默认 `deepseek-v4-flash` |
 | `TAVILY_API_KEY` | ❌ | 实时搜索，未配则用内置数据 |
 | `AMAP_WEB_KEY` | ❌ | 高德地图通勤计算，未配则估算 |
+| `MCP_ENABLED` / `MCP_CLIENT_SERVERS` | ❌ | MCP 客户端：接入外部 MCP 服务器工具 |
+| `MCP_SERVER_ENABLED` / `MCP_SERVER_PORT` | ❌ | MCP 服务端：暴露自身工具 |
+| `PERMISSION_MODE` / `TOOL_ALLOWLIST` / `TOOL_BLOCKLIST` | ❌ | 工具权限控制（open/blocklist/allowlist） |
 
 ### 3. 启动
 
@@ -160,6 +210,14 @@ Content-Type: application/json
 # 后端 AgentProxyController 即转发到此端点（前端 → Spring Boot 3200 → Python 3201）
 ```
 
+### 工具权限策略
+
+```bash
+GET /api/agent/permissions
+# → { "policy": { "mode": "open", "allowlist": [...], "blocklist": [...] },
+#     "tools": { "core": [...], "mcp_client": { "enabled": false, ... } } }
+```
+
 ## 📁 项目结构
 
 ```
@@ -169,10 +227,13 @@ agent-service/
 ├── .env.example          # 环境变量模板
 ├── agent/
 │   ├── planner.py        # 5 阶段 Agent 编排器核心
-│   ├── tools.py          # 4 个 LangChain Tool
+│   ├── tools.py          # 4 个 LangChain Tool（套权限包装）
 │   ├── memory.py         # 🆕 记忆层（长期偏好 + 会话上下文 + 调研缓存）
 │   ├── schemas.py        # Pydantic 数据模型
-│   └── prompts.py        # System Prompt 模板
+│   ├── prompts.py        # System Prompt 模板
+│   ├── permissions.py    # 🆕 工具权限控制（open/blocklist/allowlist + 包装器）
+│   ├── mcp_bridge.py     # 🆕 MCP 桥接（客户端加载外部工具 + 服务端构建）
+│   └── mcp_server.py     # 🆕 MCP 服务端独立入口（python -m agent.mcp_server）
 └── README.md
 ```
 

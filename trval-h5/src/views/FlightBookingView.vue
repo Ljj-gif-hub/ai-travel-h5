@@ -34,6 +34,16 @@ const showDatePicker = ref(false)
 const minDate = new Date()
 const maxDate = new Date(Date.now() + 60 * 24 * 3600 * 1000)
 
+/** van-date-picker 确认回调：把 selectedValues 数组转成 YYYY-MM-DD 字符串（date 保持字符串） */
+const onDateConfirm = ({ selectedValues }) => {
+  if (Array.isArray(selectedValues) && selectedValues.length === 3) {
+    const [y, m, d] = selectedValues
+    date.value = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  showDatePicker.value = false
+  if (flights.value.length) search()
+}
+
 const swapCities = () => {
   const t = fromCity.value
   fromCity.value = toCity.value
@@ -87,7 +97,7 @@ const confirmBook = async () => {
       flightNo: f.flightNo,
       fromCity: f.fromCity,
       toCity: f.toCity,
-      price: f.price,
+      date: f.date, // 金额以服务端重新报价为准，客户端不传 price
       passengers: passengers.value,
       departureTime: `${f.date}T${f.departTime}:00`,
       arrivalTime: `${f.date}T${f.arrivalTime}:00`,
@@ -178,14 +188,13 @@ onMounted(search)
       </div>
     </div>
 
-    <!-- 日期选择 -->
+    <!-- 日期选择（date 保持字符串，用 @confirm 手动转数组） -->
     <van-popup v-model:show="showDatePicker" position="bottom" round>
       <van-date-picker
-        v-model="date"
         :title="t('booking.selectDate')"
         :min-date="minDate"
         :max-date="maxDate"
-        @confirm="showDatePicker = false"
+        @confirm="onDateConfirm"
         @cancel="showDatePicker = false"
       />
     </van-popup>

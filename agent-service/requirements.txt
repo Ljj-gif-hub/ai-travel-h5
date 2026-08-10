@@ -22,3 +22,10 @@ pydantic>=2.0.0
 
 # 环境变量
 python-dotenv>=1.0.0
+
+# MCP（Model Context Protocol）— 可选，未安装则 MCP 功能优雅降级
+mcp>=1.24,<2
+langchain-mcp-adapters>=0.3.1
+
+# JWT 鉴权（与后端共享密钥校验 Bearer Token，绑定 user_id）
+PyJWT>=2.8.0

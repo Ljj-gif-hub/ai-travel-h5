@@ -110,7 +110,7 @@ public class ImageProxyController {
             response.setContentType(contentType);
             response.setContentLength(body.length);
             response.setHeader("Cache-Control", "public, max-age=86400");
-            response.setHeader("Access-Control-Allow-Origin", "*");
+            // CORS 由全局 WebConfig 白名单统一处理
             response.getOutputStream().write(body);
             response.getOutputStream().flush();
 

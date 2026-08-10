@@ -40,7 +40,7 @@ public class SavedTravelPlanController {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("保存旅行规划失败", e);
-            return Result.fail("保存失败：" + e.getMessage());
+            return Result.fail("保存失败，请稍后重试");
         }
     }
 
@@ -57,7 +57,7 @@ public class SavedTravelPlanController {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("获取旅行规划列表失败", e);
-            return Result.fail("获取列表失败：" + e.getMessage());
+            return Result.fail("获取列表失败，请稍后重试");
         }
     }
 
@@ -72,7 +72,7 @@ public class SavedTravelPlanController {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("获取旅行规划详情失败：id={}", id, e);
-            return Result.fail(e.getMessage());
+            return Result.fail("获取详情失败，请稍后重试");
         }
     }
 
@@ -87,7 +87,7 @@ public class SavedTravelPlanController {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("删除旅行规划失败：id={}", id, e);
-            return Result.fail(e.getMessage());
+            return Result.fail("删除失败，请稍后重试");
         }
     }
 }

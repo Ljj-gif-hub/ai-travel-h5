@@ -1,5 +1,6 @@
 package org.example.traveljava.controller;
 
+import org.example.traveljava.config.PaymentConfig;
 import org.example.traveljava.service.PaymentService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
@@ -27,10 +28,12 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final JwtUtil jwtUtil;
+    private final PaymentConfig paymentConfig;
 
-    public PaymentController(PaymentService paymentService, JwtUtil jwtUtil) {
+    public PaymentController(PaymentService paymentService, JwtUtil jwtUtil, PaymentConfig paymentConfig) {
         this.paymentService = paymentService;
         this.jwtUtil = jwtUtil;
+        this.paymentConfig = paymentConfig;
     }
 
     /**
@@ -83,6 +86,11 @@ public class PaymentController {
      */
     @GetMapping("/mock-pay")
     public Result<String> mockPay(@RequestParam String orderNo) {
+        // 安全：生产环境必须关闭模拟支付（payment.mock-pay-enabled=false），
+        // 否则任何人可凭订单号把任意订单标记为已支付（免单漏洞）。
+        if (!paymentConfig.isMockPayEnabled()) {
+            return Result.fail("模拟支付已关闭");
+        }
         try {
             paymentService.handleNotify(Map.of("orderNo", orderNo));
             return Result.ok("模拟支付成功");

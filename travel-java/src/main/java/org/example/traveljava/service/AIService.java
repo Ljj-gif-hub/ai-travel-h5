@@ -345,7 +345,7 @@ public class AIService {
             return result;
         } catch (Exception e) {
             log.error("DeepSeek聊天失败", e);
-            return "AI服务暂时不可用：" + e.getMessage();
+            return "AI 服务暂时不可用，请稍后重试";
         }
     }
 
@@ -483,7 +483,7 @@ public class AIService {
                 })
                 .onErrorResume(e -> {
                     log.error("DeepSeek行程生成失败", e);
-                    return Flux.just("❌ " + (e.getMessage() != null ? e.getMessage() : "未知错误"));
+                    return Flux.just("❌ 行程生成失败，请稍后重试");
                 });
     }
 
@@ -702,7 +702,7 @@ public class AIService {
                 .delayElements(Duration.ofMillis(50))
                 .onErrorResume(e -> {
                     log.error("AI规划器流式失败", e);
-                    return Flux.just("❌ " + e.getMessage());
+                    return Flux.just("❌ 规划生成失败，请稍后重试");
                 })
                 .timeout(Duration.ofSeconds(120), Flux.just("❌ 生成超时，请减少天数后重试"))
                 .doOnComplete(() -> log.info("AI规划器流式完成"))
@@ -798,7 +798,7 @@ public class AIService {
             log.error("多阶段生成全局异常", e);
             GenerateProgressDTO errDto = new GenerateProgressDTO();
             errDto.setEventType("stream-error");
-            errDto.setSummary("❌ " + e.getMessage());
+            errDto.setSummary("❌ 生成失败，请稍后重试");
             try { onProgress.accept(errDto); } catch (Exception ex) {}
         } finally {
             removeTask(taskId);

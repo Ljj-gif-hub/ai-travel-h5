@@ -30,6 +30,9 @@ public class AdminInitializer implements CommandLineRunner {
         this.userRepository = userRepository;
     }
 
+    /** 内置默认口令（application.yml 兜底值）— 用于识别"未显式配置" */
+    private static final String DEFAULT_ADMIN_PASSWORD = "admin123";
+
     @Override
     public void run(String... args) {
         if (userRepository.findByUsername(adminUsername).isPresent()) {
@@ -39,6 +42,13 @@ public class AdminInitializer implements CommandLineRunner {
             log.warn("未配置 ADMIN_USERNAME，跳过管理员初始化");
             return;
         }
+        // 安全：未显式配置 ADMIN_PASSWORD（仍为默认口令）时拒绝启动，
+        // 防止带公开默认口令的管理员账号被自动创建。
+        if (adminPassword == null || adminPassword.isBlank() || DEFAULT_ADMIN_PASSWORD.equals(adminPassword)) {
+            throw new IllegalStateException(
+                    "检测到管理员账号将使用默认口令，出于安全考虑已拒绝创建。"
+                    + "请显式设置 ADMIN_PASSWORD 环境变量后重启。");
+        }
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         User admin = new User();
         admin.setUsername(adminUsername.trim());
@@ -47,10 +57,6 @@ public class AdminInitializer implements CommandLineRunner {
         admin.setStatus(1);
         admin.setNickname("管理员");
         userRepository.save(admin);
-
-        if (adminPassword == null || "admin123".equals(adminPassword)) {
-            log.warn("管理员账号使用默认密码，请立即通过 ADMIN_USERNAME / ADMIN_PASSWORD 环境变量修改！");
-        }
         log.info("已创建管理员账号: {}", adminUsername);
     }
 }

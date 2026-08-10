@@ -31,6 +31,8 @@ const replyTo = ref(null)
 const showCommentsDrawer = ref(false)
 const showShareSheet = ref(false)
 const expandedGroups = ref(new Set())
+/** 展开/加载更多回复的显示数量映射（之前缺失声明导致 ReferenceError） */
+const replyShowMap = reactive({})
 
 const shareOptions = [
   { key: 'wechat', label: t('note.shareWechat'), icon: 'wechat', color: '#07C160' },

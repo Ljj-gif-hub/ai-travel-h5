@@ -65,6 +65,12 @@ public class RecommendationService {
             .maximumSize(8)
             .build();
 
+    /** 已保存行程目的地热度缓存：TTL 5 分钟，避免每次推荐全表扫描 */
+    private final Cache<String, Map<String, Double>> savedPlanDestCache = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .maximumSize(1)
+            .build();
+
     public RecommendationService(FavoriteRepository favoriteRepository,
                                  NoteRepository noteRepository,
                                  NoteLikeRepository noteLikeRepository,
@@ -125,14 +131,10 @@ public class RecommendationService {
         CandidatePool pool = getPool();
         Map<String, Double> profile = userId == null ? Map.of() : buildUserProfile(userId);
 
-        // 1) 从已保存行程聚合目的地热度
-        Map<String, Double> destPop = new LinkedHashMap<>();
+        // 1) 从已保存行程聚合目的地热度（缓存 5 分钟，避免每请求全表扫描）
+        Map<String, Double> destPop = new LinkedHashMap<>(savedPlanDestPopularity());
         Map<String, String> destCover = new LinkedHashMap<>();
-        for (SavedTravelPlan p : savedPlanRepository.findAllByOrderByCreatedAtDesc()) {
-            if (p.getDestination() == null || p.getDestination().isBlank()) continue;
-            addTo(destPop, p.getDestination(), 2.0);
-            destCover.putIfAbsent(p.getDestination(), "");
-        }
+        destPop.keySet().forEach(d -> destCover.put(d, ""));
         // 2) 城市/目的地类收藏聚合
         for (Candidate c : pool.items) {
             if (DESTINATION_TYPES.contains(c.targetType.toLowerCase())) {
@@ -214,6 +216,18 @@ public class RecommendationService {
         String type = f.getTargetType() == null ? "unknown" : f.getTargetType();
         String id = f.getTargetId() == null ? nvl(f.getTargetName()) : String.valueOf(f.getTargetId());
         return type.toLowerCase() + ":" + id;
+    }
+
+    /** 已保存行程 → 目的地热度（缓存，5 分钟） */
+    private Map<String, Double> savedPlanDestPopularity() {
+        return savedPlanDestCache.get("destPop", k -> {
+            Map<String, Double> pop = new HashMap<>();
+            for (SavedTravelPlan p : savedPlanRepository.findAllByOrderByCreatedAtDesc()) {
+                if (p.getDestination() == null || p.getDestination().isBlank()) continue;
+                addTo(pop, p.getDestination(), 2.0);
+            }
+            return pop;
+        });
     }
 
     private static String nvl(String s) {

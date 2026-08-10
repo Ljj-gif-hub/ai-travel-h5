@@ -1,6 +1,8 @@
 package org.example.traveljava.repository;
 
 import org.example.traveljava.entity.Post;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -10,6 +12,6 @@ import java.util.List;
 public interface PostRepository extends JpaRepository<Post, Long> {
     List<Post> findByUserIdOrderByCreatedAtDesc(Long userId);
 
-    /** 社区广场：获取所有用户的动态，按时间倒序 */
-    List<Post> findAllByOrderByCreatedAtDesc();
+    /** 社区广场：获取所有用户的动态，按时间倒序（分页） */
+    Page<Post> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }

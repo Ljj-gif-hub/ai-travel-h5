@@ -57,7 +57,7 @@ public class TripPlan {
      * 行程详细规划的JSON字符串
      * 包含每日行程安排、景点列表、路线建议等完整数据
      */
-    @Column(name = "plan_json", columnDefinition = "CLOB")
+    @Column(name = "plan_json", columnDefinition = "LONGTEXT")
     private String planJson;
 
     /**

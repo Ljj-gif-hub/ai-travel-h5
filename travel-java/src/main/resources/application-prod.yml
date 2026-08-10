@@ -28,11 +28,17 @@ logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
 
+# 生产环境安全：
+#  - Actuator 只暴露 health/info/metrics/prometheus，不暴露 env/loggers（防密钥泄露/日志级别篡改）
+#  - 关闭模拟支付确认端点（防免单）
+payment:
+  mock-pay-enabled: false
+
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,loggers,env
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: ${HEALTH_SHOW_DETAILS:never}
