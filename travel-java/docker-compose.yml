@@ -79,7 +79,8 @@ services:
       # MCP（可选）
       MCP_SERVER_ENABLED: ${MCP_SERVER_ENABLED:-false}
     ports:
-      - "3201:3201"
+      # 仅内网可达，公网统一走 nginx:80（agent 已被鉴权中间件保护）
+      - "127.0.0.1:3201:3201"
 
   app:
     build: .
@@ -117,7 +118,8 @@ services:
       AMAP_WEB_KEY: ${AMAP_WEB_KEY:-}
       BAIDU_MAP_AK: ${BAIDU_MAP_AK:-}
     ports:
-      - "3200:3200"
+      # 仅内网可达，公网统一走 nginx:80（接口本身有 JWT 鉴权）
+      - "127.0.0.1:3200:3200"
 
   # Nginx 反向代理 + 前端静态资源（dist 挂载进容器，80 端口对外）
   nginx:
