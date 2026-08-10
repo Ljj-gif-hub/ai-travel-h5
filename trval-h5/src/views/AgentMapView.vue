@@ -8,7 +8,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { agentPlanStream } from '../api/agent'
-import { sceneApi, planApi } from '../api/index.js'
+import { planApi } from '../api/index.js'
 import { getToken } from '../utils/auth'
 
 defineOptions({ name: 'AgentMapView' })
@@ -29,6 +29,7 @@ const planData = ref(null)
 const costBreakdown = ref(null)
 const hotelList = ref([])
 const attractionImages = ref({})
+let attractionImageMap = null // 静态景点图映射 /attraction-images.json（同源必然能加载），懒加载一次
 const markerPositions = ref({}) // 景点名 → {lat,lng}，点击卡片定位用
 const markerEls = ref({})        // 景点名 → 标记 DOM，高亮用
 const activeSpot = ref('')       // 当前选中的景点
@@ -438,11 +439,30 @@ function goToSpot(name) {
   highlightMarker(name)
 }
 
+/** 把 LLM 生成的景点名（常带【x】/（x）等元数据后缀）与静态图映射做模糊匹配 */
+function matchLocalImage(name, map) {
+  if (!map) return ''
+  if (map[name]) return map[name]
+  const clean = String(name).replace(/【[^】]*】/g, '').replace(/（[^）]*）/g, '').replace(/\([^)]*\)/g, '').trim()
+  if (clean && map[clean]) return map[clean]
+  for (const k of Object.keys(map)) {
+    if (clean && (clean.includes(k) || k.includes(clean))) return map[k]
+  }
+  return ''
+}
+
 async function loadImages(dayPlans) {
+  // 优先用预拉取的本地静态图（同源、必然能加载）。
+  // 不再调 /scene/image：线上百度 AK 为空，恒返回不可达的 picsum 占位图 → 卡片背景空白。
+  if (attractionImageMap === null) {
+    try { const r = await fetch('/attraction-images.json').then(res => res.json()); attractionImageMap = r || {} } catch { attractionImageMap = {} }
+  }
   const names = new Set()
   for (const dp of dayPlans) for (const s of (dp.timeSlots||[])) { if (s.attraction) names.add(s.attraction) }
   for (const name of names) {
-    try { const r = await sceneApi.getSceneImage(name); if (r.code===0&&r.data?.imgUrl) attractionImages.value[name] = r.data.imgUrl } catch {}
+    const local = matchLocalImage(name, attractionImageMap)
+    if (local) attractionImages.value[name] = local
+    // 未命中静态图 → 不设图，卡片显示占位 SVG
   }
 }
 
