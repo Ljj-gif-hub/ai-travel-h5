@@ -224,6 +224,7 @@ watch(drawerPct, (val) => {
 let mapInstance = null
 let markerInstances = [] // 已添加的地图标记实例（重新生成时清除）
 const markerByName = {}  // 景点名 → AMap.Marker 实例（扇形展开用）
+const markerPrimary = new Set() // 同地点合并后的代表景点名；declutter 只按代表名排布，避免把已合并的同一图标重新堆开
 const cityCoords = {
   北京:[39.915,116.404],上海:[31.23,121.474],成都:[30.573,104.067],杭州:[30.274,120.155],
   大理:[25.607,100.233],三亚:[18.253,109.504],西安:[34.263,108.948],重庆:[29.565,106.551],
@@ -291,6 +292,29 @@ async function geocodeName(name) {
   return { lat: center.lat + (Math.random() - .5) * .02, lng: center.lng + (Math.random() - .5) * .02 }
 }
 
+/** 同地点合并阈值（米）：坐标距离小于该值的推荐视为同一个地点，合并为一个定位图标。
+ *  例：LLM 常把"武侯祠（含锦里古街）"和"锦里古街"同时推荐出来，两点紧邻，地图上应只显示一个 pin。 */
+const SAME_PLACE_M = 150
+/** 按坐标相近程度把景点分组成"同一地点"，每组保持行程出现顺序（names[0] 为最早出现者，即标签最上一行） */
+function groupBySamePlace(markers) {
+  const groups = []
+  for (const m of markers) {
+    let host = null
+    for (const g of groups) {
+      const dy = (g.lat - m.lat) * 111000
+      const dx = (g.lng - m.lng) * 111000 * Math.cos(g.lat * Math.PI / 180)
+      if (Math.sqrt(dx * dx + dy * dy) < SAME_PLACE_M) { host = g; break }
+    }
+    if (host) host.names.push(m.name)
+    else groups.push({ lat: m.lat, lng: m.lng, names: [m.name] })
+  }
+  return groups
+}
+/** 转义 HTML，防止景点名里的特殊字符破坏标签 DOM */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
+}
+
 async function addMarkers(names) {
   if (!mapInstance || !window.AMap) return
   // 并行地理编码真实坐标，避免全部随机堆在市中心
@@ -298,7 +322,9 @@ async function addMarkers(names) {
     const c = await geocodeName(name)
     return { name, lat: c.lat, lng: c.lng }
   }))
-  markers.forEach(m => {
+  // 同一地点去重：相邻的推荐合并为一个定位图标，避免地图上出现重复定位针
+  const groups = groupBySamePlace(markers)
+  groups.forEach(group => {
     // 标准定位针图标（teardrop pin）+ 干净文字气泡
     const el = document.createElement('div')
     el.className = 'spot-marker'
@@ -308,11 +334,11 @@ async function addMarkers(names) {
         '<path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#7C3AED" stroke="#fff" stroke-width="1.6"/>' +
         '<circle cx="12" cy="11.5" r="5.2" fill="#fff"/>' +
       '</svg>'
-    el.querySelector('.spot-marker-name').textContent = m.name
-    markerPositions.value[m.name] = { lat: m.lat, lng: m.lng }
-    markerEls.value[m.name] = el
+    // 合并的标签：同地点多个景点名从上到下按行程顺序分行排列
+    el.querySelector('.spot-marker-name').innerHTML =
+      group.names.map(escapeHtml).join('<br>')
     const mk = new window.AMap.Marker({
-      position: [m.lng, m.lat],
+      position: [group.lng, group.lat],
       content: el,
       anchor: 'bottom-center',
       offset: new window.AMap.Pixel(0, -2),
@@ -320,9 +346,15 @@ async function addMarkers(names) {
     })
     mapInstance.add(mk)
     markerInstances.push(mk)
-    markerByName[m.name] = mk
+    // 组内所有名字都指向同一个图标（点击任意行程卡片都能定位/高亮它）
+    group.names.forEach(name => {
+      markerPositions.value[name] = { lat: group.lat, lng: group.lng }
+      markerEls.value[name] = el
+      markerByName[name] = mk
+    })
+    markerPrimary.add(group.names[0]) // 代表名：declutter 只按代表名排布
   })
-  // 地图渲染稳定后执行扇形展开（防重叠）
+  // 地图渲染稳定后执行展开（防重叠）
   setTimeout(declutterMarkers, 350)
 }
 
@@ -332,9 +364,10 @@ const STACK_STEP = 46     // 上下排列的垂直间距（px）
 let declutterTimer = null
 
 function declutterMarkers() {
-  if (!mapInstance || !window.AMap || Object.keys(markerPositions.value).length < 2) return
+  if (!mapInstance || !window.AMap || markerPrimary.size < 2) return
   try {
-    const names = Object.keys(markerPositions.value)
+    // 只排布"同地点合并后"的代表名；同一图标的其它名字共享同一坐标，不能参与排布（否则会把合并的图标重新堆开）
+    const names = [...markerPrimary]
     // 原始坐标 → 当前屏幕像素；地图视图未就绪/正在变换时可能返回 NaN，跳过本轮
     const screen = {}
     for (const n of names) {
@@ -451,6 +484,7 @@ async function startGeneration(adjustment = '') {
   markerInstances = []
   markerPositions.value = {}
   markerEls.value = {}
+  markerPrimary.clear()
   activeSpot.value = ''
   planData.value = null
   const steps = stepList.value
@@ -1036,7 +1070,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 <!-- 地图标记样式：AMap 的 content 是 JS 动态插入地图容器，不在组件 scoped 作用域内，必须用全局样式 -->
 <style>
 .spot-marker { display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; transform-origin:bottom center; animation:markerPop .35s cubic-bezier(.34,1.56,.64,1) both; }
-.spot-marker-name { padding:2px 7px; border-radius:7px; background:rgba(255,255,255,0.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#333; font-size:10px; font-weight:500; line-height:1.4; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.5); }
+.spot-marker-name { padding:2px 7px; border-radius:7px; background:rgba(255,255,255,0.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#333; font-size:10px; font-weight:500; line-height:1.4; white-space:nowrap; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.5); }
 .spot-marker-pin { display:block; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.22)); transition:transform .25s ease, filter .25s ease; }
 .spot-marker.active .spot-marker-pin { transform:scale(1.3); filter:drop-shadow(0 0 8px rgba(124,58,237,.9)); }
 .spot-marker.active .spot-marker-name { color:#7c3aed; font-weight:700; }
