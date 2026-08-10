@@ -22,15 +22,17 @@ function setRootFontSize() {
 }
 
 setRootFontSize()
-window.addEventListener('resize', setRootFontSize)
+window.addEventListener('resize', setRootFontSize);
 
 /* ==================== 低内存设备内存保护（对高端机零影响） ====================
  * backdrop-filter 会实时模糊背后整页，而 position:fixed/sticky 的栏与全屏弹层
  * 在滚动/打开时每帧重合成，是 GPU 内存的最大头（低端机 → 标签页 out of memory）。
  * 仅当设备内存 ≤4GB 或 ≤4 核时启用：去掉这些常驻栏/弹层的磨砂，
  * 装饰性卡片的磨砂质感完整保留。高端机（不支持/高于阈值）不启用，视觉完全不变。
+ * ⚠️ 前面加 `;`：本 IIFE 以 ( 开头，若不加分号会被 ASI 续接到上一句
+ * window.addEventListener(...) 变成对调用结果的二次调用 → TypeError。
  */
-(function () {
+;(function () {
   const dm = navigator.deviceMemory // Chrome/Android 才有；iOS/Firefox 无 → 视为可负担
   const hc = navigator.hardwareConcurrency
   const isLowMem = (dm !== undefined && dm <= 4) || (hc !== undefined && hc <= 4)
