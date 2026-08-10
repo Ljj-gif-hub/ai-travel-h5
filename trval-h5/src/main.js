@@ -24,4 +24,35 @@ function setRootFontSize() {
 setRootFontSize()
 window.addEventListener('resize', setRootFontSize)
 
+/* ==================== 低内存设备内存保护（对高端机零影响） ====================
+ * backdrop-filter 会实时模糊背后整页，而 position:fixed/sticky 的栏与全屏弹层
+ * 在滚动/打开时每帧重合成，是 GPU 内存的最大头（低端机 → 标签页 out of memory）。
+ * 仅当设备内存 ≤4GB 或 ≤4 核时启用：去掉这些常驻栏/弹层的磨砂，
+ * 装饰性卡片的磨砂质感完整保留。高端机（不支持/高于阈值）不启用，视觉完全不变。
+ */
+(function () {
+  const dm = navigator.deviceMemory // Chrome/Android 才有；iOS/Firefox 无 → 视为可负担
+  const hc = navigator.hardwareConcurrency
+  const isLowMem = (dm !== undefined && dm <= 4) || (hc !== undefined && hc <= 4)
+  if (!isLowMem) return
+  document.documentElement.classList.add('low-mem')
+  let pending = false
+  const strip = () => {
+    for (const el of document.querySelectorAll('*')) {
+      if (el.dataset.lmStripped) continue
+      const cs = getComputedStyle(el)
+      const pos = cs.position
+      if ((pos === 'fixed' || pos === 'sticky') && (cs.backdropFilter !== 'none' || cs.webkitBackdropFilter !== 'none')) {
+        el.style.webkitBackdropFilter = 'none'
+        el.style.backdropFilter = 'none'
+        el.dataset.lmStripped = '1'
+      }
+    }
+  }
+  const schedule = () => { if (!pending) { pending = true; setTimeout(() => { pending = false; strip() }, 60) } }
+  // 监听视图/弹层挂载，动态剥离（路由切换、van-popup 打开都会触发）
+  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true })
+  strip()
+})();
+
 createApp(App).use(router).use(i18n).mount('#app')

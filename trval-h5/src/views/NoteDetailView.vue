@@ -312,7 +312,7 @@ onMounted(() => {
 
       <!-- 图片轮播 -->
       <div v-if="contentImages.length" class="image-swipe-wrap">
-        <van-swipe :autoplay="0" indicator-color="transparent" indicator-active-color="transparent" :circular="true" class="image-swipe" @change="onSwipeChange">
+        <van-swipe :autoplay="0" indicator-color="transparent" indicator-active-color="transparent" :circular="true" lazy-render class="image-swipe" @change="onSwipeChange">
           <van-swipe-item v-for="(img, idx) in contentImages" :key="idx"><img :src="img" class="swipe-image" loading="lazy" /></van-swipe-item>
         </van-swipe>
         <div class="swipe-dots-row">
@@ -486,9 +486,7 @@ onMounted(() => {
 <style scoped>
 .note-detail-page { width: 100%; min-height: 100vh; background: transparent; padding-bottom: 80px; box-sizing: border-box; }
 
-/* 顶栏 — 近实底替代磨砂（原 blur(22px) 会在滚动时持续模糊背后整页 → OOM），
- * 视觉靠渐变高光保留玻璃感，GPU 成本归零 */
-.custom-nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 8px 4px; background:linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.92) 40%, rgba(255,255,255,0.96) 100%); border-bottom: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); position: sticky; top: 0; z-index: 1000; }
+.custom-nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 8px 4px; background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.4) 100%),rgba(255,255,255,0.45); backdrop-filter: blur(22px) saturate(180%); -webkit-backdrop-filter: blur(22px) saturate(180%); border-bottom: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); position: sticky; top: 0; z-index: 1000; }
 .nav-left { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; cursor: pointer; flex-shrink: 0; }
 .nav-center { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .nav-avatar { flex-shrink: 0; border: 1.5px solid rgba(139, 92, 246, 0.2); }
@@ -518,8 +516,7 @@ onMounted(() => {
 .detail-date { font-size: 12px; color: #9ca3af; }
 
 /* 底部操作栏 — iOS 透光磨砂玻璃 */
-/* 底部操作栏 — 同上：fixed 栏滚动时每帧重合成，原 blur(24px) 是 OOM 大头，改近实底 */
-.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background:linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.92) 40%, rgba(255,255,255,0.96) 100%); border-top: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); z-index: 500; }
+.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.4) 100%),rgba(255,255,255,0.4); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border-top: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); z-index: 500; }
 .comment-oval-btn { padding: 6px 42px; border: 1px solid rgba(0,0,0,0.08); border-radius: 24px; background: rgba(255,255,255,0.5); color: #6b7280; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-right: 16px; }
 .comment-oval-btn:active { background: #f3f4f6; transform: scale(0.97); }
 .bottom-actions { display: flex; align-items: center; gap: 16px; }

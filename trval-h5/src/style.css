@@ -31,11 +31,10 @@
   --bg-glass: rgba(255, 255, 255, 0.65);
   --bg-glass-strong: rgba(255, 255, 255, 0.78);
 
-  /* 磨砂玻璃效果 — 模糊半径已从 18/10/28px 压低：移动 WebView 上 blur 成本随半径
-   * 线性增长，高模糊是标签页 out of memory 的主要推手，见文件末尾内存保护覆盖 */
-  --glass-blur: 8px;
-  --glass-blur-light: 6px;
-  --glass-blur-strong: 12px;
+  /* 磨砂玻璃效果 */
+  --glass-blur: 18px;
+  --glass-blur-light: 10px;
+  --glass-blur-strong: 28px;
   --glass-border: rgba(255, 255, 255, 0.45);
   --glass-saturate: saturate(160%);
 
@@ -609,18 +608,4 @@ html[data-theme='dark'] .image-placeholder {
 /* 全局文字默认色 — 兜底未用 var() 的裸文字元素 */
 html[data-theme='dark'] {
   color: var(--text-primary);
-}
-
-/* ==================== 移动端内存保护：压低 backdrop-filter 成本 ====================
- * 移动 WebView（尤其低端/中端机）上 backdrop-filter 需对背后整页做实时模糊合成，
- * blur(18–28px) 每处都是几十 MB GPU 内存，滚动时固定栏还持续重合成；
- * 全站 40+ 处叠加 → 标签页直接 "out of memory"。
- * 统一把模糊半径压到 8px 并保留 saturate 维持磨砂观感（视觉几乎无差）。
- * 常驻顶栏/底栏再在组件内退化为近实底（零 GPU 成本），见 NoteDetailView 等。
- */
-@supports (backdrop-filter: blur(1px)) {
-  * {
-    -webkit-backdrop-filter: blur(8px) saturate(160%) !important;
-    backdrop-filter: blur(8px) saturate(160%) !important;
-  }
 }
