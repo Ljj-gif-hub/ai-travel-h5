@@ -123,6 +123,9 @@ services:
     ports:
       # 仅内网可达，公网统一走 nginx:80（接口本身有 JWT 鉴权）
       - "127.0.0.1:3200:3200"
+    volumes:
+      # 用户上传文件持久化到宿主机（nginx 容器同目录只读挂载，直接静态服务 /uploads/**）
+      - ./uploads:/app/uploads
 
   # Nginx 反向代理 + 前端静态资源（dist 挂载进容器，80 端口对外）
   nginx:
@@ -135,6 +138,8 @@ services:
     volumes:
       - ../trval-h5/dist:/usr/share/nginx/html:ro
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 上传文件只读挂载到 /opt/uploads（不能挂到 html 下——html 是只读 bind mount，建不了挂载点）
+      - ./uploads:/opt/uploads:ro
     restart: unless-stopped
 
 volumes:
