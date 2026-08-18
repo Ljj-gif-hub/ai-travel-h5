@@ -83,17 +83,22 @@ public class PaymentController {
 
     /**
      * 模拟支付确认（mock 渠道专用）：GET 直接标记订单已支付
+     * 【安全】需登录且必须是订单属主：未登录 401，非属主 403（防止凭订单号给他人免单）。
      */
     @GetMapping("/mock-pay")
-    public Result<String> mockPay(@RequestParam String orderNo) {
+    public Result<String> mockPay(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                                  @RequestParam String orderNo) {
         // 安全：生产环境必须关闭模拟支付（payment.mock-pay-enabled=false），
         // 否则任何人可凭订单号把任意订单标记为已支付（免单漏洞）。
         if (!paymentConfig.isMockPayEnabled()) {
             return Result.fail("模拟支付已关闭");
         }
         try {
-            paymentService.handleNotify(Map.of("orderNo", orderNo));
+            Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+            paymentService.mockConfirm(userId, orderNo);
             return Result.ok("模拟支付成功");
+        } catch (AuthUtils.AuthException | AuthUtils.ForbiddenException e) {
+            throw e; // 401 / 403 由 GlobalExceptionHandler 统一返回
         } catch (IllegalArgumentException e) {
             log.warn("模拟支付失败：{}", e.getMessage());
             return Result.fail(e.getMessage());

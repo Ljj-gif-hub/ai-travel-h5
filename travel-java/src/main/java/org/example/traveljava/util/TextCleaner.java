@@ -1,5 +1,8 @@
 package org.example.traveljava.util;
 
+import org.owasp.html.PolicyFactory;
+import org.owasp.html.Sanitizers;
+
 import java.util.regex.Pattern;
 
 /**
@@ -66,34 +69,23 @@ public final class TextCleaner {
         return cleaned != null && !cleaned.isBlank();
     }
 
-    // ---- HTML 存储安全（防存储型 XSS）：剥离脚本/事件属性，保留基础富文本 ----
+    // ---- HTML 存储安全（防存储型 XSS）：OWASP 白名单消毒，替代原正则黑名单 ----
 
-    private static final Pattern SCRIPT_BLOCK = Pattern.compile("(?is)<script[^>]*>.*?</script>");
-    private static final Pattern IFRAME_BLOCK = Pattern.compile("(?is)<iframe[^>]*>.*?</iframe>");
-    private static final Pattern EMBED_BLOCK = Pattern.compile("(?is)<embed[^>]*>.*?</embed>");
-    private static final Pattern OBJECT_BLOCK = Pattern.compile("(?is)<object[^>]*>.*?</object>");
-    private static final Pattern SVG_BLOCK = Pattern.compile("(?is)<svg[^>]*>.*?</svg>");
-    private static final Pattern STYLE_BLOCK = Pattern.compile("(?is)<style[^>]*>.*?</style>");
-    private static final Pattern JAVASCRIPT_PROTO = Pattern.compile("(?i)javascript:");
-    private static final Pattern EVENT_HANDLER = Pattern.compile("(?i)on\\w+\\s*=\\s*[\"']?[^\"'>]*[\"']?");
+    /** 白名单策略：基础排版（加粗/斜体/列表等）+ 段落 + 链接 + 图片 */
+    private static final PolicyFactory HTML_SANITIZER = Sanitizers.FORMATTING
+            .and(Sanitizers.BLOCKS)
+            .and(Sanitizers.LINKS)
+            .and(Sanitizers.IMAGES);
 
     /**
-     * 用户提交的富文本存储前清洗，剥离脚本/事件/危险协议。
-     * 与前端 filterXss 保持同一黑名单口径，作为 XSS 的纵深防御。
+     * 用户提交的富文本存储前清洗：只保留白名单标签/属性，其余全部剥离。
+     * 白名单方式天然免疫黑名单正则漏网（如大小写混淆、null 字节、编码绕过），
+     * 与前端 filterXss 形成纵深防御。
      */
     public static String sanitizeHtml(String html) {
         if (html == null) {
             return null;
         }
-        String s = html;
-        s = SCRIPT_BLOCK.matcher(s).replaceAll("");
-        s = IFRAME_BLOCK.matcher(s).replaceAll("");
-        s = EMBED_BLOCK.matcher(s).replaceAll("");
-        s = OBJECT_BLOCK.matcher(s).replaceAll("");
-        s = SVG_BLOCK.matcher(s).replaceAll("");
-        s = STYLE_BLOCK.matcher(s).replaceAll("");
-        s = JAVASCRIPT_PROTO.matcher(s).replaceAll("");
-        s = EVENT_HANDLER.matcher(s).replaceAll("");
-        return s;
+        return HTML_SANITIZER.sanitize(html);
     }
 }

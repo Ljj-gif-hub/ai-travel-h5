@@ -1,5 +1,6 @@
 package org.example.traveljava.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.traveljava.dto.SavedPlanRequest;
 import org.example.traveljava.entity.SavedTravelPlan;
@@ -8,6 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +91,176 @@ public class SavedTravelPlanService {
         SavedTravelPlan plan = getPlanById(userId, id);
         repository.deleteById(id);
         log.info("删除旅行规划：id={}, userId={}", id, userId);
+    }
+
+    /* ==================== 【新功能】ICS 日历导出 ==================== */
+
+    private static final DateTimeFormatter ICS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    /**
+     * 从 planJson 构建 iCalendar 内容：每天一个 VEVENT，标题「第N天-城市」，
+     * 日期浮动（从今天起按天顺延），描述含当天景点摘要。
+     * planJson 结构兼容 dayPlans/days/schedule 等常见字段。
+     */
+    public String buildIcs(SavedTravelPlan plan) {
+        List<DaySummary> days = extractDays(plan);
+        if (days.isEmpty()) {
+            throw new IllegalArgumentException("行程内容为空，无法导出日历");
+        }
+        LocalDate start = LocalDate.now();
+        StringBuilder sb = new StringBuilder(512);
+        sb.append("BEGIN:VCALENDAR\r\n");
+        sb.append("VERSION:2.0\r\n");
+        sb.append("PRODID:-//TravelJava//TripPlan//CN\r\n");
+        sb.append("CALSCALE:GREGORIAN\r\n");
+        sb.append("METHOD:PUBLISH\r\n");
+        sb.append("X-WR-CALNAME:").append(icsEscape(plan.getDestination())).append("行程\r\n");
+
+        for (int i = 0; i < days.size(); i++) {
+            DaySummary d = days.get(i);
+            int dayNum = d.day > 0 ? d.day : (i + 1);
+            LocalDate dayDate = start.plusDays(dayNum - 1L);
+            String title = (d.title != null && !d.title.isBlank())
+                    ? d.title
+                    : ("第" + dayNum + "天-" + plan.getDestination());
+            sb.append("BEGIN:VEVENT\r\n");
+            sb.append("UID:").append(plan.getId()).append("-day").append(dayNum).append("@travel-java\r\n");
+            sb.append("DTSTAMP:").append(LocalDate.now().format(ICS_DATE)).append("T000000Z\r\n");
+            sb.append("DTSTART;VALUE=DATE:").append(dayDate.format(ICS_DATE)).append("\r\n");
+            sb.append("DTEND;VALUE=DATE:").append(dayDate.plusDays(1).format(ICS_DATE)).append("\r\n");
+            sb.append("SUMMARY:").append(icsEscape(title)).append("\r\n");
+            if (d.description != null && !d.description.isBlank()) {
+                for (String line : foldLine("DESCRIPTION:" + icsEscape(d.description))) {
+                    sb.append(line).append("\r\n");
+                }
+            }
+            sb.append("END:VEVENT\r\n");
+        }
+        sb.append("END:VCALENDAR\r\n");
+        return sb.toString();
+    }
+
+    /** 一天行程摘要 */
+    private static class DaySummary {
+        int day;
+        String title;
+        String description;
+    }
+
+    /** 从 planJson 提取每天摘要（兼容多种前端结构） */
+    private List<DaySummary> extractDays(SavedTravelPlan plan) {
+        List<DaySummary> result = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(plan.getPlanJson());
+            if (root == null) return result;
+            JsonNode daysNode = findDaysNode(root);
+            if (daysNode == null || !daysNode.isArray()) {
+                // 兜底：整个 JSON 当 1 天
+                DaySummary single = new DaySummary();
+                single.day = 1;
+                single.description = summarizeNode(root, 0);
+                result.add(single);
+                return result;
+            }
+            int i = 0;
+            for (JsonNode el : daysNode) {
+                if (el == null || !el.isObject()) continue;
+                i++;
+                DaySummary d = new DaySummary();
+                JsonNode dayNum = el.get("day");
+                d.day = dayNum != null && dayNum.isNumber() ? dayNum.asInt() : i;
+                d.title = textOf(el, "dayTitle", "title", "theme", "name");
+                d.description = summarizeNode(el, 0);
+                result.add(d);
+            }
+        } catch (Exception e) {
+            log.warn("解析 planJson 提取天数失败: id={}", plan.getId(), e);
+        }
+        return result;
+    }
+
+    /** 查找天数数组节点（兼容 dayPlans/days/schedule/dailyPlans 等字段名） */
+    private JsonNode findDaysNode(JsonNode node) {
+        if (node == null) return null;
+        String[] candidates = {"dayPlans", "days", "schedule", "dailyPlans", "itinerary", "plan"};
+        for (String key : candidates) {
+            JsonNode n = node.get(key);
+            if (n != null && n.isArray()) return n;
+            if (n != null && n.isObject()) {
+                JsonNode inner = findDaysNode(n);
+                if (inner != null && inner.isArray()) return inner;
+            }
+        }
+        return null;
+    }
+
+    /** 汇总一天内的景点文本（timeSlots/activities/attractions 等），深度限制 depth */
+    private String summarizeNode(JsonNode node, int depth) {
+        if (node == null || depth > 3) return "";
+        List<String> parts = new ArrayList<>();
+        if (node.isObject()) {
+            JsonNode slots = node.get("timeSlots");
+            if (slots != null && slots.isArray()) {
+                for (JsonNode s : slots) {
+                    String attraction = textOf(s, "attraction");
+                    if (attraction == null) attraction = textOf(s, "name");
+                    if (attraction != null && !attraction.isBlank()) parts.add(attraction);
+                }
+            }
+            if (parts.isEmpty()) {
+                for (String key : new String[]{"activities", "attractions", "spots"}) {
+                    JsonNode arr = node.get(key);
+                    if (arr != null && arr.isArray()) {
+                        for (JsonNode a : arr) {
+                            if (a.isTextual()) parts.add(a.asText());
+                            else {
+                                String name = textOf(a, "name", "title", "attraction");
+                                if (name != null) parts.add(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return String.join("；", parts);
+    }
+
+    /** 依次尝试字段名取文本值 */
+    private String textOf(JsonNode node, String... keys) {
+        if (node == null) return null;
+        for (String key : keys) {
+            JsonNode v = node.get(key);
+            if (v != null && v.isTextual() && !v.asText().isBlank()) return v.asText();
+        }
+        return null;
+    }
+
+    /** ICS 文本转义：反斜杠、分号、逗号、换行 */
+    private String icsEscape(String text) {
+        if (text == null) return "";
+        return text.replace("\\", "\\\\")
+                .replace(";", "\\;")
+                .replace(",", "\\,")
+                .replace("\r\n", "\\n")
+                .replace("\n", "\\n");
+    }
+
+    /** 按 RFC 5545 折行：每行不超过 75 字节，续行以空格开头 */
+    private List<String> foldLine(String line) {
+        List<String> lines = new ArrayList<>();
+        while (line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 75) {
+            int cut = 75;
+            // 按字符回退到安全边界，避免切断多字节字符
+            while (cut > 0 && line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 0
+                    && line.substring(0, cut).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 74) {
+                cut--;
+            }
+            if (cut <= 0) cut = 30;
+            lines.add(line.substring(0, cut));
+            line = " " + line.substring(cut);
+        }
+        lines.add(line);
+        return lines;
     }
 
     public Map<String, Object> toResponseMap(SavedTravelPlan plan) {

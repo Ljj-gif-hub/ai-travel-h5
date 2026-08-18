@@ -29,6 +29,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Value("${app.rate-limit.trust-proxy:false}")
     private boolean trustProxy;
 
+    /** Redis 不可用时是否放行（fail-open=true）还是拒绝请求（fail-closed=false，默认）。默认拒绝以保住限流保护。 */
+    @Value("${app.rate-limit.fail-open:false}")
+    private boolean failOpen;
+
     public RateLimitInterceptor(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
@@ -62,10 +66,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         } catch (Exception e) {
             if (!redisWarned) {
                 redisWarned = true;
-                log.debug("Redis未连接，跳过限流检查");
+                log.warn("Redis 不可用，限流检查异常（{}），按 fail-open={} 处理", e.getMessage(), failOpen);
+            }
+            // 默认 fail-closed：Redis 不可用时拒绝受限流保护的接口，防止限流保护失效被刷量
+            if (!failOpen) {
+                sendErrorResponse(response, 429, "服务繁忙，请稍后重试");
+                return false;
             }
         }
-        
+
         return true;
     }
 

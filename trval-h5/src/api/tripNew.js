@@ -12,7 +12,7 @@
  */
 import { getToken } from '../utils/auth'
 
-const BASE = '/api'
+const BASE = import.meta.env.VITE_API_BASE || '/api'
 
 function headers() {
   const h = { 'Content-Type': 'application/json' }
@@ -164,7 +164,7 @@ export const tripNewApi = {
       console.log('[SSE] 重连:', url)
       fetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        headers: { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache', ...(getToken() ? { 'Authorization': `Bearer ${getToken()}` } : {}) },
         signal: controller.signal,
       })
         .then(async (resp) => {
@@ -255,7 +255,7 @@ export const tripNewApi = {
 
   voiceToText(audioBlob) {
     const formData = new FormData()
-    formData.append('audio', audioBlob, 'recording.wav')
+    formData.append('file', audioBlob, 'recording.wav')
     return fetch(`${BASE}/voice/transcribe`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${getToken()}` },

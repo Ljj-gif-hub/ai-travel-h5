@@ -8,9 +8,16 @@
  */
 
 import { getCurrentUser } from './userAccountStorage'
+import { SEED_GREETING } from '../constants/systemPrompts'
 
 const STORAGE_PREFIX = 'travel_chat_sessions'
-let _migrated = false  // 标记是否已完成迁移
+/* 【容量控制】防止 localStorage 无界增长：
+ * - 最多保留 20 个会话，超出按 updatedAt 淘汰最旧
+ * - 每会话最多 200 条消息，超出截断最早的
+ */
+const MAX_SESSIONS = 20
+const MAX_MESSAGES_PER_SESSION = 200
+let _migratedUser = null  // 已为哪个账号完成迁移（按账号隔离，避免"谁先登录归谁"）
 
 /** 获取当前账号专属的存储键名 */
 function getStorageKey() {
@@ -23,16 +30,16 @@ function getStorageKey() {
  * 解决"登录后之前对话记录消失"的问题
  */
 function migrateIfNeeded() {
-  if (_migrated) return
   const user = getCurrentUser()
   if (!user) return  // 未登录不迁移
+  if (_migratedUser === user) return  // 该账号已迁移过
   try {
     const oldRaw = localStorage.getItem(STORAGE_PREFIX)
-    if (!oldRaw) { _migrated = true; return }
+    if (!oldRaw) { _migratedUser = user; return }
     const oldData = JSON.parse(oldRaw)
     if (!oldData.sessions || Object.keys(oldData.sessions).length === 0) {
       localStorage.removeItem(STORAGE_PREFIX)
-      _migrated = true
+      _migratedUser = user
       return
     }
     // 检查目标键是否已有数据
@@ -55,7 +62,7 @@ function migrateIfNeeded() {
     localStorage.setItem(newKey, JSON.stringify(newData))
     localStorage.removeItem(STORAGE_PREFIX)  // 清除旧数据
   } catch { /* 迁移失败不阻塞 */ }
-  _migrated = true
+  _migratedUser = user
 }
 
 /* ==================== 内部读写 ==================== */
@@ -67,8 +74,30 @@ const readAll = () => {
   } catch { return { currentSessionId: '', sessions: {} } }
 }
 
+/** 存储前修剪：会话数超上限淘汰最旧，单会话消息超上限截断最早 */
+function prune(data) {
+  if (!data || !data.sessions) return
+  const ids = Object.keys(data.sessions)
+  if (ids.length > MAX_SESSIONS) {
+    const keep = new Set(
+      Object.values(data.sessions)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, MAX_SESSIONS)
+        .map((s) => s.id)
+    )
+    ids.forEach((id) => { if (!keep.has(id)) delete data.sessions[id] })
+  }
+  for (const id of ids) {
+    const s = data.sessions[id]
+    if (s && Array.isArray(s.messages) && s.messages.length > MAX_MESSAGES_PER_SESSION) {
+      s.messages = s.messages.slice(-MAX_MESSAGES_PER_SESSION)  // 保留最新 200 条
+    }
+  }
+}
+
 const writeAll = (data) => {
   migrateIfNeeded()  // 【修复】写入前自动迁移旧数据
+  prune(data)
   try { localStorage.setItem(getStorageKey(), JSON.stringify(data)) } catch { /* quota */ }
 }
 
@@ -99,7 +128,7 @@ export function createNewSession() {
     id,
     title: '新对话',
     messages: [
-      { id: genMsgId(), type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' },
+      { id: genMsgId(), type: 'system', content: SEED_GREETING },
     ],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -115,7 +144,7 @@ export function getCurrentSessionMessages() {
   if (sid && data.sessions[sid]) {
     return data.sessions[sid].messages || []
   }
-  return [{ id: genMsgId(), type: 'system', content: '👋 你好！我是 AI 旅行规划师，告诉我你的旅行计划，我来帮你设计完美行程～' }]
+  return [{ id: genMsgId(), type: 'system', content: SEED_GREETING }]
 }
 
 /** 保存当前会话消息 */

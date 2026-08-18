@@ -6,6 +6,10 @@ import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { filterXss } from '../utils/security';
 import { noteApi, commentApi, uploadApi, followApi } from '../api';
+import LazyImage from '../components/LazyImage.vue';
+import SkeletonCard from '../components/skeleton/SkeletonCard.vue';
+import ReportSheet from '../components/ReportSheet.vue';
+import CollectionSheet from '../components/CollectionSheet.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -282,6 +286,22 @@ const handleDeleteComment = async (comment) => {
 
 const handleEdit = () => { router.push(`/write-note?id=${note.value.id}`) };
 
+/* ==================== 举报 & 收藏合集（新功能） ==================== */
+const showReportSheet = ref(false)
+const showCollectionSheet = ref(false)
+
+const openReport = () => {
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
+  if (!note.value.id) return
+  showReportSheet.value = true
+}
+
+const openCollection = () => {
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
+  if (!note.value.id) return
+  showCollectionSheet.value = true
+}
+
 onMounted(() => {
   currentUserId.value = parseUserId();
   loadNote();
@@ -299,13 +319,14 @@ onMounted(() => {
         <span class="nav-username">{{ note.authorName || t('note.anonymousUser') }}</span>
       </div>
       <div class="nav-right">
+        <div class="nav-report-btn" @click.stop="openReport"><van-icon name="warning-o" size="18" color="#94a3b8" /></div>
         <button type="button" class="follow-btn" :class="{ followed: isFollowing }" :disabled="followLoading" @click.stop="handleFollow">
           {{ isFollowing ? t('note.followed') : t('note.follow') }}
         </button>
       </div>
     </div>
 
-    <van-skeleton v-if="isLoading" title avatar row="5" />
+    <SkeletonCard v-if="isLoading" :rows="5" show-image />
 
     <template v-else-if="note.id">
       <div class="detail-header"><h2 class="detail-title">{{ note.title }}</h2></div>
@@ -313,7 +334,7 @@ onMounted(() => {
       <!-- 图片轮播 -->
       <div v-if="contentImages.length" class="image-swipe-wrap">
         <van-swipe :autoplay="0" indicator-color="transparent" indicator-active-color="transparent" :circular="true" lazy-render class="image-swipe" @change="onSwipeChange">
-          <van-swipe-item v-for="(img, idx) in contentImages" :key="idx"><img :src="img" class="swipe-image" loading="lazy" /></van-swipe-item>
+          <van-swipe-item v-for="(img, idx) in contentImages" :key="idx"><LazyImage :src="img" class="swipe-image" /></van-swipe-item>
         </van-swipe>
         <div class="swipe-dots-row">
           <span v-for="(_, idx) in contentImages" :key="idx" class="swipe-dot" :class="{ active: idx === swipeIndex }"></span>
@@ -382,6 +403,9 @@ onMounted(() => {
         </div>
         <div class="action-item" :class="{ hearted: isHearted }" @click="toggleHeart">
           <van-icon :name="isHearted ? 'like' : 'like-o'" size="24" /><span>{{ heartCount || t('note.like') }}</span>
+        </div>
+        <div class="action-item" @click="openCollection">
+          <van-icon name="label-o" size="24" /><span>{{ t('collection.saveToCollection') }}</span>
         </div>
       </div>
     </div>
@@ -480,6 +504,10 @@ onMounted(() => {
         </div>
       </div>
     </van-popup>
+
+    <!-- 举报 / 收藏到合集（新功能弹层） -->
+    <ReportSheet v-model:show="showReportSheet" target-type="note" :target-id="note.id" />
+    <CollectionSheet v-model:show="showCollectionSheet" :note-id="note.id" />
   </div>
 </template>
 
@@ -491,7 +519,10 @@ onMounted(() => {
 .nav-center { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .nav-avatar { flex-shrink: 0; border: 1.5px solid rgba(139, 92, 246, 0.2); }
 .nav-username { font-size: 15px; font-weight: 600; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-right { flex-shrink: 0; margin-left: 10px; }
+.nav-right { flex-shrink: 0; margin-left: 10px; display: flex; align-items: center; gap: 10px; }
+
+.nav-report-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; transition: all 0.2s; }
+.nav-report-btn:active { background: rgba(0, 0, 0, 0.06); transform: scale(0.92); }
 
 .follow-btn { padding: 5px 14px; border: 1px solid #8B5CF6; border-radius: 20px; background: transparent; color: #8B5CF6; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
 .follow-btn:active { transform: scale(0.94); background: rgba(139, 92, 246, 0.06); }

@@ -5,7 +5,10 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+        // 【修复】按用户查询订单列表（orderNo 唯一索引已由 @Column(unique=true) 保证）
+        @Index(name = "idx_orders_user_id", columnList = "user_id")
+})
 public class Order {
 
     @Id

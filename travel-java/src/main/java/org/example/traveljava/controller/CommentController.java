@@ -1,6 +1,7 @@
 package org.example.traveljava.controller;
 
 import org.example.traveljava.entity.Comment;
+import org.example.traveljava.entity.User;
 import org.example.traveljava.repository.UserRepository;
 import org.example.traveljava.service.CommentService;
 import org.example.traveljava.util.JwtUtil;
@@ -36,20 +37,33 @@ public class CommentController {
      * 每条评论附带：作者信息、回复总数、点赞最多的一条热评回复。
      */
     @GetMapping("/notes/{noteId}/comments")
-    public Result<List<Map<String, Object>>> getComments(@PathVariable Long noteId) {
+    public Result<List<Map<String, Object>>> getComments(@PathVariable Long noteId,
+                                                         @RequestParam(defaultValue = "0") int page,
+                                                         @RequestParam(defaultValue = "20") int size) {
         try {
-            List<Comment> comments = commentService.getComments(noteId);
+            // 分页（page 从 0 开始，默认 0/20，向后兼容：响应仍为列表）
+            List<Comment> comments = commentService.getComments(noteId, page, size);
+            if (comments.isEmpty()) {
+                return Result.ok(Collections.emptyList());
+            }
+
+            // 批量加载：回复数 + 热评回复 + 所有涉及的用户，避免逐条 N+1 查询
+            List<Long> ids = comments.stream().map(Comment::getId).collect(Collectors.toList());
+            Map<Long, Integer> replyCounts = commentService.getReplyCounts(ids);
+            Map<Long, Comment> topReplies = commentService.getTopReplies(ids);
+
+            Set<Long> userIds = new HashSet<>();
+            comments.forEach(c -> userIds.add(c.getUserId()));
+            topReplies.values().forEach(r -> userIds.add(r.getUserId()));
+            Map<Long, User> users = loadUsers(userIds);
 
             List<Map<String, Object>> result = comments.stream().map(c -> {
-                Map<String, Object> item = commentToMap(c);
-                // 回复总数
-                int replyCount = commentService.getReplyCount(c.getId());
+                Map<String, Object> item = commentToMap(c, users);
+                int replyCount = replyCounts.getOrDefault(c.getId(), 0);
                 item.put("replyCount", replyCount);
-                // 点赞最多的那条热评回复（抖音风格：只展示一条）
-                if (replyCount > 0) {
-                    commentService.getTopReply(c.getId()).ifPresent(topReply -> {
-                        item.put("topReply", commentToMap(topReply));
-                    });
+                Comment topReply = topReplies.get(c.getId());
+                if (topReply != null) {
+                    item.put("topReply", commentToMap(topReply, users));
                 }
                 return item;
             }).collect(Collectors.toList());
@@ -68,8 +82,11 @@ public class CommentController {
     public Result<List<Map<String, Object>>> getReplies(@PathVariable Long id) {
         try {
             List<Comment> replies = commentService.getReplies(id);
+            // 批量预加载作者，避免逐条 findById
+            Set<Long> userIds = replies.stream().map(Comment::getUserId).collect(Collectors.toSet());
+            Map<Long, User> users = loadUsers(userIds);
             List<Map<String, Object>> result = replies.stream()
-                    .map(this::commentToMap)
+                    .map(c -> commentToMap(c, users))
                     .collect(Collectors.toList());
             return Result.ok(result);
         } catch (AuthUtils.AuthException e) {
@@ -100,7 +117,7 @@ public class CommentController {
 
             Comment comment = commentService.addReply(userId, noteId, parentId, content, image, video);
 
-            Map<String, Object> result = commentToMap(comment);
+            Map<String, Object> result = commentToMap(comment, loadUsers(Set.of(comment.getUserId())));
             return Result.ok(result);
         } catch (IllegalArgumentException e) {
             log.warn("添加评论失败：{}", e.getMessage());
@@ -156,8 +173,17 @@ public class CommentController {
         }
     }
 
-    /** 将 Comment 实体转为前端 Map */
-    private Map<String, Object> commentToMap(Comment c) {
+    /** 批量加载用户，返回 id → User 映射（一次 IN 查询，避免逐条 findById） */
+    private Map<Long, User> loadUsers(Set<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+    }
+
+    /** 将 Comment 实体转为前端 Map（作者信息从预加载的 users 映射中取） */
+    private Map<String, Object> commentToMap(Comment c, Map<Long, User> users) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", c.getId());
         item.put("noteId", c.getNoteId());
@@ -168,11 +194,12 @@ public class CommentController {
         item.put("video", c.getVideo());
         item.put("likes", c.getLikes());
         item.put("date", c.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
-        // 作者信息
-        userRepository.findById(c.getUserId()).ifPresent(author -> {
+        // 作者信息（已预加载，不再逐条查库）
+        User author = users.get(c.getUserId());
+        if (author != null) {
             item.put("authorName", author.getNickname() != null ? author.getNickname() : author.getUsername());
             item.put("authorAvatar", author.getAvatar());
-        });
+        }
         return item;
     }
 }

@@ -1,6 +1,11 @@
 # 密钥文件（docker compose 部署用，禁止提交）
 .env
 
+# 面试/求职相关材料（隐私敏感，禁止提交）
+面试准备*.md
+*简历*.md
+*简历*.pdf
+
 # 本地部署产物（prepare-bundle.ps1 生成，勿提交）
 deploy/bundle/
 deploy/bundle.tar.gz
@@ -30,3 +35,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# AI 工具本地目录与安全审查文档（不提交）
+.workbuddy/
+项目代码审查报告.md

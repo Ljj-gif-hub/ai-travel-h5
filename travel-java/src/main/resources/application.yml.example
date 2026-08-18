@@ -8,6 +8,9 @@ server:
   error:
     include-stacktrace: never
     include-message: never
+  tomcat:
+    # 表单 POST 体上限 100MB（防止超大表单打爆内存）
+    max-http-form-post-size: 100MB
 
 spring:
   application:
@@ -17,6 +20,11 @@ spring:
       charset: UTF-8
       enabled: true
       force: true
+  servlet:
+    multipart:
+      # 单文件 50MB / 整请求 100MB（防止超大上传打爆内存）
+      max-file-size: 50MB
+      max-request-size: 100MB
   datasource:
     url: ${DB_URL:jdbc:h2:file:./data/travel_plans;MODE=MySQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
     driver-class-name: ${DB_DRIVER:org.h2.Driver}
@@ -36,41 +44,79 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT:6000ms}
+      repositories:
+        enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # 默认不自动启动消费者，避免本地无 RabbitMQ 时启动报错
+        auto-startup: ${MQ_LISTENER_AUTO_STARTUP:false}
 
 app:
   cors:
+    # CORS 白名单（逗号分隔）。不配置或留空时拒绝所有跨域请求；显式 * 才放行所有来源
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5177}
+  # Agent 微服务透传共享密钥（AgentProxyController 附加 X-Agent-Key，防绕过本服务直连 Agent）
+  agent:
+    api-key: ${AGENT_API_KEY:}
+  # 日志输出目录（配合 logback-spring.xml）
+  logging:
+    dir: ${LOG_DIR:logs}
+  # 消息队列：默认关闭（无 RabbitMQ 也可运行，事件同步降级记录）
+  mq:
+    enabled: ${MQ_ENABLED:false}
+    exchange: ${MQ_EXCHANGE:travel.events}
+    queue-orders: ${MQ_QUEUE_ORDERS:travel.orders}
+    routing-orders: ${MQ_ROUTING_ORDERS:order.paid}
+  # 限流是否信任反向代理注入的 X-Real-IP（仅当部署在受信代理后时置 true）
+  rate-limit:
+    trust-proxy: ${RATE_LIMIT_TRUST_PROXY:false}
+  # 管理员账号（启动时自动创建，建议通过环境变量注入并修改默认密码）
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin123}
 
-# DeepSeek-V4 Pro 大模型配置
-deepseek:
-  api-key: ${DEEPSEEK_API_KEY:}           # DeepSeek API Key (sk-xxxx格式)
-  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
-  model: ${DEEPSEEK_MODEL:deepseek-v4-flash}   # deepseek-v4-flash / deepseek-v4-pro
-  max-tokens: ${DEEPSEEK_MAX_TOKENS:4096}
-  temperature: ${DEEPSEEK_TEMPERATURE:0.7}
+# AI 多供应商配置（支持所有 OpenAI 兼容协议的 API）
+#   切换供应商：修改 ai.active-provider 的值即可
+#   添加新供应商：在 ai.providers 下新增一组配置
+ai:
+  active-provider: ${AI_PROVIDER:auto}   # auto 自动扫描已配置的 Key；或 deepseek/openai/claude/custom
+  providers:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}      # DeepSeek API Key (sk-xxxx格式)
+      base-url: https://api.deepseek.com
+      model: ${DEEPSEEK_MODEL:deepseek-v4-flash}   # deepseek-v4-flash / deepseek-v4-pro
+      max-tokens: 4096
+      temperature: 0.7
+  # ---- AI 图片生成（独立于 LLM 供应商） ----
+  image:
+    endpoint: ${AI_IMAGE_ENDPOINT:https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image}
+    api-key: ${AI_IMAGE_API_KEY:}
+    timeout: ${AI_IMAGE_TIMEOUT:30000}
 
 jwt:
   secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
 
 # 地图多供应商配置（百度 + 高德）
 map:
-  provider: ${MAP_PROVIDER:baidu}
+  provider: ${MAP_PROVIDER:amap}
   baidu:
     ak: ${BAIDU_MAP_AK:}
   amap:
     web-key: ${AMAP_WEB_KEY:}
     js-key: ${AMAP_JS_KEY:}
 
-ai:
-  image:
-    endpoint: ${AI_IMAGE_ENDPOINT:https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image}
-    api-key: ${AI_IMAGE_API_KEY:}
-    timeout: ${AI_IMAGE_TIMEOUT:30000}
-
 # 第三方支付对接层（可配置 + 模拟实现）
 payment:
   provider: ${PAYMENT_PROVIDER:mock}
+  # 模拟支付确认端点：默认关闭（防免单）。本地调试需显式设置 PAYMENT_MOCK_PAY_ENABLED=true 开启
+  mock-pay-enabled: ${PAYMENT_MOCK_PAY_ENABLED:false}
   mock:
     secret: ${PAYMENT_MOCK_SECRET:dev-mock-secret}
   alipay:
@@ -87,6 +133,18 @@ payment:
 # 酒店预订配置
 hotel:
   mock-full: ${HOTEL_MOCK_FULL:false}
+
+# 第三方预订对接层（与支付层同款「可配置 + 模拟实现」）
+#   provider: mock（默认，本地/内置数据） | real（第三方渠道，需配 endpoint + api-key）
+booking:
+  hotel:
+    provider: ${BOOKING_HOTEL_PROVIDER:mock}
+    endpoint: ${BOOKING_HOTEL_ENDPOINT:}
+    api-key: ${BOOKING_HOTEL_API_KEY:}
+  flight:
+    provider: ${BOOKING_FLIGHT_PROVIDER:mock}
+    endpoint: ${BOOKING_FLIGHT_ENDPOINT:}
+    api-key: ${BOOKING_FLIGHT_API_KEY:}
 
 # Swagger/OpenAPI 接口文档
 springdoc:

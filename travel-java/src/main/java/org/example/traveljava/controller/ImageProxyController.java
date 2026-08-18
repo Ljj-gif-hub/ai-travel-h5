@@ -15,11 +15,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -80,34 +84,58 @@ public class ImageProxyController {
                 return;
             }
 
-            org.springframework.http.ResponseEntity<byte[]> proxyResponse = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    null,
-                    byte[].class
-            );
+            // 防 DNS 重绑定 SSRF：白名单域名解析出的 IP 必须全部为公网地址
+            if (resolvesToInternalAddress(domain)) {
+                log.warn("图片代理域名解析到内网/保留地址，拒绝: domain={}", domain);
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "不允许的图片来源");
+                return;
+            }
 
-            byte[] body = proxyResponse.getBody();
+            // 【修复】流式下载并封顶：先查 Content-Length 超限直接拒绝，
+            // 读取过程同样限流（防上游不返回或谎报 Content-Length），避免整包缓冲到内存
+            final String[] contentTypeHolder = new String[1];
+            byte[] body = restTemplate.execute(url, HttpMethod.GET, null, proxyResponse -> {
+                // 上游非 2xx 视为失败（与原 exchange 抛异常 → 500 的行为一致）
+                if (!proxyResponse.getStatusCode().is2xxSuccessful()) {
+                    throw new UpstreamErrorException("上游返回状态码 " + proxyResponse.getStatusCode().value());
+                }
+
+                HttpHeaders headers = proxyResponse.getHeaders();
+                String contentType = headers.getFirst(HttpHeaders.CONTENT_TYPE);
+                if (contentType == null || !contentType.startsWith("image/")) {
+                    throw new InvalidContentTypeException(contentType);
+                }
+                contentTypeHolder[0] = contentType;
+
+                long declaredLength = headers.getContentLength();
+                if (declaredLength > MAX_CONTENT_LENGTH) {
+                    throw new ContentTooLargeException(declaredLength);
+                }
+
+                try (InputStream in = proxyResponse.getBody()) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream(
+                            (int) Math.min(Math.max(declaredLength, 8192L), MAX_CONTENT_LENGTH));
+                    byte[] buf = new byte[8192];
+                    int total = 0;
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        total += n;
+                        if (total > MAX_CONTENT_LENGTH) {
+                            throw new ContentTooLargeException(total);
+                        }
+                        out.write(buf, 0, n);
+                    }
+                    return out.toByteArray();
+                }
+            });
+
             if (body == null || body.length == 0) {
                 log.warn("图片代理返回空内容: url={}", url);
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, "图片不存在");
                 return;
             }
 
-            if (body.length > MAX_CONTENT_LENGTH) {
-                log.warn("图片代理内容过大: url={}, size={}", url, body.length);
-                response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "图片过大");
-                return;
-            }
-
-            String contentType = proxyResponse.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE);
-            if (contentType == null || !contentType.startsWith("image/")) {
-                log.warn("图片代理内容类型不正确: url={}, contentType={}", url, contentType);
-                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "无效的图片格式");
-                return;
-            }
-
-            response.setContentType(contentType);
+            response.setContentType(contentTypeHolder[0]);
             response.setContentLength(body.length);
             response.setHeader("Cache-Control", "public, max-age=86400");
             // CORS 由全局 WebConfig 白名单统一处理
@@ -116,6 +144,20 @@ public class ImageProxyController {
 
             log.debug("图片代理成功: url={}, size={}", url.substring(0, Math.min(url.length(), 60)), body.length);
 
+        } catch (ContentTooLargeException e) {
+            log.warn("图片代理内容过大: url={}, size={}", url, e.getSize());
+            try {
+                response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "图片过大");
+            } catch (IOException ex) {
+                log.error("发送错误响应失败", ex);
+            }
+        } catch (InvalidContentTypeException e) {
+            log.warn("图片代理内容类型不正确: url={}, contentType={}", url, e.getContentType());
+            try {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "无效的图片格式");
+            } catch (IOException ex) {
+                log.error("发送错误响应失败", ex);
+            }
         } catch (IllegalArgumentException e) {
             log.warn("图片代理参数校验失败: {}", e.getMessage());
             try {
@@ -130,6 +172,35 @@ public class ImageProxyController {
             } catch (IOException ex) {
                 log.error("发送错误响应失败", ex);
             }
+        }
+    }
+
+    /**
+     * 检查域名是否解析到内网/保留地址（防 DNS 重绑定 SSRF）。
+     * 解析失败视为不安全（拒绝），宁可误拒也不放行。
+     */
+    private boolean resolvesToInternalAddress(String domain) {
+        try {
+            InetAddress[] addrs = InetAddress.getAllByName(domain);
+            if (addrs.length == 0) {
+                return true;
+            }
+            for (InetAddress a : addrs) {
+                if (a.isAnyLocalAddress() || a.isLoopbackAddress()
+                        || a.isLinkLocalAddress() || a.isSiteLocalAddress()) {
+                    return true;
+                }
+                if (a instanceof Inet6Address) {
+                    byte[] b = a.getAddress();
+                    // IPv6 唯一本地地址 fc00::/7
+                    if ((b[0] & 0xfe) == 0xfc) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (UnknownHostException e) {
+            return true;
         }
     }
 
@@ -167,5 +238,24 @@ public class ImageProxyController {
         } catch (java.net.MalformedURLException e) {
             throw new IllegalArgumentException("URL格式不正确");
         }
+    }
+
+    /** 上游返回非 2xx（转为 500，与原 exchange 抛异常行为一致） */
+    private static class UpstreamErrorException extends RuntimeException {
+        UpstreamErrorException(String message) { super(message); }
+    }
+
+    /** 内容超过 MAX_CONTENT_LENGTH（413） */
+    private static class ContentTooLargeException extends RuntimeException {
+        private final long size;
+        ContentTooLargeException(long size) { super("content too large: " + size); this.size = size; }
+        long getSize() { return size; }
+    }
+
+    /** Content-Type 不是 image/*（400） */
+    private static class InvalidContentTypeException extends RuntimeException {
+        private final String contentType;
+        InvalidContentTypeException(String contentType) { super("invalid content type: " + contentType); this.contentType = contentType; }
+        String getContentType() { return contentType; }
     }
 }

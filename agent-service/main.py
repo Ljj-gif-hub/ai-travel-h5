@@ -1,10 +1,15 @@
 """
 旅行规划 Agent 服务 — FastAPI 入口
 
-提供两个核心端点：
-  POST /api/agent/plan         — 同步生成完整行程（返回 JSON）
-  POST /api/agent/plan/stream  — SSE 流式生成（实时推送 Agent 思考过程）
-  GET  /api/agent/health       — 健康检查
+提供端点：
+  POST /api/agent/plan          — 同步生成完整行程（返回 JSON）
+  POST /api/agent/plan/stream   — SSE 流式生成（实时推送 Agent 思考过程）
+  POST /api/agent/plan/stream-sse — 原始 SSE 流式端点（网关透传 JSON）
+  POST /api/agent/plan/export   — 行程导出 iCalendar（.ics）
+  POST /api/agent/feedback      — 用户反馈（评分 + 意见，注入后续规划）
+  GET  /api/agent/usage         — API 用量监控（需鉴权）
+  GET  /api/agent/health        — 健康检查
+  GET  /metrics                 — Prometheus 指标（顶层路径，免鉴权）
 
 启动方式：
   cd agent-service
@@ -18,8 +23,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
+import time
 import traceback
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 # 确保项目根目录在 sys.path 中
@@ -35,15 +44,27 @@ load_dotenv()
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
+from fastapi.responses import JSONResponse, Response, StreamingResponse  # noqa: E402
+from prometheus_client import generate_latest  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
 from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
 from agent.planner import TravelAgentPlanner  # noqa: E402
-from agent.schemas import TravelRequest, AgentEvent  # noqa: E402
+from agent.schemas import (  # noqa: E402
+    TravelRequest,
+    AgentEvent,
+    RawPlanRequest,
+    PlanExportRequest,
+    FeedbackRequest,
+)
 from agent.permissions import permission_manager  # noqa: E402
 from agent.tools import ALL_TOOLS  # noqa: E402
 from agent.mcp_bridge import McpToolLoader, start_mcp_server  # noqa: E402
 from agent.auth import agent_auth_middleware  # noqa: E402
+from agent.metrics import HTTP_REQUESTS, HTTP_DURATION  # noqa: E402
+from agent.usage import usage_tracker, _current_request  # noqa: E402
+from agent.result_cache import plan_cache  # noqa: E402
+from agent.exporters import build_ical  # noqa: E402
 
 # ==================== 初始化 ====================
 
@@ -92,14 +113,58 @@ app.add_middleware(
         "http://localhost:3200",
     ],
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # S7：从 ["*"] 收窄为明确列表，减少跨域攻击面
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Agent-Key", "X-User-Id", "X-User-Sig", "X-Request-Id"],
 )
 
 # 鉴权中间件：保护所有 /api/agent/* 端点（共享密钥或 JWT）
 @app.middleware("http")
 async def _auth_middleware(request: Request, call_next):
     return await agent_auth_middleware(request, call_next)
+
+
+# 观测中间件（注册在鉴权之后 → 运行在最外层，覆盖含 /metrics 在内的全部请求）
+@app.middleware("http")
+async def _observability_middleware(request: Request, call_next):
+    """请求级观测：X-Request-Id 透传/生成 + UI 语言解析 + Prometheus 指标 + 用量归因。
+
+    - X-Request-Id：请求头有则透传，无则 uuid4().hex[:16]，回写响应头
+    - Accept-Language：解析为 ui_lang（zh/en 二值，默认 zh），供多语言规划使用
+    - 指标：http_requests_total + http_request_duration_seconds
+    - 用量：为当前请求建立 usage 记录（contextvar 绑定；SSE 流式期间
+      LLM/工具调用继续累加到同一记录对象，deque 存引用，/usage 可见最新值）
+    """
+    request_id = (request.headers.get("X-Request-Id") or "").strip()[:64] or uuid.uuid4().hex[:16]
+    request.state.request_id = request_id
+
+    # UI 语言：取 Accept-Language 首选语言，仅 zh/en 二值
+    accept_lang = (request.headers.get("Accept-Language") or "").strip().lower()
+    first_tag = accept_lang.split(",")[0].strip() if accept_lang else ""
+    request.state.ui_lang = "en" if first_tag.startswith("en") else "zh"
+
+    record = usage_tracker.start_request(request_id, request.url.path, _verified_user_id(request))
+    token = _current_request.set(record)
+
+    start = time.monotonic()
+    response = None
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = request_id
+        return response
+    finally:
+        duration = time.monotonic() - start
+        # 指标记录失败不能影响响应
+        try:
+            status = str(getattr(response, "status_code", 500))
+            HTTP_REQUESTS.labels(method=request.method, path=request.url.path, status=status).inc()
+            HTTP_DURATION.labels(method=request.method, path=request.url.path).observe(duration)
+        except Exception:  # noqa: BLE001
+            logger.debug("HTTP 指标记录失败（忽略）", exc_info=True)
+        # 用量收尾：SSE 流式响应此处只统计到「响应头就绪」，
+        # 生成器收尾时会用真实流时长再刷新一次（finish_request 幂等）
+        usage_tracker.finish_request(record, duration)
+        _current_request.reset(token)
 
 
 STREAM_HEADERS = {
@@ -173,6 +238,76 @@ async def permissions():
     }
 
 
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus 指标抓取端点。
+
+    注册在顶层（/api/agent 前缀之外），鉴权中间件天然不覆盖此路径；
+    /api/agent 前缀下的所有请求指标也会被观测中间件统计在内。
+    """
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/api/agent/usage")
+async def usage_endpoint():
+    """API 用量监控（进程内环形缓冲）：总量摘要 + 最近 20 条请求明细。
+
+    位于 /api/agent/ 前缀下，自动受鉴权中间件保护。
+    """
+    return {
+        "code": 0,
+        "summary": usage_tracker.summary(),
+        "recent": usage_tracker.recent(20),
+    }
+
+
+# 行程导出解析失败统一文案（400）
+_EXPORT_FAIL_MSG = "行程数据解析失败，无法导出"
+
+
+@app.post("/api/agent/plan/export")
+async def export_plan(req: PlanExportRequest, request: Request):
+    """行程导出 — 生成 iCalendar（.ics）文本。
+
+    每天一个 VEVENT：SUMMARY=第N天-城市；DTSTART/DTEND 当地 09:00/21:00
+    浮点时间；DESCRIPTION 该天标题 + 2-3 个景点。标准库实现，无第三方依赖。
+    """
+    if req.format != "ical":
+        return JSONResponse(status_code=400, content={"code": -1, "message": _EXPORT_FAIL_MSG})
+    ics = build_ical(req.plan)
+    if ics is None:
+        return JSONResponse(status_code=400, content={"code": -1, "message": _EXPORT_FAIL_MSG})
+    return Response(
+        content=ics,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="travel-plan.ics"'},
+    )
+
+
+@app.post("/api/agent/feedback")
+async def submit_feedback(req: FeedbackRequest, request: Request):
+    """用户反馈闭环：记录评分 + 意见，按 verified user_id 归属存储。
+
+    后续该用户规划时，planner 会把最近 3 条反馈注入规划 prompt。
+    鉴权通过但未绑定用户身份（共享密钥通道缺 HMAC 签名）→ 401。
+    """
+    user_id = _verified_user_id(request)
+    if not user_id:
+        return JSONResponse(status_code=401, content={"code": -1, "message": "未绑定用户身份，无法记录反馈"})
+    # 净化（S3 同策略）：剥离控制字符 + 长度截断，防存储型注入
+    comment = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(req.comment or ""))[:500]
+    destination = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(req.destination or "")).strip()[:50]
+    from agent.memory import memory_store
+    memory_store.add_feedback(user_id, {
+        "rating": req.rating,
+        "comment": comment,
+        "destination": destination,
+        "created_at": datetime.now().isoformat(),
+    })
+    logger.info("收到用户反馈: user=%s rating=%d", user_id, req.rating)
+    return {"code": 0, "message": "反馈已记录"}
+
+
 @app.post("/api/agent/plan")
 async def generate_plan_sync(req: TravelRequest, request: Request):
     """
@@ -189,9 +324,33 @@ async def generate_plan_sync(req: TravelRequest, request: Request):
 
     try:
         data = req.model_dump()
-        verified = _verified_user_id(request)
-        if verified:
-            data["user_id"] = verified  # 以服务端验证的 user_id 为准，防伪造越权
+        # 以服务端验证的 user_id 为准（None 表示未绑定），防伪造越权
+        data["user_id"] = _verified_user_id(request)
+        data["ui_lang"] = getattr(request.state, "ui_lang", "zh")
+
+        # 结果缓存：Demo 模式 / 无绑定用户不缓存；命中则跳过 LLM 直接返回
+        cache_key = None
+        cached_plan = None
+        if not demo_mode and data.get("user_id"):
+            cache_key = plan_cache.key(data)
+            cached_plan = plan_cache.get(cache_key)
+        if cached_plan is not None:
+            payload = dict(cached_plan)
+            payload["cached"] = True
+            logger.info(f"命中结果缓存: {req.destination} {req.days}天")
+            events = [AgentEvent(
+                event_type="complete", phase="finalize",
+                message=f"🎉 {req.destination} {req.days} 天行程方案已生成！（缓存命中）",
+                data=payload,
+            ).model_dump()]
+            return {
+                "code": 0,
+                "message": "success",
+                "data": payload,
+                "cached": True,
+                "agent_events": events,
+            }
+
         planner = TravelAgentPlanner(
             data,
             debug=os.getenv("DEBUG", "").lower() == "true",
@@ -206,6 +365,8 @@ async def generate_plan_sync(req: TravelRequest, request: Request):
                 final_result = event.data
 
         if final_result:
+            if cache_key:
+                plan_cache.set(cache_key, final_result)
             return {
                 "code": 0,
                 "message": "success",
@@ -252,26 +413,64 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
         logger.info(f"流式规划: {req.destination} {req.days}天")
 
     data = req.model_dump()
-    verified = _verified_user_id(request)
-    if verified:
-        data["user_id"] = verified  # 以服务端验证的 user_id 为准
+    # 以服务端验证的 user_id 为准（None 表示未绑定），防伪造越权
+    data["user_id"] = _verified_user_id(request)
+    data["ui_lang"] = getattr(request.state, "ui_lang", "zh")
+
+    # 结果缓存：Demo 模式 / 无绑定用户不缓存
+    cache_key = None
+    cached_plan = None
+    if not demo_mode and data.get("user_id"):
+        cache_key = plan_cache.key(data)
+        cached_plan = plan_cache.get(cache_key)
 
     async def event_generator():
-        # 立即发送连接确认，确保浏览器收到流式响应头
-        yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
+        stream_start = time.monotonic()
+        record = _current_request.get()
         try:
+            # 立即发送连接确认，确保浏览器收到流式响应头
+            yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
+            # 缓存命中：跳过 LLM 直接产出 complete 事件（附 cached: true 标记）
+            if cached_plan is not None:
+                logger.info(f"命中结果缓存: {req.destination} {req.days}天")
+                payload = dict(cached_plan)
+                payload["cached"] = True
+                done = AgentEvent(
+                    event_type="complete", phase="finalize",
+                    message=f"🎉 {req.destination} {req.days} 天行程方案已生成！（缓存命中）",
+                    data=payload,
+                )
+                yield f"data: {json.dumps(done.model_dump(), ensure_ascii=False)}\n\n"
+                return
             planner = TravelAgentPlanner(
                 data,
                 debug=os.getenv("DEBUG", "").lower() == "true",
                 demo=demo_mode,
             )
+            count = 0
+            final_result = None
             async for event in planner.run():
+                count += 1
+                # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
+                if count % 2 == 0 and await request.is_disconnected():
+                    logger.info("客户端已断开连接，停止流式规划")
+                    return
+                if event.event_type == "complete":
+                    final_result = event.data
                 yield f"data: {json.dumps(event.model_dump(), ensure_ascii=False)}\n\n"
+            # 规划正常完成后写入结果缓存（断连/异常不写，避免缓存半成品）
+            if final_result is not None and cache_key:
+                plan_cache.set(cache_key, final_result)
         except Exception as e:
             logger.error(f"流式规划异常: {e}", exc_info=True)
             # 对外只返回通用文案，完整堆栈留在服务端日志
             err = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {err}\n\n"
+        finally:
+            # 用量收尾：用真实流时长刷新请求记录（幂等）
+            if record is not None:
+                usage_tracker.finish_request(record, time.monotonic() - stream_start)
+            logger.debug("流式规划流结束（完成/断连/异常）")
 
     return StreamingResponse(
         event_generator(),
@@ -283,9 +482,9 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
 @app.post("/api/agent/plan/stream-sse")
 async def generate_plan_stream_raw(request: Request):
     """
-    原始 SSE 流式端点 — 直接从 Request body 解析 JSON，无需 Pydantic 校验
+    原始 SSE 流式端点 — 从 Request body 解析 JSON，经 RawPlanRequest Pydantic 校验（S2）
 
-    兼容 Spring Boot 透传过来的任意 JSON 格式
+    兼容 Spring Boot 透传的 JSON 格式（destination/days/budget/styles/companion）
     每行输出格式：data: <json>\n\n
     """
     try:
@@ -296,37 +495,73 @@ async def generate_plan_stream_raw(request: Request):
     if not isinstance(body, dict):
         return EventSourceResponse(_error_stream("请求体必须是 JSON 对象"))
 
-    destination = body.get("destination", "")
-    if not destination:
-        return EventSourceResponse(_error_stream("请提供目的地"))
-
-    # days 校验：非法/越界时回退到 3，避免字符串/负数/超大值进入生成器抛异常
+    # Pydantic 校验：字段级约束（destination 1-50 字 / days 1-14 / budget > 0），
+    # 校验失败走 SSE 错误事件，避免非法值进入生成器抛异常
     try:
-        days = int(body.get("days", 3))
-    except (TypeError, ValueError):
-        days = 3
-    if not (1 <= days <= 14):
-        days = 3
-    body["days"] = days
+        req_data = RawPlanRequest.model_validate(body)
+    except ValidationError:
+        return EventSourceResponse(_error_stream("请求参数校验失败，请检查输入"))
+
+    destination = req_data.destination
+    days = req_data.days
 
     demo_mode = os.getenv("DEMO_MODE", "").lower() == "true" or not os.getenv("LLM_API_KEY")
-    verified = _verified_user_id(request)
-    if verified:
-        body["user_id"] = verified  # 以服务端验证的 user_id 为准
+    # 使用模型字段构建规划输入；user_id 以服务端验证的为准（None 表示未绑定），防伪造越权
+    data = req_data.model_dump(exclude_none=True)
+    data["user_id"] = _verified_user_id(request)
+    data["ui_lang"] = getattr(request.state, "ui_lang", "zh")
     logger.info(f"{'🔶 Demo' if demo_mode else ''}原始SSE规划: {destination} {days}天")
 
+    # 结果缓存：Demo 模式 / 无绑定用户不缓存
+    cache_key = None
+    cached_plan = None
+    if not demo_mode and data.get("user_id"):
+        cache_key = plan_cache.key(data)
+        cached_plan = plan_cache.get(cache_key)
+
     async def raw_generator():
-        yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
+        stream_start = time.monotonic()
+        record = _current_request.get()
         try:
-            planner = TravelAgentPlanner(body, demo=demo_mode)
+            yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
+            # 缓存命中：跳过 LLM 直接产出 complete 事件（附 cached: true 标记）
+            if cached_plan is not None:
+                logger.info(f"命中结果缓存: {destination} {days}天")
+                payload = dict(cached_plan)
+                payload["cached"] = True
+                done = AgentEvent(
+                    event_type="complete", phase="finalize",
+                    message=f"🎉 {destination} {days} 天行程方案已生成！（缓存命中）",
+                    data=payload,
+                )
+                yield f"data: {json.dumps(done.model_dump(), ensure_ascii=False)}\n\n"
+                return
+            planner = TravelAgentPlanner(data, demo=demo_mode)
+            count = 0
+            final_result = None
             async for event in planner.run():
+                count += 1
+                # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
+                if count % 2 == 0 and await request.is_disconnected():
+                    logger.info("客户端已断开连接，停止流式规划")
+                    return
+                if event.event_type == "complete":
+                    final_result = event.data
                 event_json = json.dumps(event.model_dump(), ensure_ascii=False)
                 yield f"data: {event_json}\n\n"
+            # 规划正常完成后写入结果缓存（断连/异常不写，避免缓存半成品）
+            if final_result is not None and cache_key:
+                plan_cache.set(cache_key, final_result)
         except Exception as e:
             logger.error(f"SSE异常: {e}", exc_info=True)
             # 对外只返回通用文案，完整堆栈留在服务端日志
             error_json = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {error_json}\n\n"
+        finally:
+            # 用量收尾：用真实流时长刷新请求记录（幂等）
+            if record is not None:
+                usage_tracker.finish_request(record, time.monotonic() - stream_start)
+            logger.debug("原始 SSE 规划流结束（完成/断连/异常）")
 
     return StreamingResponse(
         raw_generator(),
@@ -345,9 +580,51 @@ async def _error_stream(message: str):
 
 
 # ==================== 启动 ====================
-
+# 启动方式（A1）：
+#   1) 默认单进程（uvicorn）：python main.py —— 进程内记忆层/调研缓存要求单进程独占
+#   2) 多 worker（gunicorn）：设置环境变量 GUNICORN_WORKERS=N 后 python main.py
+#      自动切换为 gunicorn；或 GUNICORN_WORKERS=4 gunicorn -c gunicorn.conf.py main:app
+#      ⚠️ 多 worker 前必须先把进程内记忆层迁出（详见 gunicorn.conf.py 注释）
 if __name__ == "__main__":
     port = int(os.getenv("AGENT_PORT", "3201"))
+    gunicorn_workers = os.getenv("GUNICORN_WORKERS", "").strip()
+    if gunicorn_workers:
+        try:
+            n_workers = max(int(gunicorn_workers), 1)
+        except ValueError:
+            logger.warning("GUNICORN_WORKERS 值非法: %r，回退默认单进程 uvicorn", gunicorn_workers)
+            n_workers = 0
+        if n_workers:
+            from gunicorn.app.base import BaseApplication
+
+            class _GunicornApp(BaseApplication):
+                """以 ASGI app 方式跑 gunicorn（uvicorn worker）。"""
+
+                def __init__(self, application, options=None):
+                    self.application = application
+                    self.options = options or {}
+                    super().__init__()
+
+                def load_config(self):
+                    for key, value in self.options.items():
+                        self.cfg.set(key, value)
+
+                def load(self):
+                    return self.application
+
+            logger.info(f"🚀 Travel Agent Service 以 gunicorn 启动: http://localhost:{port} workers={n_workers}")
+            _GunicornApp(
+                app,
+                {
+                    "bind": f"0.0.0.0:{port}",
+                    "workers": n_workers,
+                    "worker_class": "uvicorn.workers.UvicornWorker",
+                    "timeout": 300,
+                    "graceful_timeout": 30,
+                },
+            ).run()
+            raise SystemExit(0)
+
     logger.info(f"🚀 Travel Agent Service 启动在 http://localhost:{port}")
     logger.info(f"📋 健康检查: http://localhost:{port}/api/agent/health")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

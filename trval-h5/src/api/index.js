@@ -1,13 +1,70 @@
-import { getToken, removeToken } from '../utils/auth';
+import { getToken, setToken, getRefreshToken, setRefreshToken, removeRefreshToken } from '../utils/auth';
 import { clearSession } from '../utils/userAccountStorage';
 
 const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
+/* ==================== 重试 / 去重 / 刷新 常量 ==================== */
+// GET 网络错误与 5xx 重试：最多 2 次，退避 300ms / 900ms（非 GET 不重试，保证幂等）
+const RETRY_DELAYS = [300, 900];
+const MAX_GET_RETRIES = RETRY_DELAYS.length;
+// GET in-flight 去重窗口：并发请求共享同一 promise，settle 后 200ms 内复用，之后允许重新发起
+const DEDUP_TTL = 200;
+// 登录/刷新等自身请求不触发 401 刷新流程（避免死循环）
+const AUTH_EXEMPT_URLS = ['/auth/login', '/auth/register', '/auth/social-login', '/auth/refresh'];
+
+const inflight = new Map();
+let refreshPromise = null; // 401 单飞刷新：并发 401 共享同一个 refresh promise
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isAbortError = (e) => e?.name === 'AbortError';
+const isTimeoutError = (e) => !!e?.timeout;
+// fetch 网络层失败（断网/DNS/连接被拒）在浏览器中抛 TypeError
+const isNetworkError = (e) => e instanceof TypeError;
+
+/** 401 兜底：清会话 + hash 跳登录页（保留 redirectUrl 供登录后回跳） */
+function redirectToLogin() {
+  removeRefreshToken();
+  // 【多账号隔离】仅清空会话缓存，保留账号持久化数据
+  clearSession();
+  if (typeof window !== 'undefined' && !window.location.hash.includes('/login')) {
+    localStorage.setItem('redirectUrl', window.location.hash || '#/');
+    window.location.hash = '#/login';
+  }
+}
+
 /**
- * 统一请求封装 — 自动携带Token、统一错误处理、标准响应解析
- * 后端返回格式：{ code: 0 (成功) | -1 (失败), message: string, data: any }
+ * 单飞刷新 Token：POST /auth/refresh {refreshToken} → {token, refreshToken}（旋转刷新）。
+ * 并发请求排队共享同一个 promise；返回 true = 刷新成功（新 token 已入库）。
  */
-const request = async (url, options = {}) => {
+function refreshAuthToken() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const rt = getRefreshToken();
+      if (!rt) return false;
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: rt }),
+        });
+        if (res.status === 401) return false; // 刷新过期 → 需重新登录
+        const data = await res.json().catch(() => null);
+        if (data?.code === 0 && data.data?.token) {
+          setToken(data.data.token);
+          if (data.data.refreshToken) setRefreshToken(data.data.refreshToken);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    })().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
+/** 单次请求（含 Token 注入、超时控制、外部 signal 转发、HTTP 状态 → 错误映射） */
+async function fetchOnce(url, options) {
   const token = getToken();
 
   const headers = {
@@ -19,21 +76,49 @@ const request = async (url, options = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}${url}`, {
-    ...options,
-    headers,
-  });
+  // 【超时控制】默认 30s，调用方可传 options.timeout 覆盖（如行程生成传 180000）。
+  // 与外部 signal 兼容：内部 AbortController + 转发外部 abort，超时统一抛「请求超时」。
+  const externalSignal = options.signal;
+  const timeoutMs = typeof options.timeout === 'number' ? options.timeout : 30000;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  const forwardAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) { timedOut = false; controller.abort(); }
+    else externalSignal.addEventListener('abort', forwardAbort);
+  }
 
-  // HTTP 401 → Token过期/无效 → 清除登录态并跳转
-  if (response.status === 401) {
-    removeToken();
-    // 【多账号隔离】401仅清空会话缓存，保留账号持久化数据
-    clearSession();
-    // hash 路由下用 hash 跳转登录页，避免全页跳 /login 落到首页
-    if (!window.location.hash.includes('/login')) {
-      localStorage.setItem('redirectUrl', window.location.hash || '#/');
-      window.location.hash = '#/login';
+  // 支持 options.params 对象 → 追加为 query string（与去重 key 对齐）
+  let fullUrl = `${BASE_URL}${url}`;
+  if (options.params && typeof options.params === 'object') {
+    const qs = new URLSearchParams(options.params).toString();
+    if (qs) fullUrl += (fullUrl.includes('?') ? '&' : '?') + qs;
+  }
+
+  let response;
+  try {
+    response = await fetch(fullUrl, {
+      ...options,
+      signal: controller.signal,
+      headers,
+    });
+  } catch (e) {
+    // 内部超时触发 → 统一超时错误；外部主动取消 → 原样抛 AbortError
+    if (e?.name === 'AbortError' && timedOut) {
+      const err = new Error('请求超时');
+      err.timeout = true;
+      throw err;
     }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', forwardAbort);
+  }
+
+  // HTTP 401 → Token过期/无效 → 交由外层 401 刷新流程处理
+  // （客户端前置过期检测见 utils/auth.isTokenExpired，路由守卫处已接入）
+  if (response.status === 401) {
     const err = new Error('登录已过期，请重新登录');
     err.status = response.status;
     err.response = { status: response.status };
@@ -73,12 +158,85 @@ const request = async (url, options = {}) => {
   // 即使HTTP 200，后端也可能返回业务错误 code: -1
   // 调用方自行判断 response.code === 0
   return data;
+}
+
+/** 带重试 + 401 刷新的请求主体 */
+async function doRequest(url, options, method) {
+  const maxAttempts = method === 'GET' ? 1 + MAX_GET_RETRIES : 1;
+  let attempt = 0;
+  let refreshedOnce = false; // 401 刷新后仅重放原请求一次
+
+  for (;;) {
+    attempt += 1;
+    try {
+      return await fetchOnce(url, options);
+    } catch (e) {
+      // 401 → 单飞刷新拿新 token 重试原请求一次；刷新失败/二次 401 → 清会话跳登录
+      if (e?.status === 401) {
+        if (!AUTH_EXEMPT_URLS.includes(url) && !refreshedOnce) {
+          refreshedOnce = true;
+          const ok = await refreshAuthToken();
+          if (ok) continue; // 刷新成功，用新 token 重放原请求
+        }
+        if (!AUTH_EXEMPT_URLS.includes(url)) redirectToLogin();
+        throw e;
+      }
+
+      // 重试仅限 GET：网络错误 / 5xx（非 AbortError、非超时；4xx 不重试）
+      const retryable = method === 'GET'
+        && !isAbortError(e)
+        && !isTimeoutError(e)
+        && (isNetworkError(e) || (typeof e?.status === 'number' && e.status >= 500));
+      if (retryable && attempt < maxAttempts) {
+        await sleep(RETRY_DELAYS[attempt - 1]);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/**
+ * 统一请求封装 — 自动携带Token、统一错误处理、标准响应解析
+ * 后端返回格式：{ code: 0 (成功) | -1 (失败), message: string, data: any }
+ *
+ * 增强能力（审查报告"可补充新功能"）：
+ * 1. GET 网络错误/5xx 自动重试（最多 2 次，退避 300/900ms；非 GET 不重试）
+ * 2. 401 单飞刷新 refreshToken + 原请求重放一次
+ * 3. GET in-flight 去重（同 method+url+params 且无 signal 的并发共享 promise，TTL 200ms）
+ */
+export const request = async (url, options = {}) => {
+  const method = (options.method || 'GET').toUpperCase();
+
+  // 【请求去重】GET 且无外部 signal 时参与 in-flight 去重
+  // （带 signal 的请求无法安全共享取消，不参与）
+  if (method === 'GET' && !options.signal) {
+    const paramsKey = options.params !== undefined ? JSON.stringify(options.params) : '';
+    const key = `${method} ${url} ${paramsKey}`;
+    const now = Date.now();
+    const hit = inflight.get(key);
+    if (hit && hit.expires > now) return hit.promise;
+
+    const p = doRequest(url, options, method);
+    const entry = { promise: p, expires: now + DEDUP_TTL };
+    inflight.set(key, entry);
+    p.finally(() => {
+      // settle 后仍保留 200ms 供晚到的并发方复用，之后删除允许重新发起
+      if (inflight.get(key) === entry) {
+        setTimeout(() => { if (inflight.get(key) === entry) inflight.delete(key) }, DEDUP_TTL);
+      }
+    }).catch(() => {});
+    return p;
+  }
+
+  return doRequest(url, options, method);
 };
 
 export const userApi = {
   getProfile: () => request('/user/profile'),
   updateProfile: (data) => request('/user/profile', { method: 'PUT', body: JSON.stringify(data) }),
-  logout: () => request('/user/logout', { method: 'POST' }),
+  /** 附带 refreshToken 退出，后端一并撤销，退出后旧 refreshToken 彻底失效 */
+  logout: () => request('/user/logout', { method: 'POST', body: JSON.stringify({ refreshToken: getRefreshToken() }) }),
 };
 
 export const favoriteApi = {
@@ -154,9 +312,9 @@ export const flightApi = {
 };
 
 export const noteApi = {
-  /** 社区发现页：分页获取所有用户已发布的游记 */
-  getAllNotes: (page = 1, size = 10) => request(`/notes?page=${page}&size=${size}`),
-  getMyNotes: () => request('/notes/my'),
+  /** 社区发现页：分页获取所有用户已发布的游记（options 可传 signal/timeout 等） */
+  getAllNotes: (page = 1, size = 10, options = {}) => request(`/notes?page=${page}&size=${size}`, options),
+  getMyNotes: (options = {}) => request('/notes/my', options),
   getNoteDetail: (id) => request(`/notes/${id}`),
   createNote: (data) => request('/notes', { method: 'POST', body: JSON.stringify(data) }),
   updateNote: (id, data) => request(`/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -245,7 +403,12 @@ export const sceneApi = {
 };
 
 export const chatApi = {
-  getChatStream: (messages) => {
+  /**
+   * SSE 流式对话（无超时：流式长连接由调用方 AbortController 控制）
+   * @param {Array} messages 对话消息数组
+   * @param {AbortSignal} [signal] 取消信号 — 组件卸载/切走时 abort 真正断开连接
+   */
+  getChatStream: (messages, signal) => {
     return fetch(`${BASE_URL}/travel/chat/stream`, {
       method: 'POST',
       headers: {
@@ -253,6 +416,7 @@ export const chatApi = {
         ...(getToken() ? { 'Authorization': `Bearer ${getToken()}` } : {}),
       },
       body: JSON.stringify(messages),
+      ...(signal ? { signal } : {}),
     });
   },
 };
@@ -284,4 +448,61 @@ export const authApi = {
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   socialLogin: (platform, code, redirectUri) =>
     request('/auth/social-login', { method: 'POST', body: JSON.stringify({ platform, code, redirectUri }) }),
+  /** 旋转刷新：POST /auth/refresh {refreshToken} → {token, refreshToken}（401 = 刷新过期）。
+   *  正常路径由 request() 内部单飞调用，此出口供手动刷新场景使用。 */
+  refresh: (refreshToken) => request('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+};
+
+/* ==================== 新功能：天气 / 行程模板 / 举报 / 退款 / 发票 / 收藏夹 ==================== */
+
+/** 天气（匿名可访问）— GET /api/weather/{city} → { city, reportTime, weather, temperature, windDirection, windPower, humidity, forecast: [...] } */
+export const weatherApi = {
+  getWeather: (city) => request(`/weather/${encodeURIComponent(city)}`),
+};
+
+/** 行程模板市场 — GET /api/template/market（公开分页） */
+export const templateApi = {
+  getMarket: (params = {}) => request('/template/market', { params }),
+  getTemplate: (id) => request(`/template/${id}`),
+  /** 实例化为自己的行程（需登录）→ { planId, templateId, destination } */
+  instantiate: (id) => request(`/template/${id}/instantiate`, { method: 'POST' }),
+};
+
+/** 举报（需登录）— POST /api/report { targetType: note|post|comment, targetId, reason } */
+export const reportApi = {
+  report: (data) => request('/report', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+/** 退款（需登录）— POST /api/order/{orderId}/refund { reason }；GET /api/order/refunds */
+export const refundApi = {
+  requestRefund: (orderId, reason) =>
+    request(`/order/${orderId}/refund`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  getMyRefunds: () => request('/order/refunds'),
+};
+
+/** 发票（需登录，一单一票）— POST /api/order/{orderId}/invoice { title, taxNo, type }；GET /api/order/invoices */
+export const invoiceApi = {
+  issueInvoice: (orderId, data) =>
+    request(`/order/${orderId}/invoice`, { method: 'POST', body: JSON.stringify(data) }),
+  getMyInvoices: () => request('/order/invoices'),
+};
+
+/** 游记收藏夹 — /api/collection 系列 */
+export const collectionApi = {
+  /** 创建 { name, description, isPublic } */
+  create: (data) => request('/collection', { method: 'POST', body: JSON.stringify(data) }),
+  /** 编辑（本人） */
+  update: (id, data) => request(`/collection/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  /** 删除（本人） */
+  remove: (id) => request(`/collection/${id}`, { method: 'DELETE' }),
+  /** 添加笔记（去重）body { noteId } → { added, count } */
+  addNote: (id, noteId) => request(`/collection/${id}/notes`, { method: 'POST', body: JSON.stringify({ noteId }) }),
+  /** 移除笔记 → { removed, count } */
+  removeNote: (id, noteId) => request(`/collection/${id}/notes/${noteId}`, { method: 'DELETE' }),
+  /** 我的收藏夹（含 noteCount） */
+  getMine: () => request('/collection/mine'),
+  /** 公开收藏夹（keyword/page/size） */
+  getPublic: (params = {}) => request('/collection/public', { params }),
+  /** 详情（附笔记摘要；私有仅本人可见） */
+  getDetail: (id) => request(`/collection/${id}`),
 };

@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
+import { getToken } from '../utils/auth'
 
 defineOptions({ name: 'AITripPlannerProgress' })
 const router = useRouter()
@@ -34,7 +35,7 @@ const preferences = ref({})
 try { preferences.value = JSON.parse(route.query.preferences || '{}') } catch (e) {}
 
 const connect = () => {
-  const token = localStorage.getItem('TOKEN') || ''
+  const token = getToken() || ''
   abortCtrl = new AbortController()
 
   fetch('/api/travel/planner/progress', {
@@ -66,6 +67,15 @@ const connect = () => {
         try { handleEvent(JSON.parse(payload.trim())) } catch (e) {}
       }
     }
+    // flush 解码器残留字节 + 末尾无换行的最后一个事件（避免漏掉 generate-finish）
+    buf += decoder.decode()
+    const last = buf.trim()
+    if (last.startsWith('data:')) {
+      const payload = last.startsWith('data: ') ? last.slice(6) : last.slice(5)
+      if (payload && payload !== '[DONE]') {
+        try { handleEvent(JSON.parse(payload.trim())) } catch (e) {}
+      }
+    }
   }).catch(async (e) => {
     if (e.name === 'AbortError') return
     console.error('SSE连接失败', e)
@@ -78,7 +88,7 @@ const connect = () => {
         abortCtrl = new AbortController()
         const r2 = await fetch('/api/travel/planner/progress', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'Authorization': `Bearer ${localStorage.getItem('TOKEN') || ''}` },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'Authorization': `Bearer ${getToken() || ''}` },
           body: JSON.stringify({ destination: dest.value, days: days.value, origin: origin.value, budget: 5000, preferences: preferences.value }),
           signal: abortCtrl.signal,
         })
@@ -139,7 +149,7 @@ const stopFlow = async () => {
   // 2. 通知后端终止
   if (taskId.value) {
     fetch('/api/travel/planner/stop', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken() || ''}` },
       body: JSON.stringify({ taskId: taskId.value }),
     }).catch(() => {})
   }

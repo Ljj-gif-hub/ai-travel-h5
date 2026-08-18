@@ -22,6 +22,39 @@
           <div class="city-desc" v-if="cityInfo.description">{{ sanitizeText(cityInfo.description) }}</div>
         </div>
 
+        <!-- 目的地天气（新功能） -->
+        <div class="weather-section">
+          <div class="section-header">
+            <van-icon name="cloud-o" size="18" color="#9333ea" />
+            <span class="section-title">{{ t('destination.weather') }}</span>
+          </div>
+          <div v-if="weatherLoading" class="weather-loading"><van-loading size="20" color="#9333ea" /><span>{{ t('common.loading') }}</span></div>
+          <div v-else-if="weatherFailed" class="weather-failed"><van-icon name="warning-o" size="16" color="#f59e0b" /><span>{{ t('destination.weatherUnavailable') }}</span></div>
+          <template v-else-if="weather">
+            <div class="weather-now">
+              <div class="weather-now-left">
+                <div class="weather-temp">{{ weather.temperature }}<span class="weather-unit">°</span></div>
+                <div class="weather-cond">{{ weather.weather }}</div>
+              </div>
+              <div class="weather-now-right">
+                <div class="weather-detail" v-if="weather.humidity">{{ t('destination.weatherHumidity') }} {{ weather.humidity }}%</div>
+                <div class="weather-detail" v-if="weather.windDirection">{{ t('destination.weatherWind', { dir: weather.windDirection, power: weather.windPower || '-' }) }}</div>
+                <div class="weather-detail" v-if="weather.reportTime">{{ t('destination.weatherUpdated', { time: weather.reportTime }) }}</div>
+              </div>
+            </div>
+            <div v-if="weatherForecast.length" class="weather-forecast">
+              <div class="weather-forecast-title">{{ t('destination.weatherForecast') }}</div>
+              <div class="weather-forecast-row">
+                <div v-for="(day, i) in weatherForecast" :key="i" class="weather-day">
+                  <div class="weather-day-date">{{ fmtWeatherDate(day.date) }}</div>
+                  <div class="weather-day-cond">{{ day.dayWeather }}</div>
+                  <div class="weather-day-temp">{{ day.dayTemp }}°<span v-if="day.nightTemp"> / {{ day.nightTemp }}°</span></div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
         <div class="map-section">
           <div class="section-header">
             <van-icon name="location-o" size="18" color="#9333ea" />
@@ -101,10 +134,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NavBar, Rate, Loading, Icon } from 'vant'
 import { getHotDestinations, getCityAttractions } from '../api/destination'
+import { weatherApi } from '../api'
 import { sanitizeHtml, getProxyImageUrl } from '../utils/security'
 import { useI18n } from 'vue-i18n'
 
@@ -392,7 +426,38 @@ onMounted(async () => {
   await loadStaticImageMap()
   await Promise.all([loadCityInfo(), loadAttractions()])
   await initMap()
+  loadWeather()
 })
+
+/* ==================== 目的地天气（新功能） ==================== */
+const weather = ref(null)
+const weatherLoading = ref(false)
+const weatherFailed = ref(false)
+
+const loadWeather = async () => {
+  if (!city.value) return
+  weatherLoading.value = true
+  weatherFailed.value = false
+  try {
+    const res = await weatherApi.getWeather(city.value)
+    if (res.code === 0 && res.data) weather.value = res.data
+    else { weather.value = null; weatherFailed.value = true }
+  } catch (e) {
+    // 高德 Key 未配置/服务失败时后端返回 502，此处静默降级展示提示
+    weather.value = null
+    weatherFailed.value = true
+  } finally {
+    weatherLoading.value = false
+  }
+}
+
+/** 未来 2-3 天预报（跳过首条「今天」，当前天气已单独展示） */
+const weatherForecast = computed(() => (weather.value?.forecast || []).slice(1, 4))
+
+const fmtWeatherDate = (s) => {
+  const p = String(s || '').split('-')
+  return p.length >= 3 ? `${Number(p[1])}/${Number(p[2])}` : s
+}
 </script>
 
 <style scoped>
@@ -502,6 +567,67 @@ onMounted(async () => {
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.03);
   margin-bottom: 16px;
 }
+
+/* ==================== 目的地天气（新功能） ==================== */
+.weather-section {
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.03);
+  margin-bottom: 16px;
+}
+.weather-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+.weather-failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 0;
+  font-size: 13px;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 12px;
+}
+.weather-now {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 10px;
+}
+.weather-temp {
+  font-size: 34px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+}
+.weather-unit { font-size: 18px; font-weight: 500; color: #6b7280; }
+.weather-cond { font-size: 14px; color: #4b5563; margin-top: 4px; }
+.weather-now-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.weather-detail { font-size: 11px; color: #9ca3af; }
+.weather-forecast { border-top: 1px dashed #e5e7eb; padding-top: 10px; }
+.weather-forecast-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px; }
+.weather-forecast-row { display: flex; gap: 8px; }
+.weather-day {
+  flex: 1;
+  background: rgba(147, 51, 234, 0.05);
+  border-radius: 12px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.weather-day-date { font-size: 12px; font-weight: 600; color: #374151; }
+.weather-day-cond { font-size: 12px; color: #6b7280; margin: 4px 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.weather-day-temp { font-size: 11px; color: #9ca3af; }
 
 .section-header {
   display: flex;

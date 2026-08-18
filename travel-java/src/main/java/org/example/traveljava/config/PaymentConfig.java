@@ -83,8 +83,10 @@ public class PaymentConfig {
         if ("mock".equalsIgnoreCase(provider)) {
             return "mock";
         }
-        // 指定了真实渠道但缺密钥 → 静默降级 mock，避免支付流程不可用
-        return "mock";
+        // 指定了真实渠道但缺密钥（或 provider 拼写错误）→ 直接抛错（fail-fast），绝不静默降级 mock。
+        // 否则运维以为在用真实支付，实际却静默走 mock（免单），是资损级事故。
+        throw new IllegalStateException(
+            "支付渠道配置错误：provider=" + provider + " 但未配置对应渠道密钥，请检查 application.yml 的 payment 配置");
     }
 
     private boolean hasAlipayKey() {

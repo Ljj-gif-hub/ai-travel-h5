@@ -5,6 +5,16 @@ import { VantResolver } from '@vant/auto-import-resolver'
 import { VitePWA } from 'vite-plugin-pwa'
 import { resolve } from 'path'
 
+/** SSE 流式代理配置：告诉后端这是长连接流式请求，禁用缓冲确保实时推送 */
+function sseProxyConfigure(proxy) {
+  proxy.on('proxyReq', (proxyReq, req) => {
+    if (req.url.includes('/stream') || req.url.includes('/planner/stream')) {
+      proxyReq.setHeader('Connection', 'keep-alive')
+      proxyReq.setHeader('Cache-Control', 'no-cache')
+    }
+  })
+}
+
 export default defineConfig(({ mode }) => ({
   // 生产部署：Nginx 托管在站点根路径（此前 /ai-travel-h5/ 是给 GitHub Pages 子路径用的）
   base: '/',
@@ -85,22 +95,31 @@ export default defineConfig(({ mode }) => ({
       '/uploads': { target: 'http://localhost:3200', changeOrigin: true },
       // 安全：Agent 请求统一走 Spring Boot（/api/agent → 3200 → 3201），
       // 由 Spring 透传 JWT 鉴权 + 附加共享密钥，禁止前端直连 Python Agent。
+      // SSE 流式代理：禁用缓冲，确保实时推送；SSE 长连接放宽到 10 分钟，
+      // 普通接口 5 分钟兜底（此前 30 分钟让挂死的连接长期占用代理资源）。
+      '/api/travel': {
+        target: 'http://localhost:3200',
+        changeOrigin: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+        ws: false,
+        configure: sseProxyConfigure,
+      },
+      '/api/agent': {
+        target: 'http://localhost:3200',
+        changeOrigin: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+        ws: false,
+        configure: sseProxyConfigure,
+      },
       '/api': {
         target: 'http://localhost:3200',
         changeOrigin: true,
-        timeout: 1800000,
-        proxyTimeout: 1800000,
+        timeout: 300000,
+        proxyTimeout: 300000,
         ws: false,
-        // SSE 流式代理：禁用缓冲，确保实时推送
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
-            // 告诉后端这是一条长连接流式请求
-            if (req.url.includes('/stream') || req.url.includes('/planner/stream')) {
-              proxyReq.setHeader('Connection', 'keep-alive')
-              proxyReq.setHeader('Cache-Control', 'no-cache')
-            }
-          })
-        },
+        configure: sseProxyConfigure,
       },
     },
   },

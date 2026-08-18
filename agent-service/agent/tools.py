@@ -9,13 +9,22 @@ Agent 工具集 — 旅游规划 Agent 可以调用的所有外部工具
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 from typing import Optional, List, Dict, Any
 
 import httpx
 from langchain_core.tools import tool
+
+logger = logging.getLogger("travel-agent.tools")
+
+
+# 模块级共享 HTTP 客户端（P1）：httpx.Client 线程安全，可跨 to_thread 线程复用连接池，
+# 避免每次工具调用新建 client 的连接重建开销。Tavily/高德偶发响应慢，统一 30s 超时。
+_HTTP_CLIENT = httpx.Client(timeout=30.0, follow_redirects=True)
 
 
 # ==================== 配置 ====================
@@ -53,20 +62,19 @@ def search_attractions_info(query: str) -> str:
         }, ensure_ascii=False)
 
     try:
-        # 直接通过 HTTP 调用 Tavily Search API
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": api_key,
-                    "query": query,
-                    "search_depth": "advanced",
-                    "max_results": 5,
-                    "include_answer": True,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        # 直接通过 HTTP 调用 Tavily Search API（复用模块级共享 client）
+        resp = _HTTP_CLIENT.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "advanced",
+                "max_results": 5,
+                "include_answer": True,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         # 整理搜索结果
         results = []
@@ -120,19 +128,18 @@ def search_hotels_info(query: str) -> str:
         }, ensure_ascii=False)
 
     try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": api_key,
-                    "query": query,
-                    "search_depth": "advanced",
-                    "max_results": 5,
-                    "include_answer": True,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        resp = _HTTP_CLIENT.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "advanced",
+                "max_results": 5,
+                "include_answer": True,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         results = []
         if data.get("answer"):
@@ -258,17 +265,16 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
             if city and city not in addr:
                 addr = f"{city}{addr}"
 
-            with httpx.Client(timeout=10.0) as client:
-                geo_resp = client.get(
-                    "https://restapi.amap.com/v3/geocode/geo",
-                    params={
-                        "key": amap_key,
-                        "address": addr,
-                        "city": city,
-                    },
-                )
-                geo_resp.raise_for_status()
-                geo_data = geo_resp.json()
+            geo_resp = _HTTP_CLIENT.get(
+                "https://restapi.amap.com/v3/geocode/geo",
+                params={
+                    "key": amap_key,
+                    "address": addr,
+                    "city": city,
+                },
+            )
+            geo_resp.raise_for_status()
+            geo_data = geo_resp.json()
 
             if geo_data.get("status") == "1" and geo_data.get("geocodes"):
                 location = geo_data["geocodes"][0]["location"]
@@ -291,18 +297,17 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
             "bicycling": "https://restapi.amap.com/v4/direction/bicycling",
         }
 
-        with httpx.Client(timeout=10.0) as client:
-            route_resp = client.get(
-                url_map.get(amap_mode, url_map["driving"]),
-                params={
-                    "key": amap_key,
-                    "origin": origin_coord,
-                    "destination": dest_coord,
-                    "extensions": "base",
-                },
-            )
-            route_resp.raise_for_status()
-            route_data = route_resp.json()
+        route_resp = _HTTP_CLIENT.get(
+            url_map.get(amap_mode, url_map["driving"]),
+            params={
+                "key": amap_key,
+                "origin": origin_coord,
+                "destination": dest_coord,
+                "extensions": "base",
+            },
+        )
+        route_resp.raise_for_status()
+        route_data = route_resp.json()
 
         if route_data.get("status") == "1":
             route = route_data.get("route", {})
@@ -312,7 +317,10 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
                 duration = int(path.get("duration", 0))
             elif amap_mode == "transit" and route.get("transits"):
                 transit = route["transits"][0]
-                distance = int(transit.get("distance", 0)) if transit.get("distance") else int(transit.get("walking_distance", 0)) + 5000
+                # 公交方案常缺总距离：distance 优先，缺失回退步行距离（不再硬编码 +5000，
+                # 也避免 walking_distance 缺失时 int(None) 崩溃）
+                raw_dist = transit.get("distance")
+                distance = int(raw_dist) if raw_dist else int(transit.get("walking_distance") or 0)
                 duration = int(transit.get("duration", 0))
             elif amap_mode == "walking" and route.get("paths"):
                 path = route["paths"][0]
@@ -398,14 +406,19 @@ def calculate_budget(items_json: str) -> str:
     try:
         data = json.loads(items_json)
     except json.JSONDecodeError:
+        # 不回显原始输入（S10）：错误响应中反射用户/LLM 提供的任意内容有注入风险
         return json.dumps({
             "error": "无法解析费用数据，请确保输入是合法 JSON",
-            "input": items_json[:200],
         }, ensure_ascii=False)
 
     budget_total = data.get("budget_total", 5000)
     people = data.get("people", 1)
     items = data.get("items", {})
+    # days 可能来自 LLM 输出（0 或字符串），做安全归一化，避免除零/类型错误
+    try:
+        days = max(int(float(str(data.get("days", 1)).strip())), 1)
+    except (ValueError, TypeError):
+        days = 1
 
     # 计算各项
     transport = items.get("transport", 0)
@@ -433,7 +446,7 @@ def calculate_budget(items_json: str) -> str:
             suggestions.append({
                 "strategy": "降低住宿标准",
                 "save_amount": save,
-                "detail": f"将酒店从当前档位下调一档，每晚可节省约{save // data.get('days', 1)}元，共节省{save}元",
+                "detail": f"将酒店从当前档位下调一档，每晚可节省约{save // days}元，共节省{save}元",
             })
 
         # 策略2：删可选门票
@@ -489,9 +502,60 @@ def calculate_budget(items_json: str) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+# ==================== 工具调用打点（指标 + 用量归因） ====================
+
+def _record_tool_call(name: str) -> None:
+    """工具调用打点：Prometheus tool_calls_total + 请求级用量归因。异常不影响业务。"""
+    try:
+        from .metrics import TOOL_CALLS
+        from .usage import usage_tracker
+        TOOL_CALLS.labels(tool=name).inc()
+        usage_tracker.record_tool(name)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("工具指标记录失败（忽略）: %s", exc)
+
+
+def _wrap_metrics(tool):
+    """在工具最外层包一层调用打点（权限包装在内层，打点在权限判定之前计数）。
+
+    保留同步/异步两个入口；同步工具在异步路径下丢线程池执行（与权限包装同策略）。
+    """
+    from langchain_core.tools import StructuredTool
+    if not isinstance(tool, StructuredTool):
+        return tool
+    name = tool.name
+    func = getattr(tool, "func", None)
+    coroutine = getattr(tool, "coroutine", None)
+
+    def _sync_wrapper(*args, **kwargs):
+        _record_tool_call(name)
+        return func(*args, **kwargs)
+
+    async def _async_wrapper(*args, **kwargs):
+        _record_tool_call(name)
+        if coroutine is not None:
+            return await coroutine(*args, **kwargs)
+        if func is not None:
+            # 同步工具（阻塞 HTTP 搜索）不能在协程里直接调用，丢线程池保持并行性
+            return await asyncio.to_thread(func, *args, **kwargs)
+        raise TypeError(f"工具 {name} 无可调用实现")
+
+    if func is not None:
+        _sync_wrapper.__name__ = getattr(func, "__name__", name)
+        _sync_wrapper.__doc__ = getattr(func, "__doc__", None)
+    return StructuredTool.from_function(
+        func=_sync_wrapper if func is not None else None,
+        coroutine=_async_wrapper,
+        name=name,
+        description=tool.description,
+        args_schema=tool.args_schema,
+        return_direct=tool.return_direct,
+    )
+
+
 # ==================== 工具注册表 ====================
 # 全部工具套上 Permission 权限包装（默认 open 模式无影响，
-# 配置 PERMISSION_MODE=blocklist/allowlist 后生效）。
+# 配置 PERMISSION_MODE=blocklist/allowlist 后生效），再包调用打点。
 
 from .permissions import permission_manager  # noqa: E402
 
@@ -499,6 +563,12 @@ search_attractions_info = permission_manager.guard(search_attractions_info)
 search_hotels_info = permission_manager.guard(search_hotels_info)
 get_commute_info = permission_manager.guard(get_commute_info)
 calculate_budget = permission_manager.guard(calculate_budget)
+
+# 指标打点包装（最外层）
+search_attractions_info = _wrap_metrics(search_attractions_info)
+search_hotels_info = _wrap_metrics(search_hotels_info)
+get_commute_info = _wrap_metrics(get_commute_info)
+calculate_budget = _wrap_metrics(calculate_budget)
 
 ALL_TOOLS = [
     search_attractions_info,

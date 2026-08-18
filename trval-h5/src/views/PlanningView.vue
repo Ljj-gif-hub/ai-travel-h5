@@ -533,6 +533,8 @@ import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import { planApi, sceneApi, chatApi } from '../api'
+import { getToken } from '../utils/auth'
+import { PLANNING_SYSTEM_PROMPT } from '../constants/systemPrompts'
 
 const router = useRouter()
 const route = useRoute()
@@ -553,7 +555,7 @@ const connectStreamDetail = () => {
   detailAbort.value = ctrl
   fetch('/api/travel/planner/stream-detail', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'Authorization': `Bearer ${getToken() || ''}` },
     body: JSON.stringify({ destination: destination.value, days: days.value, budget: budget.value, taskId: taskId.value }),
     signal: ctrl.signal,
   }).then(async (resp) => {
@@ -608,7 +610,7 @@ const handleStreamEvent = (data) => {
 const stopStreamDetail = () => {
   if (detailAbort.value) { detailAbort.value.abort(); detailAbort.value = null }
   fetch('/api/travel/planner/stop', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken() || ''}` },
     body: JSON.stringify({ taskId: taskId.value }),
   }).catch(() => {})
 }
@@ -619,7 +621,7 @@ const budget = ref(Number(route.query.budget) || 5000)
 const days = ref(Number(route.query.days) || 2)
 const people = ref(Number(route.query.people) || 2)
 
-const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
+const IMAGE_API = import.meta.env.VITE_IMAGE_API || 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
 
 /* 静态图片映射：本地 JSON 优先，API 兜底 */
 const staticImageMap = ref({})
@@ -964,7 +966,7 @@ const fetchTravelPlan = async () => {
       budget: parseInt(budget.value) || 1000,
       days: parseInt(days.value) || 3,
       people: parseInt(people.value) || 2
-    }, { signal: abortController.signal })
+    }, { signal: abortController.signal, timeout: 180000 })
 
     clearTimeout(timeoutId)
 
@@ -1068,6 +1070,8 @@ const chatInput = ref('')
 const isSending = ref(false)
 const isThinking = ref(false)
 const chatScrollRef = ref(null)
+/* SSE 取消控制器：离开页面时中断对话流 */
+let chatAbortController = null
 
 const md = new MarkdownIt({
   html: false,
@@ -1093,7 +1097,6 @@ const preprocessMarkdown = (text) => {
   result = result.replace(/^(\s*[-*+])(\S)/gm, '$1 $2')
   result = result.replace(/^(\s*\d+\.)([^\s])/gm, '$1 $2')
   result = result.replace(/<strong>([\s\S]*?)<\/strong>/g, '**$1**')
-  result = result.replace(/<strong>([\s\S]*?)<strong>/g, '**$1**')
   result = result.replace(/<\/?strong>/g, '**')
   result = result.replace(/<em>(.*?)<\/em>/g, '*$1*')
   result = result.replace(/<\/?em>/g, '*')
@@ -1195,36 +1198,16 @@ const sendChatMessage = async () => {
   chatHistory.push({ role: 'user', content: prompt })
 
   try {
+    // 取消上一次未完成的对话流（如连续快速提问）
+    if (chatAbortController) { chatAbortController.abort() }
+    chatAbortController = new AbortController()
     const response = await chatApi.getChatStream([
       {
         role: 'system',
-        content: `你是一个专业的旅游规划助手，擅长提供详细、实用的旅行建议。请根据对话历史和行程规划上下文连贯地回答用户问题。
-
-【最高优先级：全局排版规则，任何题材回答必须强制执行，违反则视为错误回答】
-
-1. Markdown语法标准（必须严格遵守）：
-   - 标题：## 和 ### 后必须有一个空格，如 "## 标题"、"### 小标题"，禁止 "##标题"、"###标题"
-   - 列表：- 和 1. 后必须有一个空格，如 "- 列表项"、"1. 有序项"，禁止 "-列表项"、"1.列表项"
-   - 加粗：使用 **文本** 格式，禁止使用 <strong> 标签
-   - 禁止使用 HTML 标签（如 <strong>、<br> 等），一律用 Markdown 语法
-   - 禁止残缺表格、连续竖线、怪异分隔符
-
-2. 布局规范：
-   ① 不同内容区块之间强制换行空一行；
-   ② 游览路线、步骤清单、事项罗列统一使用有序/无序列表，禁止强行装入表格；
-   ③ 表格仅用于费用汇总、参数对比等规整数据；
-   ④ 标题只允许 ## / ### 两级。
-
-3. 流式生成要求：
-   从第一段开始就保持规范排版，不允许中途更改布局方式。
-
-4. 兜底策略：
-   内容结构复杂时优先使用列表，避免表格语法出错。
-
-再次强调：## 后必须空格，- 后必须空格，禁止任何 HTML 标签。`,
+        content: PLANNING_SYSTEM_PROMPT,
       },
       ...chatHistory,
-    ])
+    ], chatAbortController.signal)
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
@@ -1277,6 +1260,7 @@ const sendChatMessage = async () => {
     isSending.value = false
     isThinking.value = false
   } catch (e) {
+    if (e?.name === 'AbortError') return // 主动取消（离开页面），不提示
     isSending.value = false
     isThinking.value = false
     showToast(t('planning.requestFailed'))
@@ -1337,7 +1321,10 @@ onMounted(() => {
     fetchTravelPlan()  // 非流式：一次性加载
   }
 })
-onUnmounted(() => { stopStreamDetail() })
+onUnmounted(() => {
+  stopStreamDetail()
+  if (chatAbortController) { chatAbortController.abort(); chatAbortController = null }
+})
 </script>
 
 <style scoped>

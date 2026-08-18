@@ -24,10 +24,15 @@ public class NoteService {
 
     private final NoteRepository noteRepository;
     private final NoteLikeRepository noteLikeRepository;
+    private final UserService userService;
+    private final ContentModerationService moderationService;
 
-    public NoteService(NoteRepository noteRepository, NoteLikeRepository noteLikeRepository) {
+    public NoteService(NoteRepository noteRepository, NoteLikeRepository noteLikeRepository,
+                       UserService userService, ContentModerationService moderationService) {
         this.noteRepository = noteRepository;
         this.noteLikeRepository = noteLikeRepository;
+        this.userService = userService;
+        this.moderationService = moderationService;
     }
 
     public List<Note> getNotes(Long userId) {
@@ -35,15 +40,15 @@ public class NoteService {
     }
 
     /**
-     * 【新增】社区发现页：获取所有用户已发布的游记
+     * 【新增】社区发现页：获取所有用户已发布的游记（过滤被举报隐藏）
      */
     public List<Note> getAllPublishedNotes() {
-        return noteRepository.findByStatusOrderByCreatedAtDesc("published");
+        return noteRepository.findByStatusAndHiddenFalseOrderByCreatedAtDesc("published");
     }
 
-    /** 社区发现页：分页获取已发布游记（page 从 1 开始） */
+    /** 社区发现页：分页获取已发布游记（page 从 1 开始，过滤被举报隐藏） */
     public Page<Note> getAllPublishedNotes(int page, int size) {
-        return noteRepository.findByStatusOrderByCreatedAtDesc("published", PageRequest.of(page - 1, size));
+        return noteRepository.findByStatusAndHiddenFalseOrderByCreatedAtDesc("published", PageRequest.of(page - 1, size));
     }
 
     public Note getNoteById(Long noteId) {
@@ -51,6 +56,10 @@ public class NoteService {
                 .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
         // 软删除的游记不可再通过详情接口读取
         if ("deleted".equals(note.getStatus())) {
+            throw new IllegalArgumentException("游记不存在");
+        }
+        // 【新功能】被举报隐藏的游记不可通过详情接口读取
+        if (Boolean.TRUE.equals(note.getHidden())) {
             throw new IllegalArgumentException("游记不存在");
         }
         return note;
@@ -82,6 +91,14 @@ public class NoteService {
         note.setLikes(0);
         note.setComments(0);
 
+        // 【新功能】内容审核（开关控制，LLM 失败 fail-open）
+        ContentModerationService.ModerationResult m = moderationService.check(
+                (note.getTitle() == null ? "" : note.getTitle()) + "\n" +
+                (note.getContent() == null ? "" : note.getContent()));
+        if (!m.isSafe()) {
+            throw new IllegalArgumentException("内容包含违规信息，请修改后重试");
+        }
+
         Note saved = noteRepository.save(note);
         log.info("创建游记：userId={}, title={}", userId, note.getTitle());
         return saved;
@@ -111,6 +128,16 @@ public class NoteService {
                 note.setTags(list.stream().map(Object::toString).reduce((a, b) -> a + "," + b).orElse(""));
             } else if (tagsObj instanceof String) {
                 note.setTags((String) tagsObj);
+            }
+        }
+
+        // 【新功能】内容审核（更新标题/正文时）
+        if (params.containsKey("title") || params.containsKey("content")) {
+            ContentModerationService.ModerationResult m = moderationService.check(
+                    (note.getTitle() == null ? "" : note.getTitle()) + "\n" +
+                    (note.getContent() == null ? "" : note.getContent()));
+            if (!m.isSafe()) {
+                throw new IllegalArgumentException("内容包含违规信息，请修改后重试");
             }
         }
 
@@ -149,23 +176,28 @@ public class NoteService {
         boolean alreadyLiked = noteLikeRepository.existsByNoteIdAndUserId(noteId, userId);
 
         if (alreadyLiked) {
-            // 取消点赞
+            // 取消点赞：计数原子 -1（likes>=0 条件下不会减成负数）
             noteLikeRepository.deleteByNoteIdAndUserId(noteId, userId);
-            note.setLikes(noteLikeRepository.countByNoteId(noteId));
-            noteRepository.save(note);
+            noteRepository.adjustLikes(noteId, -1);
         } else {
-            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞
+            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞（不重复计数）
             try {
                 noteLikeRepository.save(new NoteLike(noteId, userId));
+                noteRepository.adjustLikes(noteId, 1);
+                // 【新功能】笔记被赞 +1（仅新点赞生效一次，自己赞自己不发放）
+                if (note.getUserId() != null && !note.getUserId().equals(userId)) {
+                    userService.addPoints(note.getUserId(), 1);
+                }
             } catch (DataIntegrityViolationException e) {
                 log.debug("游记点赞并发冲突：noteId={}, userId={}", noteId, userId);
             }
-            note.setLikes(noteLikeRepository.countByNoteId(noteId));
-            noteRepository.save(note);
         }
 
+        // adjustLikes 已 clearAutomatically，重新读取最新计数
+        Note fresh = noteRepository.findById(noteId)
+                .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
         Map<String, Object> result = new HashMap<>();
-        result.put("likes", note.getLikes());
+        result.put("likes", fresh.getLikes());
         result.put("isLiked", !alreadyLiked);
         return result;
     }

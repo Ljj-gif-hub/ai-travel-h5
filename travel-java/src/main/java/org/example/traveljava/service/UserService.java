@@ -23,12 +23,15 @@ public class UserService {
     private final JwtUtil jwtUtil;
     private final BCryptPasswordEncoder passwordEncoder;
     private final TokenBlacklist tokenBlacklist;
+    private final RefreshTokenService refreshTokenService;
 
-    public UserService(UserRepository userRepository, JwtUtil jwtUtil, TokenBlacklist tokenBlacklist) {
+    public UserService(UserRepository userRepository, JwtUtil jwtUtil, TokenBlacklist tokenBlacklist,
+                       RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = new BCryptPasswordEncoder();
         this.tokenBlacklist = tokenBlacklist;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -109,6 +112,14 @@ public class UserService {
         result.put("token", token);
         result.put("user", userInfo);
 
+        // 【新功能】刷新令牌：Redis 故障时降级为不发 refreshToken（登录本身不阻断），
+        // 前端收不到 refreshToken 即走纯 access token 模式（过期后重新登录）。
+        try {
+            result.put("refreshToken", refreshTokenService.issue(user.getId()));
+        } catch (Exception e) {
+            log.warn("签发刷新令牌失败（Redis 不可用？），本次登录降级为无刷新令牌: {}", e.getMessage());
+        }
+
         return result;
     }
 
@@ -157,7 +168,7 @@ public class UserService {
     }
 
     @Transactional
-    public void logout(String token) {
+    public void logout(String token, String refreshToken) {
         // 把 token 加入黑名单，使其立即失效（到 token 自然过期为止）
         try {
             long ttl = jwtUtil.extractExpiration(token).getTime() - System.currentTimeMillis();
@@ -167,5 +178,82 @@ public class UserService {
             // 黑名单失败不阻断退出（token 过期后自然失效）
             log.warn("退出登录黑名单失效失败: {}", e.getMessage());
         }
+        // 【新功能】同时撤销刷新令牌，退出后旧 refreshToken 彻底失效
+        refreshTokenService.revoke(refreshToken);
+    }
+
+    /* ==================== 【新功能】积分与等级 ==================== */
+
+    /** 等级门槛：青铜 0 / 白银 100 / 黄金 300 / 铂金 800 / 钻石 2000 */
+    public static final int[] LEVEL_THRESHOLDS = {0, 100, 300, 800, 2000};
+    public static final String[] LEVEL_NAMES = {"青铜", "白银", "黄金", "铂金", "钻石"};
+
+    /** 按积分计算等级名 */
+    public static String levelOf(Integer points) {
+        int p = points == null ? 0 : points;
+        String level = LEVEL_NAMES[0];
+        for (int i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+            if (p >= LEVEL_THRESHOLDS[i]) {
+                level = LEVEL_NAMES[i];
+            }
+        }
+        return level;
+    }
+
+    /** 下一等级名（已到最高级返回 null） */
+    public static String nextLevelOf(Integer points) {
+        int p = points == null ? 0 : points;
+        for (int i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+            if (p < LEVEL_THRESHOLDS[i]) {
+                return LEVEL_NAMES[i];
+            }
+        }
+        return null;
+    }
+
+    /** 距离下一等级还差多少分（已到最高级返回 0） */
+    public static int pointsToNextLevel(Integer points) {
+        int p = points == null ? 0 : points;
+        for (int threshold : LEVEL_THRESHOLDS) {
+            if (p < threshold) {
+                return threshold - p;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * 积分原子增减 + 刷新等级字段（发帖+5 / 评论+2 / 支付成功+10 / 笔记被赞+1）。
+     * 调用方保证只对"首次生效"的动作用增量发放（如支付仅当 markPaidIfPending 返回 1），避免重复发奖。
+     */
+    @Transactional
+    public void addPoints(Long userId, int delta) {
+        if (userId == null || delta == 0) return;
+        userRepository.addPoints(userId, delta);
+        // 刷新等级字段（best-effort：失败不影响积分本身）
+        try {
+            User user = userRepository.findById(userId).orElse(null);
+            if (user != null) {
+                String level = levelOf(user.getPoints());
+                if (!level.equals(user.getLevel())) {
+                    user.setLevel(level);
+                    userRepository.save(user);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("刷新用户等级失败: userId={}, err={}", userId, e.getMessage());
+        }
+    }
+
+    /** 当前用户等级信息（积分、等级名、下一级及所需差值） */
+    public Map<String, Object> getUserLevel(Long userId) {
+        User user = getUserById(userId);
+        int points = user.getPoints() == null ? 0 : user.getPoints();
+        Map<String, Object> result = new HashMap<>();
+        result.put("points", points);
+        result.put("level", levelOf(points));
+        result.put("nextLevel", nextLevelOf(points));
+        result.put("pointsToNextLevel", pointsToNextLevel(points));
+        return result;
     }
 }

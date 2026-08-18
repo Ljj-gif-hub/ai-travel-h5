@@ -4,7 +4,10 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "comments")
+@Table(name = "comments", indexes = {
+        // 【修复】按游记查询评论列表/计数
+        @Index(name = "idx_comments_note_id", columnList = "note_id")
+})
 public class Comment {
 
     @Id
@@ -34,6 +37,10 @@ public class Comment {
     @Column(name = "likes")
     private Integer likes = 0;
 
+    /** 【新功能】是否被举报隐藏（≥5 次举报自动隐藏，评论列表中过滤） */
+    @Column(name = "hidden")
+    private Boolean hidden = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -59,6 +66,8 @@ public class Comment {
     public void setVideo(String video) { this.video = video; }
     public Integer getLikes() { return likes; }
     public void setLikes(Integer likes) { this.likes = likes; }
+    public Boolean getHidden() { return hidden; }
+    public void setHidden(Boolean hidden) { this.hidden = hidden; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

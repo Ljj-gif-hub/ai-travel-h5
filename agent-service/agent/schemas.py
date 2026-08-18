@@ -44,6 +44,33 @@ class TravelRequest(BaseModel):
         return "，".join(parts)
 
 
+class RawPlanRequest(BaseModel):
+    """原始 SSE 端点（/api/agent/plan/stream-sse）的请求模型（S2）
+
+    兼容网关透传的最小字段集，带字段级约束：
+    destination 1-50 字、days 1-14（默认 3）、budget > 0 可选。
+    """
+    destination: str = Field(..., min_length=1, max_length=50, description="目的地城市")
+    days: int = Field(default=3, ge=1, le=14, description="出行天数")
+    budget: Optional[float] = Field(default=None, gt=0, description="人均预算（元），可选")
+    styles: Optional[List[str]] = Field(default=None, description="旅行偏好标签，可选")
+    companion: Optional[str] = Field(default=None, description="同行人群，可选")
+    user_id: Optional[str] = Field(default=None, description="用户ID（服务端以验证结果覆盖）")
+
+
+class PlanExportRequest(BaseModel):
+    """行程导出请求（iCalendar 等格式）。"""
+    plan: dict = Field(..., description="行程方案 JSON（完整 TripPlanOutput 结构）")
+    format: str = Field(default="ical", description="导出格式（当前仅支持 ical）")
+
+
+class FeedbackRequest(BaseModel):
+    """用户反馈（评分 + 文字意见 + 目的地）。"""
+    rating: int = Field(..., ge=1, le=5, description="评分 1-5")
+    comment: Optional[str] = Field(default="", description="文字反馈（可选）")
+    destination: Optional[str] = Field(default="", description="目的地（可选）")
+
+
 # ==================== 行程数据结构 ====================
 
 class TimeSlot(BaseModel):

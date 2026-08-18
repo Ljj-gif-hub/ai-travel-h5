@@ -9,7 +9,8 @@ server:
     include-stacktrace: never
     include-message: never
   tomcat:
-    max-http-form-post-size: 2GB
+    # 表单 POST 体上限 100MB（此前 2GB 可被超大表单打爆内存）
+    max-http-form-post-size: 100MB
 
 spring:
   application:
@@ -21,8 +22,9 @@ spring:
       force: true
   servlet:
     multipart:
-      max-file-size: 1GB
-      max-request-size: 2GB
+      # 单文件 50MB / 整请求 100MB（此前 1GB/2GB 可被超大上传打爆内存）
+      max-file-size: 50MB
+      max-request-size: 100MB
   datasource:
     url: ${DB_URL:jdbc:h2:file:./data/travel_plans;MODE=MySQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
     driver-class-name: ${DB_DRIVER:org.h2.Driver}
@@ -35,6 +37,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        # 【新功能】慢查询监控：>1000ms 的 SQL 打 warn（SqlTimingInspector）
+        session_factory:
+          statement_inspector: ${JPA_STATEMENT_INSPECTOR:org.example.traveljava.config.SqlTimingInspector}
     open-in-view: false
   data:
     redis:
@@ -72,19 +77,26 @@ app:
   # 限流是否信任反向代理注入的 X-Real-IP（仅当部署在受信代理后时置 true）
   rate-limit:
     trust-proxy: ${RATE_LIMIT_TRUST_PROXY:false}
+  # 【新功能】AI 用量每日配额（按用户，Redis 计数）
+  quota:
+    agent-daily: ${AI_QUOTA_AGENT_DAILY:20}
+    ai-daily: ${AI_QUOTA_DAILY:30}
+  # 【新功能】内容审核开关（默认关闭；开启后发帖/评论/笔记走 LLM 审核，LLM 异常时 fail-open）
+  moderation:
+    enabled: ${MODERATION_ENABLED:false}
   # 管理员账号（启动时自动创建，建议通过环境变量注入并修改默认密码）
   admin:
     username: ${ADMIN_USERNAME:admin}
     password: ${ADMIN_PASSWORD:admin123}
 
 # ================================================================
-# AI 多供应商配置（支持所�?OpenAI 兼容协议�?API�?
-# 切换供应商：修改 ai.active-provider 的值即�?
-# 添加新供应商：在 ai.providers 下新增一组配�?
+# AI 多供应商配置（支持所有 OpenAI 兼容协议的 API）
+# 切换供应商：修改 ai.active-provider 的值即可
+# 添加新供应商：在 ai.providers 下新增一组配置
 # ================================================================
 ai:
-  # 设为 auto 或不�?�?启动时自动扫描已配置�?API Key 来激活对应供应商
-  # 显式指定�?deepseek/openai/claude �?强制使用该供应商
+  # 设为 auto 或不填：启动时自动扫描已配置的 API Key 来激活对应供应商
+  # 显式指定：deepseek/openai/claude 则强制使用该供应商
   active-provider: ${AI_PROVIDER:auto}
   # ---- AI 图片生成（独立于LLM供应商） ----
   image:
@@ -124,7 +136,7 @@ ai:
       chat-path: /models/${GEMINI_MODEL:gemini-2.0-flash}:generateContent
       max-tokens: 4096
       temperature: 0.7
-    # ---- 自定�?代理 API（任何兼�?OpenAI 协议的接口） ----
+    # ---- 自定义代理 API（任何兼容 OpenAI 协议的接口） ----
     custom:
       api-key: ${CUSTOM_AI_KEY:}
       base-url: ${CUSTOM_AI_URL:https://apihub.agnes-ai.com/v1}
@@ -136,13 +148,15 @@ jwt:
   # JWT 签名密钥（必填，>=32 字符）。未设置时应用启动即失败（fail-closed）。
   secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:86400000}
+  # 刷新令牌有效期（Redis 存储，7 天），见 RefreshTokenService
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
 
 # ================================================================
-# 地图多供应商配置（百度地�?+ 高德地图 双API接入�?
-# 切换供应商：修改 map.provider 的值即�?
-#   baidu - 百度地图（默认）
-#   amap  - 高德地图
-#   auto  - 自动检测已配置�?Key 来激�?
+# 地图多供应商配置（百度地图 + 高德地图 双API接入）
+# 切换供应商：修改 map.provider 的值即可
+#   baidu - 百度地图
+#   amap  - 高德地图（默认）
+#   auto  - 自动检测已配置的 Key 来激活
 # ================================================================
 map:
   provider: ${MAP_PROVIDER:amap}
@@ -159,8 +173,10 @@ map:
 # ================================================================
 payment:
   provider: ${PAYMENT_PROVIDER:mock}
-  # 模拟支付确认端点（开发默认开启；生产 profile 强制关闭，防免单）
-  mock-pay-enabled: ${PAYMENT_MOCK_PAY_ENABLED:true}
+  # 模拟支付确认端点：默认关闭（防免单）。
+  # 本地调试需模拟支付时显式设置环境变量 PAYMENT_MOCK_PAY_ENABLED=true 开启；
+  # 生产 profile（application-prod.yml）强制 false 不受此默认值影响。
+  mock-pay-enabled: ${PAYMENT_MOCK_PAY_ENABLED:false}
   mock:
     secret: ${PAYMENT_MOCK_SECRET:dev-mock-secret}
   alipay:

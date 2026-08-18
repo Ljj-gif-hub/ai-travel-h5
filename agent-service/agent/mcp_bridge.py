@@ -11,6 +11,7 @@ MCP（Model Context Protocol）桥接 — 客户端 + 服务端
    供其他 MCP 客户端调用。
    - MCP_SERVER_ENABLED=true 随服务自启；或单独运行 python -m agent.mcp_server
    - 默认 streamable-http，端口 MCP_SERVER_PORT（默认 3202），端点 /mcp
+   - 默认只监听 127.0.0.1（本机）；对外暴露需显式 MCP_SERVER_HOST=0.0.0.0
 
 mcp / langchain-mcp-adapters 为可选依赖：未安装时优雅降级，不影响核心功能。
 """
@@ -19,11 +20,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import List, Optional, Tuple
 
 from .permissions import permission_manager
 
 logger = logging.getLogger("travel-agent.mcp")
+
+# MCP 服务端启动互斥锁（B6）：防并发调用 start_mcp_server 时 _started 标志竞态
+_mcp_start_lock = threading.Lock()
 
 
 # ==================== 可用性探测 ====================
@@ -119,7 +124,9 @@ def create_mcp_server():
                         calculate_budget as _cb_tool)
     from .knowledge import create_knowledge_provider
 
-    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+    # 默认只监听本机回环（S8）：MCP 端口不应默认暴露公网；
+    # 确需对外提供服务时显式设置 MCP_SERVER_HOST=0.0.0.0
+    host = os.getenv("MCP_SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_SERVER_PORT", "3202"))
     mcp = FastMCP(
         name="travel-agent",
@@ -165,18 +172,18 @@ def create_mcp_server():
 
 def start_mcp_server() -> None:
     """在后台线程启动 MCP 服务端（幂等；失败仅告警，不阻塞主服务）。"""
-    if getattr(start_mcp_server, "_started", False):
-        return
-    try:
-        server = create_mcp_server()
-        transport = os.getenv("MCP_SERVER_TRANSPORT", "streamable-http").strip().lower()
-        import threading
-        t = threading.Thread(target=server.run, kwargs={"transport": transport},
-                             daemon=True, name="mcp-server")
-        t.start()
-        start_mcp_server._started = True
-        logger.info("🚀 MCP 服务端已启动: transport=%s host=%s port=%s",
-                    transport, os.getenv("MCP_SERVER_HOST", "0.0.0.0"),
-                    os.getenv("MCP_SERVER_PORT", "3202"))
-    except Exception as e:  # noqa: BLE001
-        logger.warning("MCP 服务端启动失败（忽略）: %s", e)
+    with _mcp_start_lock:  # B6：启动标志的检查与设置放在锁内，防竞态
+        if getattr(start_mcp_server, "_started", False):
+            return
+        try:
+            server = create_mcp_server()
+            transport = os.getenv("MCP_SERVER_TRANSPORT", "streamable-http").strip().lower()
+            t = threading.Thread(target=server.run, kwargs={"transport": transport},
+                                 daemon=True, name="mcp-server")
+            t.start()
+            start_mcp_server._started = True
+            logger.info("🚀 MCP 服务端已启动: transport=%s host=%s port=%s",
+                        transport, os.getenv("MCP_SERVER_HOST", "127.0.0.1"),
+                        os.getenv("MCP_SERVER_PORT", "3202"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("MCP 服务端启动失败（忽略）: %s", e)

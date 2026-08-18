@@ -6,6 +6,9 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 sse-starlette>=2.1.0
 
+# 可选：gunicorn 多 worker 部署（A1；默认仍为单进程 uvicorn，见 gunicorn.conf.py）
+gunicorn>=21
+
 # LLM & Agent
 langchain>=0.3.0
 langchain-openai>=0.2.0
@@ -29,3 +32,6 @@ langchain-mcp-adapters>=0.3.1
 
 # JWT 鉴权（与后端共享密钥校验 Bearer Token，绑定 user_id）
 PyJWT>=2.8.0
+
+# 监控指标（GET /metrics Prometheus 抓取端点）
+prometheus_client>=0.20.0

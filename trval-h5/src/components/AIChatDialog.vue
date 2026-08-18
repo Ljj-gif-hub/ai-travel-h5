@@ -1,9 +1,10 @@
 <script setup>
-import { ref, nextTick, watch, computed } from 'vue'
+import { ref, nextTick, watch, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
 import { chatApi, planApi } from '../api'
+import { CHAT_SYSTEM_PROMPT } from '../constants/systemPrompts'
 import {
   getCurrentSessionId, getCurrentSessionMessages,
   saveCurrentSessionMessages, clearCurrentSession, createNewSession,
@@ -90,19 +91,20 @@ const renderMarkdown = (text) => (text ? md.render(preprocessMarkdown(text)) : '
 
 /* ==================== Quick Questions ==================== */
 // 用 computed：切换语言后快捷问题/引导项即时更新，而非 setup 期一次性求值
+// 正文 query 同样走 i18n，与 label 同步切换语言
 const quickQuestions = computed(() => [
-  { label: t('chat.quickCheaper'), query: '能否帮我调整成更省钱的方案？' },
-  { label: t('chat.quickFood'), query: '请多推荐一些当地必吃的美食' },
-  { label: t('chat.quickShorter'), query: '帮我压缩行程天数' },
-  { label: t('chat.quickFamily'), query: '帮我优化成适合带孩子的亲子游方案' },
+  { label: t('chat.quickCheaper'), query: t('chat.quickCheaperQuery') },
+  { label: t('chat.quickFood'), query: t('chat.quickFoodQuery') },
+  { label: t('chat.quickShorter'), query: t('chat.quickShorterQuery') },
+  { label: t('chat.quickFamily'), query: t('chat.quickFamilyQuery') },
 ])
 
 /* ==================== Guide Chips ==================== */
 const guideChips = computed(() => [
-  { label: t('chat.guideCouples'), query: '推荐几个适合情侣的国内旅游目的地' },
-  { label: t('chat.guideParents'), query: '带父母去哪里旅游比较合适？' },
-  { label: t('chat.guideBudget3000'), query: '预算3000元可以去哪里玩？' },
-  { label: t('chat.guideBeijing'), query: '推荐北京三日游攻略' },
+  { label: t('chat.guideCouples'), query: t('chat.guideCouplesQuery') },
+  { label: t('chat.guideParents'), query: t('chat.guideParentsQuery') },
+  { label: t('chat.guideBudget3000'), query: t('chat.guideBudget3000Query') },
+  { label: t('chat.guideBeijing'), query: t('chat.guideBeijingQuery') },
 ])
 
 /* ==================== Plan Detection ==================== */
@@ -217,6 +219,88 @@ const stopVoice = () => {
 /* ==================== Send Message (SSE Streaming) ==================== */
 let sendDebounce = false
 
+/* ==================== SSE 断线重连 ==================== */
+// 【注意】后端限流 20 次/分钟，重连退避间隔必须 ≥2s（2s / 4s，最多 2 次）
+const SSE_RECONNECT_DELAYS = [2000, 4000]
+const isReconnecting = ref(false)
+
+/**
+ * 流式对话 + 网络错误自动重连：
+ * - AbortError（主动取消/关闭弹层）→ 原样上抛，静默不提示
+ * - 网络错误 → 丢弃半截回复，退避后重新发送完整消息列表（后端重新生成）
+ * - 重连等待期间弹层关闭/组件卸载（abortController 被置 null）→ 中止，不复活
+ */
+const streamChatWithReconnect = async (chatHistory, aiMsgIndex) => {
+  let reconnectCount = 0
+  for (;;) {
+    abortController = new AbortController()
+    try {
+      const response = await chatApi.getChatStream([
+        {
+          role: 'system',
+          content: CHAT_SYSTEM_PROMPT,
+        },
+        ...chatHistory,
+      ], abortController.signal)
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let isDone = false
+
+      while (!isDone) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+        for (const evt of events) {
+          const trimmedEvt = evt.trim()
+          if (!trimmedEvt) continue
+          if (trimmedEvt === 'data: [DONE]' || trimmedEvt === 'data:[DONE]') {
+            isDone = true
+            break
+          }
+          if (!trimmedEvt.startsWith('data:')) continue
+          try {
+            const dataLines = trimmedEvt.split('\n')
+            // 所有行都保留：首行剥掉 data: 前缀，续行原样保留（含真实换行的分帧内容不再丢失）
+            let content = dataLines
+              .map((line) => line.replace(/^data:\s?/, ''))
+              .join('\n')
+            if (content && content !== '[DONE]' && content.trim().toLowerCase() !== 'null') {
+              if (isThinking.value) isThinking.value = false
+              // 防御：过滤可能残留的 "null" 分片
+              messages.value[aiMsgIndex].content += content
+              scrollToBottom()
+            }
+          } catch (e) {
+            /* skip malformed SSE lines */
+          }
+        }
+      }
+      return // 流正常结束
+    } catch (e) {
+      if (e?.name === 'AbortError') throw e // 主动取消，不重连
+      if (reconnectCount >= SSE_RECONNECT_DELAYS.length) throw e // 重连次数耗尽
+      const delay = SSE_RECONNECT_DELAYS[reconnectCount]
+      reconnectCount += 1
+      if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].content = '' // 丢弃半截回复，重发完整消息列表
+      isReconnecting.value = true
+      await new Promise((r) => setTimeout(r, delay))
+      isReconnecting.value = false
+      // 重连等待期间弹层关闭/卸载 → 中止，避免后台悄悄重连
+      if (!abortController) {
+        const err = new Error('aborted during reconnect wait')
+        err.name = 'AbortError'
+        throw err
+      }
+    }
+  }
+}
+
 const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || isSending.value) {
@@ -250,61 +334,17 @@ const sendMessage = async () => {
     .map((m) => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }))
 
   try {
-    abortController = new AbortController()
-    const response = await chatApi.getChatStream([
-      {
-        role: 'system',
-        content: `你是一个专业的旅游规划助手，擅长提供详细、实用的旅行建议。排版规范：Markdown语法标准，##/###后须有空格，-和1.后须有空格，使用**加粗**，禁止HTML标签。内容区块空一行，步骤用列表，表格仅用于费用汇总。标题只用##/###两级。`,
-      },
-      ...chatHistory,
-    ])
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let isDone = false
-
-    while (!isDone) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split('\n\n')
-      buffer = events.pop() || ''
-      for (const evt of events) {
-        const trimmedEvt = evt.trim()
-        if (!trimmedEvt) continue
-        if (trimmedEvt === 'data: [DONE]' || trimmedEvt === 'data:[DONE]') {
-          isDone = true
-          break
-        }
-        if (!trimmedEvt.startsWith('data:')) continue
-        try {
-          const dataLines = trimmedEvt.split('\n')
-          // 所有行都保留：首行剥掉 data: 前缀，续行原样保留（含真实换行的分帧内容不再丢失）
-          let content = dataLines
-            .map((line) => line.replace(/^data:\s?/, ''))
-            .join('\n')
-          if (content && content !== '[DONE]' && content.trim().toLowerCase() !== 'null') {
-            if (isThinking.value) isThinking.value = false
-            // 防御：过滤可能残留的 "null" 分片
-            messages.value[aiMsgIndex].content += content
-            scrollToBottom()
-          }
-        } catch (e) {
-          /* skip malformed SSE lines */
-        }
-      }
-    }
+    await streamChatWithReconnect(chatHistory, aiMsgIndex)
     if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
     isSending.value = false
     isThinking.value = false
     showQuickBar.value = true
   } catch (e) {
     if (e?.name === 'AbortError') return
+    if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
     isSending.value = false
     isThinking.value = false
+    isReconnecting.value = false
     showQuickBar.value = true
     showToast(t('chat.requestFailed'))
   }
@@ -380,6 +420,7 @@ const closeDialog = () => {
   stopVoice()
   isSending.value = false
   isThinking.value = false
+  isReconnecting.value = false
 }
 
 /* ==================== Init Messages ==================== */
@@ -449,12 +490,21 @@ watch(
       stopVoice()
       isSending.value = false
       isThinking.value = false
+      isReconnecting.value = false
     }
   }
 )
 
 // Initialize voice recognition on creation
 initSpeechRecognition()
+
+// 组件销毁时兜底中止：父组件直接卸载（未走 visible=false）时也要断开 SSE、停语音，
+// 防止流式写入已卸载组件的响应式状态、后台请求泄漏
+onBeforeUnmount(() => {
+  if (abortController) { abortController.abort(); abortController = null }
+  isReconnecting.value = false
+  stopVoice()
+})
 </script>
 
 <template>
@@ -472,16 +522,16 @@ initSpeechRecognition()
       <!-- ======== Header ======== -->
       <div class="dialog-header">
         <div class="header-left">
-          <button class="header-action-btn" @click="newConversation" :title="t('chat.newConversation')">
+          <button class="header-action-btn" @click="newConversation" :title="t('chat.newConversation')" :aria-label="t('chat.newConversation')">
             <van-icon name="add-o" size="18" color="#64748B" />
           </button>
         </div>
         <span class="header-title">{{ t('chat.assistantName') }}</span>
         <div class="header-right">
-          <button class="header-action-btn" @click="clearConversation" :title="t('chat.clearConversation')">
+          <button class="header-action-btn" @click="clearConversation" :title="t('chat.clearConversation')" :aria-label="t('chat.clearConversation')">
             <van-icon name="delete-o" size="18" color="#EF4444" />
           </button>
-          <van-icon name="cross" size="20" color="#64748B" class="header-close" @click="closeDialog" />
+          <van-icon name="cross" size="20" color="#64748B" class="header-close" role="button" :aria-label="t('chat.close')" @click="closeDialog" />
         </div>
       </div>
 
@@ -552,6 +602,10 @@ initSpeechRecognition()
 
       <!-- ======== Footer Input ======== -->
       <div class="chat-footer">
+        <!-- SSE reconnect hint -->
+        <div v-if="isReconnecting" class="reconnect-tip">
+          <van-loading size="14" color="#8B5CF6" />{{ t('chat.reconnecting') }}
+        </div>
         <!-- Quick chips bar -->
         <div v-if="showQuickBar && messages.length > 1" class="quick-bar">
           <button v-for="(q, i) in quickQuestions" :key="i" class="quick-chip" @click="sendQuickWithContext(q.label, q.query)">
@@ -562,7 +616,7 @@ initSpeechRecognition()
         <!-- Input row -->
         <div class="input-row">
           <div class="input-glass">
-            <button class="input-action" :class="{ listening: isListening }" @click="toggleVoiceInput">
+            <button class="input-action" :class="{ listening: isListening }" :aria-label="t('chat.voiceInput')" @click="toggleVoiceInput">
               <van-icon :name="isListening ? 'volume' : 'volume-o'" size="20" :color="isListening ? '#8B5CF6' : '#94A3B8'" />
             </button>
             <input
@@ -577,6 +631,7 @@ initSpeechRecognition()
               class="send-btn"
               :class="{ disabled: !inputText.trim() || isSending }"
               :disabled="!inputText.trim() || isSending"
+              :aria-label="t('chat.send')"
               @click="sendMessage"
             >
               <van-icon v-if="!isSending" name="arrow-up" size="20" color="#fff" />
@@ -987,6 +1042,12 @@ initSpeechRecognition()
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid rgba(139, 92, 246, 0.08);
   box-shadow: 0 -4px 20px rgba(139, 92, 246, 0.06);
+}
+
+/* SSE reconnect hint */
+.reconnect-tip {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; color: #8B5CF6; padding: 2px 0 6px;
 }
 
 /* Quick chips bar */

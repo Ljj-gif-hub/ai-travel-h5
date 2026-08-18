@@ -198,7 +198,6 @@ trval-h5/
 │   │   ├── auth.js                   # JWT Token 管理
 │   │   ├── chatSession.js            # 多账户聊天会话管理
 │   │   ├── security.js               # XSS 防护
-│   │   ├── streamRequest.js          # SSE 流式请求
 │   │   ├── tabBarHide.js             # Tab 栏全局显隐控制
 │   │   ├── userAccountStorage.js     # 多账户数据隔离
 │   │   ├── theme.js                  # 🆕 深色模式主题管理（跟随系统/手动）

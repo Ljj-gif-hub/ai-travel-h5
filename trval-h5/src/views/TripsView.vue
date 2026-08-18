@@ -4,10 +4,11 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
-import { planApi } from '../api'
+import { planApi, templateApi } from '../api'
 import { getHotDestinations, getNearbyAttractions } from '../api/destination'
 import EmptyState from '../components/EmptyState.vue'
 import AIChatDialog from '../components/AIChatDialog.vue'
+import LazyImage from '../components/LazyImage.vue'
 
 defineOptions({ name: 'TripsView' })
 
@@ -255,10 +256,66 @@ const goDestinationDetail = (city) => { if (!city) return; router.push(`/destina
 const goAttraction = (name) => { if (!name) return; router.push(`/destination-detail?city=${encodeURIComponent(name)}`) }
 const handleMoreAction = (action) => { showMoreMenu.value = false; showToast(t('trips.featureWip')) }
 
-onMounted(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages() } })
-onActivated(() => { loadCityImageMap(); if (getToken()) { loadTrips(); loadCityGuides(); startCarousel() } })
+/* ==================== 行程模板（新功能） ==================== */
+const templates = ref([])
+const templatesLoading = ref(false)
+const templatesError = ref(false)
+const instantiatingId = ref(null)
+
+const loadTemplates = async () => {
+  templatesLoading.value = true
+  templatesError.value = false
+  try {
+    const res = await templateApi.getMarket({ page: 0, size: 3 })
+    if (res.code === 0) templates.value = res.data?.list || []
+    else templates.value = []
+  } catch (e) { templates.value = []; templatesError.value = true }
+  finally { templatesLoading.value = false }
+}
+
+const templateTags = (tmpl) => (tmpl.tags || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 3)
+
+const templateMeta = (tmpl) => {
+  const parts = []
+  if (tmpl.days) parts.push(t('trips.totalDays', { days: tmpl.days }))
+  if (tmpl.budget) parts.push(t('trips.templateBudget', { budget: tmpl.budget }))
+  if (tmpl.people) parts.push(t('trips.templatePeople', { people: tmpl.people }))
+  return parts.join(' · ')
+}
+
+const useTemplate = async (tmpl) => {
+  if (instantiatingId.value) return
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return }
+  try {
+    await showConfirmDialog({
+      title: t('trips.templateConfirmTitle'),
+      message: t('trips.templateConfirmMsg', { name: tmpl.name }),
+      confirmButtonText: t('trips.useTemplate'),
+      cancelButtonText: t('common.cancel'),
+    })
+  } catch (e) { return } // 取消
+  instantiatingId.value = tmpl.id
+  try {
+    const res = await templateApi.instantiate(tmpl.id)
+    if (res.code === 0 && res.data?.planId) {
+      showToast(t('trips.templateUsed'))
+      // 与本地行程一致：跳转行程地图页查看新行程
+      router.push({ path: '/agent-map', query: { savedPlanId: res.data.planId } })
+    } else {
+      showToast(res.message || t('trips.templateUseFailed'))
+    }
+  } catch (e) { showToast(t('trips.templateUseFailed')) }
+  finally { instantiatingId.value = null }
+}
+
+onMounted(() => { loadCityImageMap(); loadTemplates(); if (getToken()) { loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages() } })
+onActivated(() => { loadCityImageMap(); loadTemplates(); if (getToken()) { loadTrips(); loadCityGuides(); startCarousel() } })
 onDeactivated(() => { isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel(); if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null } })
-onUnmounted(() => { stopCarousel() })
+onUnmounted(() => {
+  stopCarousel()
+  if (nearbyMapInstance.value) { try { nearbyMapInstance.value.destroy() } catch (e) {}; nearbyMapInstance.value = null }
+  if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null }
+})
 </script>
 
 <template>
@@ -349,9 +406,41 @@ onUnmounted(() => { stopCarousel() })
           </div>
         </div>
 
-        <div class="templates-section" v-if="!hasTrips && hotDestinations.length > 0">
-          <div class="sec-head"><span class="sec-title">{{ t('trips.hotDestinations') }}</span></div>
-          <div class="quick-tags"><span v-for="dest in hotDestinations" :key="dest.name" class="quick-tag" @click="openAIChat({ destination: dest.name, budget: '', days: '' })">{{ dest.name }}</span></div>
+        <!-- 行程模板市场（新功能） -->
+        <div class="templates-section" v-if="templates.length > 0 || (!hasTrips && hotDestinations.length > 0)">
+          <div class="sec-head"><span class="sec-title">{{ t('trips.tripTemplates') }}</span><span class="sec-guide-label">{{ t('trips.templateSlogan') }}</span></div>
+          <div v-if="templatesLoading" class="template-skeleton">
+            <div v-for="i in 2" :key="i" class="template-card-skeleton"><div class="sk-thumb" /><div class="sk-lines"><div class="sk-line" /><div class="sk-line sk-line--short" /></div></div>
+          </div>
+          <div v-else-if="templates.length > 0" class="template-list">
+            <div v-for="tmpl in templates" :key="tmpl.id" class="template-card">
+              <div class="template-cover">
+                <LazyImage v-if="tmpl.coverImage" :src="tmpl.coverImage" :alt="tmpl.name" class="template-cover-img" />
+                <div v-else class="template-cover-fallback"><van-icon name="photo-o" size="22" color="rgba(139,92,246,0.4)" /></div>
+              </div>
+              <div class="template-info">
+                <div class="template-name">{{ tmpl.name }}</div>
+                <div class="template-dest"><van-icon name="location-o" size="11" /> {{ tmpl.destination }}</div>
+                <div class="template-meta">{{ templateMeta(tmpl) }}</div>
+                <div class="template-tags" v-if="templateTags(tmpl).length">
+                  <span v-for="tag in templateTags(tmpl)" :key="tag" class="template-tag">#{{ tag }}</span>
+                </div>
+                <div class="template-bottom">
+                  <span class="template-downloads">{{ t('trips.templateDownloads', { n: tmpl.downloads || 0 }) }}</span>
+                  <button class="template-use-btn btn-tap-scale" :disabled="instantiatingId === tmpl.id" @click="useTemplate(tmpl)">
+                    <van-loading v-if="instantiatingId === tmpl.id" size="12" color="#fff" />
+                    <span v-else>{{ t('trips.useTemplate') }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="templatesError" class="template-fail"><span>{{ t('trips.templateLoadFailed') }}</span><span class="link" @click="loadTemplates">{{ t('common.tryAgain') }}</span></div>
+
+          <template v-if="!hasTrips && hotDestinations.length > 0">
+            <div class="sec-head hot-head"><span class="sec-title">{{ t('trips.hotDestinations') }}</span></div>
+            <div class="quick-tags"><span v-for="dest in hotDestinations" :key="dest.name" class="quick-tag" @click="openAIChat({ destination: dest.name, budget: '', days: '' })">{{ dest.name }}</span></div>
+          </template>
         </div>
 
         <div v-if="hasTrips" class="trips-list-section">
@@ -503,6 +592,48 @@ onUnmounted(() => { stopCarousel() })
 .guide-card-meta { font-size:11px; color:#F59E0B; margin-top:2px; }
 
 .templates-section { margin-bottom:18px; }
+
+/* ==================== 行程模板卡片（新功能） ==================== */
+.template-list { display:flex; flex-direction:column; gap:10px; }
+.template-card {
+  display:flex; gap:12px; padding:12px;
+  background:linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.55);
+  backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%);
+  border-radius:16px; border:1px solid rgba(255,255,255,0.6);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 2px 10px rgba(0,0,0,0.03);
+  transition:transform 0.2s;
+}
+.template-card:active { transform:scale(0.985); }
+.template-cover { width:84px; height:84px; border-radius:12px; overflow:hidden; flex-shrink:0; position:relative; background:rgba(139,92,246,0.06); }
+.template-cover-img { width:100%; height:100%; object-fit:cover; display:block; }
+.template-cover-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.template-info { flex:1; min-width:0; display:flex; flex-direction:column; }
+.template-name { font-size:15px; font-weight:700; color:var(--text-primary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.template-dest { font-size:12px; color:#8B5CF6; display:flex; align-items:center; gap:2px; margin-top:2px; }
+.template-meta { font-size:11px; color:var(--text-hint); margin-top:3px; }
+.template-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.template-tag { font-size:10px; color:#64748b; background:rgba(139,92,246,0.07); padding:1px 8px; border-radius:8px; }
+.template-bottom { display:flex; align-items:center; justify-content:space-between; margin-top:auto; padding-top:6px; }
+.template-downloads { font-size:11px; color:#94a3b8; }
+.template-use-btn {
+  display:flex; align-items:center; justify-content:center; gap:4px;
+  min-width:92px; padding:6px 12px; border:none; border-radius:16px;
+  background:linear-gradient(135deg, #8B5CF6, #6366F1); color:#fff;
+  font-size:12px; font-weight:600; cursor:pointer;
+  box-shadow:0 4px 12px rgba(139,92,246,0.25); transition:all 0.2s;
+}
+.template-use-btn:active { transform:scale(0.95); }
+.template-use-btn:disabled { opacity:0.7; }
+.template-fail { display:flex; align-items:center; gap:8px; padding:14px 4px; font-size:13px; color:#94a3b8; }
+.template-fail .link { color:#8B5CF6; cursor:pointer; font-size:12px; }
+.template-skeleton { display:flex; flex-direction:column; gap:10px; }
+.template-card-skeleton { display:flex; gap:12px; padding:12px; background:rgba(255,255,255,0.5); border-radius:16px; animation:shimmer 1.8s ease-in-out infinite; }
+.sk-thumb { width:84px; height:84px; border-radius:12px; background:#eee; flex-shrink:0; }
+.sk-lines { flex:1; display:flex; flex-direction:column; gap:10px; justify-content:center; }
+.sk-line { height:14px; border-radius:4px; background:#eee; width:80%; }
+.sk-line--short { width:50%; }
+.hot-head { margin-top:16px; }
+
 .quick-tags { display:flex; flex-wrap:wrap; gap:10px; }
 .quick-tag { padding:9px 16px; background:linear-gradient(160deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.55); backdrop-filter:blur(10px) saturate(150%); -webkit-backdrop-filter:blur(10px) saturate(150%); border-radius:20px; font-size:13px; color:#7C3AED; cursor:pointer; border:1px solid rgba(255,255,255,0.55); box-shadow:inset 0 1px 0 rgba(255,255,255,0.55); transition:all 0.2s; font-weight:500; }
 .quick-tag:active { background:#faf5ff; border-color:#C4B5FD; transform:scale(0.95); }

@@ -2,7 +2,6 @@ package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Comment;
 import org.example.traveljava.entity.CommentLike;
-import org.example.traveljava.entity.Note;
 import org.example.traveljava.repository.CommentLikeRepository;
 import org.example.traveljava.repository.CommentRepository;
 import org.example.traveljava.repository.NoteRepository;
@@ -13,8 +12,12 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class CommentService {
@@ -24,22 +27,34 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final CommentLikeRepository commentLikeRepository;
     private final NoteRepository noteRepository;
+    private final UserService userService;
+    private final ContentModerationService moderationService;
 
     public CommentService(CommentRepository commentRepository, CommentLikeRepository commentLikeRepository,
-                          NoteRepository noteRepository) {
+                          NoteRepository noteRepository, UserService userService,
+                          ContentModerationService moderationService) {
         this.commentRepository = commentRepository;
         this.commentLikeRepository = commentLikeRepository;
         this.noteRepository = noteRepository;
+        this.userService = userService;
+        this.moderationService = moderationService;
     }
 
     /** 获取顶级评论列表（不含回复） */
     public List<Comment> getComments(Long noteId) {
-        return commentRepository.findByNoteIdAndParentIdIsNullOrderByCreatedAtAsc(noteId);
+        return getComments(noteId, 0, 20);
     }
 
-    /** 获取某条评论的所有回复，按点赞降序 */
+    /** 分页获取顶级评论（page 从 0 开始，修复全表加载；过滤被举报隐藏） */
+    public List<Comment> getComments(Long noteId, int page, int size) {
+        return commentRepository.findByNoteIdAndParentIdIsNullAndHiddenFalseOrderByCreatedAtAsc(noteId,
+                org.springframework.data.domain.PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                .getContent();
+    }
+
+    /** 获取某条评论的所有回复，按点赞降序（过滤被举报隐藏） */
     public List<Comment> getReplies(Long parentId) {
-        return commentRepository.findByParentIdOrderByLikesDescCreatedAtAsc(parentId);
+        return commentRepository.findByParentIdAndHiddenFalseOrderByLikesDescCreatedAtAsc(parentId);
     }
 
     /** 获取点赞最多的那条回复（抖音风格：默认只展示一条热评回复） */
@@ -51,6 +66,29 @@ public class CommentService {
     /** 某条评论的回复总数 */
     public int getReplyCount(Long parentId) {
         return commentRepository.countByParentId(parentId);
+    }
+
+    /** 批量获取多条评论的回复数（一次 GROUP BY 查询，避免 N+1） */
+    public Map<Long, Integer> getReplyCounts(List<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return commentRepository.countRepliesByParentIds(parentIds).stream()
+                .collect(Collectors.toMap(
+                        row -> ((Number) row[0]).longValue(),
+                        row -> ((Number) row[1]).intValue()));
+    }
+
+    /** 批量获取每条评论点赞最多的那条热评回复（一次 IN 查询，避免 N+1） */
+    public Map<Long, Comment> getTopReplies(List<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Comment> top = new HashMap<>();
+        for (Comment reply : commentRepository.findByParentIdInOrderByLikesDescCreatedAtAsc(parentIds)) {
+            top.putIfAbsent(reply.getParentId(), reply); // 按点赞降序，首个即热评
+        }
+        return top;
     }
 
     public int getCommentCount(Long noteId) {
@@ -75,7 +113,7 @@ public class CommentService {
         }
 
         // 验证游记存在
-        Note note = noteRepository.findById(noteId)
+        noteRepository.findById(noteId)
                 .orElseThrow(() -> new IllegalArgumentException("游记不存在"));
 
         // 如果是回复，验证父评论存在且属于同一篇游记（防止跨笔记孤儿回复）
@@ -96,11 +134,19 @@ public class CommentService {
         comment.setVideo(video);
         comment.setLikes(0);
 
+        // 【新功能】内容审核（开关控制，LLM 失败 fail-open）
+        ContentModerationService.ModerationResult m = moderationService.check(comment.getContent());
+        if (!m.isSafe()) {
+            throw new IllegalArgumentException("内容包含违规信息，请修改后重试");
+        }
+
         Comment saved = commentRepository.save(comment);
 
-        // 同步更新游记评论数（包含回复）
-        note.setComments(commentRepository.countByNoteId(noteId));
-        noteRepository.save(note);
+        // 【并发安全】同步更新游记评论数（包含回复）：原子 +1，不再 count()+save() 读改写
+        noteRepository.adjustComments(noteId, 1);
+
+        // 【新功能】发评论 +2 积分
+        userService.addPoints(userId, 2);
 
         log.info("添加{}：noteId={}, userId={}, parentId={}, hasImage={}, hasVideo={}",
                 parentId == null ? "评论" : "回复", noteId, userId, parentId, hasImage, hasVideo);
@@ -119,11 +165,8 @@ public class CommentService {
         Long noteId = comment.getNoteId();
         commentRepository.delete(comment);
 
-        // 同步更新游记评论数（包含回复）
-        noteRepository.findById(noteId).ifPresent(note -> {
-            note.setComments(commentRepository.countByNoteId(noteId));
-            noteRepository.save(note);
-        });
+        // 【并发安全】同步更新游记评论数（包含回复）：原子 -1（comments>=0 条件下不会减成负数）
+        noteRepository.adjustComments(noteId, -1);
 
         log.info("删除评论：commentId={}, userId={}", commentId, userId);
     }

@@ -4,6 +4,7 @@ import org.example.traveljava.entity.Favorite;
 import org.example.traveljava.repository.FavoriteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,11 +23,22 @@ public class FavoriteService {
     }
 
     public List<Favorite> getFavorites(Long userId) {
-        return favoriteRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return getFavorites(userId, 0, 20);
+    }
+
+    /** 分页获取（page 从 0 开始，修复全表加载） */
+    public List<Favorite> getFavorites(Long userId, int page, int size) {
+        return favoriteRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                .getContent();
     }
 
     public List<Favorite> getFavoritesByType(Long userId, String type) {
-        return favoriteRepository.findByUserIdAndTargetTypeOrderByCreatedAtDesc(userId, type);
+        return getFavoritesByType(userId, type, 0, 20);
+    }
+
+    public List<Favorite> getFavoritesByType(Long userId, String type, int page, int size) {
+        return favoriteRepository.findByUserIdAndTargetTypeOrderByCreatedAtDesc(userId, type, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))
+                .getContent();
     }
 
     public int getFavoriteCount(Long userId) {

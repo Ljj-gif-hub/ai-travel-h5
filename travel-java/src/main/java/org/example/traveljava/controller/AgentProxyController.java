@@ -8,13 +8,24 @@ import org.example.traveljava.util.JwtUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
+import io.netty.channel.ChannelOption;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Agent 微服务透传代理
@@ -47,12 +58,55 @@ public class AgentProxyController {
     @Value("${app.agent.api-key:}")
     private String agentApiKey;
 
-    public AgentProxyController(ObjectMapper objectMapper, JwtUtil jwtUtil) {
+    public AgentProxyController(ObjectMapper objectMapper, JwtUtil jwtUtil, WebClient.Builder webClientBuilder) {
         this.objectMapper = objectMapper;
         this.jwtUtil = jwtUtil;
-        this.agentWebClient = WebClient.builder()
+        // 注入 Spring 托管的 WebClient.Builder：自带连接池 + 连接超时。
+        // 不设全局响应超时——SSE 长流会被它掐断；同步调用在各请求上单独 .timeout()。
+        HttpClient httpClient = HttpClient.create(ConnectionProvider.builder("agent-pool")
+                        .maxConnections(50)
+                        .pendingAcquireMaxCount(100)
+                        .pendingAcquireTimeout(Duration.ofSeconds(10))
+                        .build())
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000);
+        this.agentWebClient = webClientBuilder
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024)) // 10MB
                 .build();
+    }
+
+    /**
+     * 用共享密钥对 userId 做 HMAC-SHA256 签名（hex），Agent 端据此绑定用户身份，
+     * 防伪造 user_id 越权读写他人长期记忆。
+     */
+    private static String hmacUserSig(String key, String userId) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(userId.getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HMAC 签名失败", e);
+        }
+    }
+
+    /**
+     * 透传请求的鉴权头：
+     * - 配置了共享密钥：附加 X-Agent-Key + HMAC 用户绑定（X-User-Id/X-User-Sig），
+     *   不透传用户 JWT（用户身份由本服务校验后以签名形式重新签发）。
+     * - 未配置共享密钥：回退透传原 Authorization，由 Agent 端自行校验 JWT。
+     */
+    private Consumer<HttpHeaders> agentAuthHeaders(String authHeader, Long userId) {
+        return headers -> {
+            if (agentApiKey != null && !agentApiKey.isBlank()) {
+                headers.set("X-Agent-Key", agentApiKey);
+                if (userId != null) {
+                    headers.set("X-User-Id", String.valueOf(userId));
+                    headers.set("X-User-Sig", hmacUserSig(agentApiKey, String.valueOf(userId)));
+                }
+            } else if (authHeader != null && !authHeader.isBlank()) {
+                headers.set("Authorization", authHeader);
+            }
+        };
     }
 
     /**
@@ -89,16 +143,13 @@ public class AgentProxyController {
     @RateLimit(max = 20, duration = 60, key = "agent_plan")
     public Map<String, Object> generatePlanSync(@RequestHeader("Authorization") String authHeader,
                                                 @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         log.info("Agent 同步规划: {}", body.getOrDefault("destination", "unknown"));
 
         try {
             String response = agentWebClient.post()
                     .uri(agentServiceUrl + "/api/agent/plan")
-                    .headers(h -> {
-                        if (agentApiKey != null && !agentApiKey.isBlank()) h.set("X-Agent-Key", agentApiKey);
-                        if (authHeader != null && !authHeader.isBlank()) h.set("Authorization", authHeader);
-                    })
+                    .headers(agentAuthHeaders(authHeader, userId))
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(body)
                     .retrieve()
@@ -131,7 +182,7 @@ public class AgentProxyController {
     public Flux<String> generatePlanStream(@RequestHeader("Authorization") String authHeader,
                                            @RequestBody Map<String, Object> body,
                                            HttpServletResponse response) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String dest = (String) body.getOrDefault("destination", "unknown");
         log.info("Agent SSE 流式规划: {}", dest);
 
@@ -142,10 +193,7 @@ public class AgentProxyController {
         try {
             return agentWebClient.post()
                     .uri(agentServiceUrl + "/api/agent/plan/stream-sse")
-                    .headers(h -> {
-                        if (agentApiKey != null && !agentApiKey.isBlank()) h.set("X-Agent-Key", agentApiKey);
-                        if (authHeader != null && !authHeader.isBlank()) h.set("Authorization", authHeader);
-                    })
+                    .headers(agentAuthHeaders(authHeader, userId))
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(body)
                     .accept(MediaType.TEXT_EVENT_STREAM)

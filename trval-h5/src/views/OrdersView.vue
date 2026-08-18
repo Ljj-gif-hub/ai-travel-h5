@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
-import { orderApi, paymentApi } from '../api'
+import { orderApi, paymentApi, refundApi, invoiceApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
@@ -97,6 +97,101 @@ const getStatusColor = (status) => {
   return map[status] || '#6b7280'
 }
 
+/* ==================== 退款（新功能） ==================== */
+const showRefundPopup = ref(false)
+const refundForm = ref({ orderId: null, reason: '' })
+const refundSubmitting = ref(false)
+
+const openRefund = (order) => {
+  refundForm.value = { orderId: order.id, reason: '' }
+  showRefundPopup.value = true
+}
+
+const submitRefund = async () => {
+  if (refundSubmitting.value) return
+  refundSubmitting.value = true
+  try {
+    const res = await refundApi.requestRefund(refundForm.value.orderId, refundForm.value.reason.trim() || null)
+    if (res.code === 0) {
+      showRefundPopup.value = false
+      showToast(t('orders.refundSuccess'))
+    } else {
+      showToast(res.message || t('orders.refundFail'))
+    }
+  } catch (error) { showToast(t('orders.refundFail')) }
+  finally { refundSubmitting.value = false }
+}
+
+const showRefundsPopup = ref(false)
+const refunds = ref([])
+const loadingRefunds = ref(false)
+
+const loadRefunds = async () => {
+  loadingRefunds.value = true
+  try {
+    const res = await refundApi.getMyRefunds()
+    if (res.code === 0) refunds.value = res.data || []
+    else refunds.value = []
+  } catch (error) { refunds.value = [] }
+  finally { loadingRefunds.value = false }
+}
+
+const openRefunds = () => { showRefundsPopup.value = true; loadRefunds() }
+
+const getRefundStatusText = (s) => ({ pending: t('orders.refundPending'), refunded: t('orders.refunded'), rejected: t('orders.refundRejected') }[s] || s)
+const getRefundStatusColor = (s) => ({ pending: '#f59e0b', refunded: '#22c55e', rejected: '#ef4444' }[s] || '#6b7280')
+
+/* ==================== 发票（新功能） ==================== */
+const showInvoicePopup = ref(false)
+const invoiceForm = ref({ orderId: null, title: '', taxNo: '', type: 'personal' })
+const invoiceSubmitting = ref(false)
+
+const openInvoice = (order) => {
+  invoiceForm.value = { orderId: order.id, title: '', taxNo: '', type: 'personal' }
+  showInvoicePopup.value = true
+}
+
+const submitInvoice = async () => {
+  if (invoiceSubmitting.value) return
+  if (!invoiceForm.value.title.trim()) { showToast(t('orders.invoiceTitleRequired')); return }
+  if (invoiceForm.value.type === 'company' && !invoiceForm.value.taxNo.trim()) { showToast(t('orders.invoiceTaxNoRequired')); return }
+  invoiceSubmitting.value = true
+  try {
+    const res = await invoiceApi.issueInvoice(invoiceForm.value.orderId, {
+      title: invoiceForm.value.title.trim(),
+      taxNo: invoiceForm.value.taxNo.trim() || null,
+      type: invoiceForm.value.type,
+    })
+    if (res.code === 0) {
+      showInvoicePopup.value = false
+      showToast(t('orders.invoiceSuccess'))
+    } else {
+      showToast(res.message || t('orders.invoiceFail'))
+    }
+  } catch (error) { showToast(t('orders.invoiceFail')) }
+  finally { invoiceSubmitting.value = false }
+}
+
+const showInvoicesPopup = ref(false)
+const invoices = ref([])
+const loadingInvoices = ref(false)
+
+const loadInvoices = async () => {
+  loadingInvoices.value = true
+  try {
+    const res = await invoiceApi.getMyInvoices()
+    if (res.code === 0) invoices.value = res.data || []
+    else invoices.value = []
+  } catch (error) { invoices.value = [] }
+  finally { loadingInvoices.value = false }
+}
+
+const openInvoices = () => { showInvoicesPopup.value = true; loadInvoices() }
+
+const getInvoiceTypeText = (type) => (type === 'company' ? t('orders.invoiceTypeCompany') : t('orders.invoiceTypePersonal'))
+/** 后端 LocalDateTime → 'YYYY-MM-DD HH:mm' */
+const formatDateTime = (s) => (s ? String(s).replace('T', ' ').slice(0, 16) : '')
+
 /* ==================== 引导跳转 ==================== */
 const handleGoExplore = () => {
   router.push('/') // 跳转首页
@@ -107,7 +202,14 @@ onMounted(() => {
 })
 
 /* 【性能优化】离开时清理状态 */
-onDeactivated(() => { isLoading.value = false; loadError.value = false })
+onDeactivated(() => {
+  isLoading.value = false
+  loadError.value = false
+  showRefundPopup.value = false
+  showRefundsPopup.value = false
+  showInvoicePopup.value = false
+  showInvoicesPopup.value = false
+})
 </script>
 
 <template>
@@ -123,6 +225,12 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
         :class="['filter-tab', { active: activeTab === tab.key }]"
         @click="handleTabChange(tab.key)"
       >{{ t(`orders.${tab.nameKey}`) }}</button>
+    </div>
+
+    <!-- 售后入口：我的退款 / 我的发票 -->
+    <div class="after-sales-row">
+      <span class="after-sales-link" @click="openRefunds"><van-icon name="gold-coin-o" size="13" /> {{ t('orders.myRefunds') }}</span>
+      <span class="after-sales-link" @click="openInvoices"><van-icon name="description" size="13" /> {{ t('orders.myInvoices') }}</span>
     </div>
 
     <div class="page-content">
@@ -188,6 +296,8 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
                 <div class="order-actions">
                   <van-button v-if="order.status === 'pending'" size="small" class="pay-btn" @click="handlePay(order)">{{ t('orders.payNow') }}</van-button>
                   <van-button v-if="order.status === 'pending'" size="small" plain type="danger" class="cancel-btn" @click="handleCancel(order)">{{ t('orders.cancelOrder') }}</van-button>
+                  <van-button v-if="order.status === 'paid' || order.status === 'completed'" size="small" plain class="invoice-btn" @click="openInvoice(order)">{{ t('orders.invoice') }}</van-button>
+                  <van-button v-if="order.status === 'paid' || order.status === 'completed'" size="small" plain class="refund-btn" @click="openRefund(order)">{{ t('orders.applyRefund') }}</van-button>
                 </div>
               </div>
             </div>
@@ -195,6 +305,94 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
         </div>
       </transition>
     </div>
+
+    <!-- ==================== 申请退款弹窗 ==================== -->
+    <van-popup v-model:show="showRefundPopup" position="bottom" round safe-area-inset-bottom>
+      <div class="aftersale-pop">
+        <div class="pop-header"><span class="pop-title">{{ t('orders.applyRefund') }}</span><van-icon name="cross" size="18" color="#94a3b8" @click="showRefundPopup = false" /></div>
+        <div class="pop-body">
+          <van-field
+            v-model="refundForm.reason"
+            type="textarea"
+            rows="3"
+            maxlength="200"
+            :label="t('orders.refundReason')"
+            :placeholder="t('orders.refundReasonPlaceholder')"
+          />
+          <van-button block round class="pop-submit" :loading="refundSubmitting" @click="submitRefund">
+            {{ refundSubmitting ? t('orders.refundSubmitting') : t('orders.refundSubmit') }}
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- ==================== 我的退款列表 ==================== -->
+    <van-popup v-model:show="showRefundsPopup" position="bottom" :style="{ height: '70%' }" round safe-area-inset-bottom>
+      <div class="aftersale-list-pop">
+        <div class="pop-header"><span class="pop-title">{{ t('orders.myRefunds') }}</span><van-icon name="cross" size="18" color="#94a3b8" @click="showRefundsPopup = false" /></div>
+        <div class="pop-list-body">
+          <EmptyState
+            v-if="!loadingRefunds && refunds.length === 0"
+            icon="gold-coin-o"
+            :title="t('orders.noRefunds')"
+          />
+          <div v-else class="aftersale-list">
+            <div v-for="r in refunds" :key="r.id" class="aftersale-card">
+              <div class="aftersale-card-top">
+                <span class="aftersale-amount">¥{{ r.amount }}</span>
+                <span class="aftersale-status" :style="{ color: getRefundStatusColor(r.status) }">{{ getRefundStatusText(r.status) }}</span>
+              </div>
+              <div class="aftersale-meta">{{ t('orders.orderNo') }}：{{ r.orderId }}</div>
+              <div v-if="r.reason" class="aftersale-reason">{{ t('orders.refundReason') }}：{{ r.reason }}</div>
+              <div class="aftersale-time">{{ t('orders.refundTime') }}：{{ formatDateTime(r.createdAt) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- ==================== 开发票弹窗 ==================== -->
+    <van-popup v-model:show="showInvoicePopup" position="bottom" round safe-area-inset-bottom>
+      <div class="aftersale-pop">
+        <div class="pop-header"><span class="pop-title">{{ t('orders.invoice') }}</span><van-icon name="cross" size="18" color="#94a3b8" @click="showInvoicePopup = false" /></div>
+        <div class="pop-body">
+          <van-radio-group v-model="invoiceForm.type" direction="horizontal" class="invoice-type-row">
+            <van-radio name="personal">{{ t('orders.invoiceTypePersonal') }}</van-radio>
+            <van-radio name="company">{{ t('orders.invoiceTypeCompany') }}</van-radio>
+          </van-radio-group>
+          <van-field v-model="invoiceForm.title" :label="t('orders.invoiceTitle')" :placeholder="t('orders.invoiceTitlePlaceholder')" maxlength="200" />
+          <van-field v-model="invoiceForm.taxNo" :label="t('orders.invoiceTaxNo')" :placeholder="t('orders.invoiceTaxNoPlaceholder')" maxlength="50" />
+          <van-button block round class="pop-submit" :loading="invoiceSubmitting" @click="submitInvoice">
+            {{ invoiceSubmitting ? t('orders.invoiceSubmitting') : t('orders.invoiceSubmit') }}
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- ==================== 我的发票列表 ==================== -->
+    <van-popup v-model:show="showInvoicesPopup" position="bottom" :style="{ height: '70%' }" round safe-area-inset-bottom>
+      <div class="aftersale-list-pop">
+        <div class="pop-header"><span class="pop-title">{{ t('orders.myInvoices') }}</span><van-icon name="cross" size="18" color="#94a3b8" @click="showInvoicesPopup = false" /></div>
+        <div class="pop-list-body">
+          <EmptyState
+            v-if="!loadingInvoices && invoices.length === 0"
+            icon="description"
+            :title="t('orders.noInvoices')"
+          />
+          <div v-else class="aftersale-list">
+            <div v-for="inv in invoices" :key="inv.id" class="aftersale-card">
+              <div class="aftersale-card-top">
+                <span class="aftersale-amount">¥{{ inv.amount }}</span>
+                <span class="invoice-type-tag">{{ getInvoiceTypeText(inv.type) }}</span>
+              </div>
+              <div class="aftersale-meta">{{ t('orders.invoiceNo') }}：{{ inv.invoiceNo }}</div>
+              <div class="aftersale-meta">{{ t('orders.invoiceTitle') }}：{{ inv.title }}<span v-if="inv.taxNo">（{{ inv.taxNo }}）</span></div>
+              <div class="aftersale-time">{{ t('orders.invoiceTime') }}：{{ formatDateTime(inv.createdAt) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -377,4 +575,98 @@ onDeactivated(() => { isLoading.value = false; loadError.value = false })
   border: 1.5px solid #FECACA !important;
   background: #fff !important;
 }
+.invoice-btn {
+  border-radius: 16px !important;
+  color: #3B82F6 !important;
+  border: 1.5px solid #BFDBFE !important;
+  background: #fff !important;
+}
+.refund-btn {
+  border-radius: 16px !important;
+  color: #F59E0B !important;
+  border: 1.5px solid #FDE68A !important;
+  background: #fff !important;
+}
+
+/* ==================== 售后入口 / 弹窗（新功能） ==================== */
+.after-sales-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 0 20px 2px;
+}
+.after-sales-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #7C3AED;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.after-sales-link:active { opacity: 0.6; }
+
+.aftersale-pop {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.pop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid #F1F5F9;
+}
+.pop-title { font-size: 17px; font-weight: 700; color: #1e293b; }
+.pop-body { padding: 16px 20px 8px; }
+.pop-submit {
+  margin-top: 16px;
+  background: linear-gradient(135deg, #8B5CF6, #6366F1) !important;
+  border: none !important;
+  color: #fff !important;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25);
+}
+.invoice-type-row { display: flex; gap: 24px; margin-bottom: 8px; padding: 0 4px; }
+
+.aftersale-list-pop {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f8f7fc;
+  border-radius: 20px 20px 0 0;
+}
+.pop-list-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.aftersale-list { display: flex; flex-direction: column; gap: 10px; }
+.aftersale-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+.aftersale-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.aftersale-amount { font-size: 16px; font-weight: 700; color: #7C3AED; }
+.aftersale-status { font-size: 13px; font-weight: 600; }
+.invoice-type-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
+}
+.aftersale-meta { font-size: 12px; color: #64748b; margin-bottom: 2px; }
+.aftersale-reason { font-size: 12px; color: #64748b; margin-bottom: 2px; }
+.aftersale-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 </style>

@@ -16,4 +16,13 @@ export default {
   hotAttractions: 'Popular Attractions',
   countSuffix: '',
   noAttractions: 'No attractions data yet',
+
+  // ===== Destination weather (new feature) =====
+  weather: 'Destination Weather',
+  weatherUnavailable: 'Weather service is temporarily unavailable',
+  weatherHumidity: 'Humidity',
+  weatherWind: '{dir} {power}',
+  weatherNight: 'Night',
+  weatherForecast: 'Forecast',
+  weatherUpdated: 'Updated at {time}',
 }

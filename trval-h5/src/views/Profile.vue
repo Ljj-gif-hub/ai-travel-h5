@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, reactive, onActivated, onDeactivated } from 'vue'
+import { ref, computed, onMounted, reactive, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
 
@@ -10,7 +10,7 @@ import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant
 defineOptions({ name: 'ProfileView' })
 import { getToken, removeToken, getCurrentUsername } from '../utils/auth'
 import { sanitizeHtml } from '../utils/security'
-import { userApi, favoriteApi, couponApi, orderApi, noteApi } from '../api'
+import { userApi, favoriteApi, couponApi, orderApi, noteApi, collectionApi } from '../api'
 import {
   getCurrentUser,
   setCurrentUser,
@@ -19,6 +19,7 @@ import {
   clearSession as clearAccountSession,
 } from '../utils/userAccountStorage'
 import EmptyState from '../components/EmptyState.vue'
+import LazyImage from '../components/LazyImage.vue'
 import { defineAsyncComponent } from 'vue'
 const AIChatDialog = defineAsyncComponent(() => import('../components/AIChatDialog.vue'))
 import { getAllSessions, deleteSession, switchToSession } from '../utils/chatSession'
@@ -67,6 +68,7 @@ const serviceList = ref([
   { nameKey: 'myOrders', icon: 'orders-o', descKey: 'myOrdersDesc', badge: 0, path: '/orders', color: '#6366F1' },
   { nameKey: 'myFavorites', icon: 'star-o', descKey: 'myFavoritesDesc', badge: 0, path: '/favorites', color: '#F59E0B' },
   { nameKey: 'myCoupons', icon: 'coupon-o', descKey: 'myCouponsDesc', badge: 0, path: '/coupons', color: '#34D399' },
+  { nameKey: 'myCollections', icon: 'label-o', descKey: 'myCollectionsDesc', badge: 0, action: 'collections', color: '#F472B6' },
 ])
 
 /* ==================== 快捷操作 ==================== */
@@ -190,10 +192,145 @@ const handleQuickAction = (item) => {
 }
 const handleServiceClick = (item) => {
   if (!isLoggedIn.value) { router.push('/login'); return }
+  if (item.action === 'collections') { openCollections(); return }
   if (item.path) router.push(item.path)
 }
 
+/* ==================== 我的收藏夹（新功能） ==================== */
+const showCollectionsPopup = ref(false)
+const collectionsView = ref('list') // list | create | detail
+const collections = ref([])
+const collectionsLoading = ref(false)
+const collectionsFailed = ref(false)
+const detailCollection = ref(null)
+const detailLoading = ref(false)
+const detailFailed = ref(false)
+const removingNoteId = ref(null)
+const createForm = ref({ name: '', description: '', isPublic: false })
+const creating = ref(false)
+
+const openCollections = () => {
+  collectionsView.value = 'list'
+  showCollectionsPopup.value = true
+  loadCollections()
+}
+
+const closeCollections = () => {
+  showCollectionsPopup.value = false
+  collectionsView.value = 'list'
+  detailCollection.value = null
+}
+
+const loadCollections = async () => {
+  collectionsLoading.value = true
+  collectionsFailed.value = false
+  try {
+    const res = await collectionApi.getMine()
+    if (res.code === 0) collections.value = res.data || []
+    else { collections.value = []; collectionsFailed.value = true }
+  } catch (e) {
+    collections.value = []
+    collectionsFailed.value = true
+  } finally {
+    collectionsLoading.value = false
+  }
+}
+
+const openCollectionDetail = async (c) => {
+  collectionsView.value = 'detail'
+  detailCollection.value = c
+  detailLoading.value = true
+  detailFailed.value = false
+  try {
+    const res = await collectionApi.getDetail(c.id)
+    if (res.code === 0) detailCollection.value = res.data
+    else detailFailed.value = true
+  } catch (e) {
+    detailFailed.value = true
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const backToList = () => {
+  collectionsView.value = 'list'
+  detailCollection.value = null
+  loadCollections()
+}
+
+const removeCollection = async (c) => {
+  try {
+    await showConfirmDialog({ title: t('collection.delete'), message: t('collection.confirmDelete', { name: c.name }) })
+  } catch (e) { return }
+  try {
+    const res = await collectionApi.remove(c.id)
+    if (res.code === 0) {
+      showToast(t('collection.deleteSuccess'))
+      loadCollections()
+    } else {
+      showToast(res.message || t('collection.deleteFailed'))
+    }
+  } catch (e) {
+    showToast(t('collection.deleteFailed'))
+  }
+}
+
+const removeNoteFromCollection = async (n) => {
+  if (!detailCollection.value || removingNoteId.value) return
+  try {
+    await showConfirmDialog({ title: t('collection.removeNote'), message: t('collection.removeNoteConfirm') })
+  } catch (e) { return }
+  removingNoteId.value = n.id
+  try {
+    const res = await collectionApi.removeNote(detailCollection.value.id, n.id)
+    if (res.code === 0) {
+      showToast(t('collection.removeNoteSuccess'))
+      const notes = detailCollection.value.notes || []
+      detailCollection.value.notes = notes.filter(x => x.id !== n.id)
+      if (detailCollection.value.noteCount > 0) detailCollection.value.noteCount -= 1
+    } else {
+      showToast(res.message || t('collection.deleteFailed'))
+    }
+  } catch (e) {
+    showToast(t('collection.deleteFailed'))
+  } finally {
+    removingNoteId.value = null
+  }
+}
+
+const goNoteDetail = (n) => {
+  closeCollections()
+  router.push({ path: '/note-detail', query: { id: n.id } })
+}
+
+const submitCreateCollection = async () => {
+  if (creating.value) return
+  const name = createForm.value.name.trim()
+  if (!name) { showToast(t('collection.nameRequired')); return }
+  creating.value = true
+  try {
+    const res = await collectionApi.create({
+      name,
+      description: createForm.value.description.trim() || null,
+      isPublic: createForm.value.isPublic,
+    })
+    if (res.code === 0) {
+      showToast(t('collection.createSuccess'))
+      createForm.value = { name: '', description: '', isPublic: false }
+      collectionsView.value = 'list'
+      loadCollections()
+    } else {
+      showToast(res.message || t('collection.createFailed'))
+    }
+  } catch (e) {
+    showToast(t('collection.createFailed'))
+  } finally {
+    creating.value = false
+  }
+}
+
 /* ==================== 退出登录 ==================== */
+let logoutTimer = null // 退出跳转定时器：onUnmounted 时清理
 const handleLogout = async () => {
   try {
     await showConfirmDialog({ title: t('profile.logoutConfirmTitle'), message: t('profile.logoutConfirmMessage') })
@@ -205,7 +342,8 @@ const handleLogout = async () => {
       clearAccountSession()
       isLoggedIn.value = false; resetUserInfo(); closeToast()
       showToast({ message: t('profile.loggedOut'), position: 'middle' })
-      setTimeout(() => router.push('/login'), 800)
+      clearTimeout(logoutTimer)
+      logoutTimer = setTimeout(() => router.push('/login'), 800)
     }
   } catch (e) { /* 取消 */ }
 }
@@ -270,6 +408,8 @@ const statCards = [
 
 onMounted(() => { if (isLoggedIn.value) { loadProfile(); loadBadgeCounts() } })
 
+onUnmounted(() => { clearTimeout(logoutTimer); logoutTimer = null })
+
 /*
  * 【Bug修复】keep-alive 缓存后，onMounted 只执行一次
  * 每次切回「我的」Tab 时触发 onActivated，刷新用户数据
@@ -296,6 +436,7 @@ onDeactivated(() => {
   showEditPopup.value = false
   showInvitePopup.value = false
   showAIChat.value = false; activeConv.value = null;
+  showCollectionsPopup.value = false
 })
 </script>
 
@@ -532,6 +673,103 @@ onDeactivated(() => {
         </div>
       </div>
     </van-popup>
+
+    <!-- ======== 我的收藏夹弹窗（新功能） ======== -->
+    <van-popup v-model:show="showCollectionsPopup" position="bottom" :style="{ height: '75%' }" round safe-area-inset-bottom @update:show="(val) => { if (!val) closeCollections() }">
+      <div class="collections-pop">
+        <div class="pop-header">
+          <span class="pop-title">
+            <van-icon v-if="collectionsView === 'detail'" name="arrow-left" size="16" class="collections-back" @click="backToList" />
+            {{ collectionsView === 'create' ? t('collection.createNew') : t('collection.myCollections') }}
+          </span>
+          <van-icon name="cross" size="20" @click="closeCollections" />
+        </div>
+
+        <!-- 列表视图 -->
+        <template v-if="collectionsView === 'list'">
+          <div class="pop-body collections-list-body">
+            <van-loading v-if="collectionsLoading" size="24" color="#8B5CF6" class="collections-loading" />
+            <div v-else-if="collectionsFailed" class="collections-fail">
+              <p>{{ t('collection.loadFailed') }}</p>
+              <van-button size="small" round plain class="collections-retry" @click="loadCollections">{{ t('common.retry') }}</van-button>
+            </div>
+            <EmptyState v-else-if="collections.length === 0" icon="label-o" icon-size="56" :title="t('collection.empty')" :desc="t('collection.emptyDesc')" />
+            <div v-else class="collections-list">
+              <div v-for="c in collections" :key="c.id" class="collections-card">
+                <div class="collections-main" @click="openCollectionDetail(c)">
+                  <div class="collections-icon"><van-icon :name="c.isPublic ? 'eye-o' : 'lock'" size="18" :color="c.isPublic ? '#34D399' : '#94a3b8'" /></div>
+                  <div class="collections-info">
+                    <div class="collections-name">{{ c.name }}</div>
+                    <div class="collections-meta">
+                      <span>{{ t('collection.noteCount', { n: c.noteCount || 0 }) }}</span>
+                      <span class="collections-vis">{{ c.isPublic ? t('collection.publicLabel') : t('collection.privateLabel') }}</span>
+                    </div>
+                  </div>
+                </div>
+                <van-icon name="delete-o" size="18" color="#CBD5E1" class="collections-del" @click="removeCollection(c)" />
+              </div>
+            </div>
+          </div>
+          <div class="pop-btns collections-footer">
+            <van-button block round plain class="pop-btn collections-create-btn" @click="collectionsView = 'create'">
+              <van-icon name="plus" size="16" /> {{ t('collection.createNew') }}
+            </van-button>
+          </div>
+        </template>
+
+        <!-- 新建视图 -->
+        <template v-else-if="collectionsView === 'create'">
+          <div class="pop-body">
+            <van-cell-group inset>
+              <van-field v-model="createForm.name" :label="t('collection.collectionName')" :placeholder="t('collection.namePlaceholder')" maxlength="100" />
+              <van-field v-model="createForm.description" :label="t('collection.description')" :placeholder="t('collection.descPlaceholder')" maxlength="500" type="textarea" :rows="3" />
+            </van-cell-group>
+            <div class="public-row">
+              <span>{{ t('collection.isPublic') }}</span>
+              <van-switch v-model="createForm.isPublic" size="20" />
+            </div>
+            <p class="public-hint">{{ t('collection.publicHint') }}</p>
+          </div>
+          <div class="pop-btns collections-footer">
+            <van-button type="default" block class="pop-btn" @click="collectionsView = 'list'">{{ t('common.cancel') }}</van-button>
+            <van-button type="primary" block class="pop-btn pop-btn-primary" :loading="creating" @click="submitCreateCollection">{{ t('common.save') }}</van-button>
+          </div>
+        </template>
+
+        <!-- 详情视图 -->
+        <template v-else>
+          <div class="pop-body collections-list-body">
+            <van-loading v-if="detailLoading" size="24" color="#8B5CF6" class="collections-loading" />
+            <div v-else-if="detailFailed" class="collections-fail"><p>{{ t('collection.loadFailed') }}</p></div>
+            <template v-else-if="detailCollection">
+              <div class="collections-detail-head">
+                <div class="collections-detail-name">{{ detailCollection.name }}</div>
+                <div class="collections-detail-meta">
+                  <span>{{ t('collection.noteCount', { n: detailCollection.noteCount || 0 }) }}</span>
+                  <span class="collections-vis">{{ detailCollection.isPublic ? t('collection.publicLabel') : t('collection.privateLabel') }}</span>
+                </div>
+                <p v-if="detailCollection.description" class="collections-detail-desc">{{ detailCollection.description }}</p>
+              </div>
+              <div v-if="!detailCollection.notes || detailCollection.notes.length === 0" class="collections-empty-notes">{{ t('collection.noNotes') }}</div>
+              <div v-else class="collections-note-list">
+                <div v-for="n in detailCollection.notes" :key="n.id" class="collections-note" @click="goNoteDetail(n)">
+                  <LazyImage v-if="n.cover" :src="n.cover" class="collections-note-cover" />
+                  <div v-else class="collections-note-cover collections-note-cover--ph"><van-icon name="photo-o" size="20" color="#CBD5E1" /></div>
+                  <div class="collections-note-info">
+                    <div class="collections-note-title">{{ n.title || t('collection.untitledNote') }}</div>
+                    <div class="collections-note-meta">
+                      <span><van-icon name="good-job-o" size="12" /> {{ n.likes || 0 }}</span>
+                      <span><van-icon name="eye-o" size="12" /> {{ n.views || 0 }}</span>
+                    </div>
+                  </div>
+                  <van-icon v-if="detailCollection.isOwner" name="delete-o" size="16" color="#CBD5E1" class="collections-note-del" @click.stop="removeNoteFromCollection(n)" />
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -715,6 +953,44 @@ onDeactivated(() => {
 .pop-btns { display: flex; gap: 12px; margin-top: 20px; }
 .pop-btn { flex: 1; border-radius: 14px !important; }
 .pop-btn-primary { background: linear-gradient(135deg, #8B5CF6, #6366F1) !important; border: none !important; color: #fff !important; }
+
+/* ======== 我的收藏夹弹窗（新功能） ======== */
+.collections-pop { display: flex; flex-direction: column; height: 100%; background: #fff; border-radius: 20px 20px 0 0; }
+.collections-pop .pop-header { flex-shrink: 0; }
+.collections-back { margin-right: 8px; cursor: pointer; vertical-align: -3px; }
+.collections-list-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.collections-loading { display: block; margin: 80px auto; }
+.collections-fail { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 60px 0; color: #94a3b8; font-size: 13px; }
+.collections-fail p { margin: 0; }
+.collections-retry { color: #8B5CF6 !important; border-color: #C4B5FD !important; }
+.collections-list { display: flex; flex-direction: column; gap: 10px; }
+.collections-card { display: flex; align-items: center; gap: 10px; padding: 14px; background: #faf8ff; border-radius: 14px; }
+.collections-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer; }
+.collections-icon { width: 40px; height: 40px; border-radius: 12px; background: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05); }
+.collections-info { flex: 1; min-width: 0; }
+.collections-name { font-size: 14px; font-weight: 600; color: #1e293b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.collections-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #94a3b8; margin-top: 3px; }
+.collections-vis { padding: 1px 8px; border-radius: 8px; background: rgba(139, 92, 246, 0.07); color: #8B5CF6; }
+.collections-del { padding: 6px; cursor: pointer; }
+.collections-footer { margin-top: 0; flex-shrink: 0; padding: 12px 20px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.collections-create-btn { color: #8B5CF6 !important; border-color: #C4B5FD !important; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.collections-detail-head { padding: 4px 2px 14px; border-bottom: 1px solid #f1f5f9; margin-bottom: 12px; }
+.collections-detail-name { font-size: 16px; font-weight: 700; color: #1e293b; }
+.collections-detail-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.collections-detail-desc { font-size: 13px; color: #64748b; margin: 8px 0 0; line-height: 1.5; }
+.collections-empty-notes { text-align: center; color: #94a3b8; font-size: 13px; padding: 40px 0; }
+.collections-note-list { display: flex; flex-direction: column; gap: 10px; }
+.collections-note { display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8fafc; border-radius: 12px; cursor: pointer; }
+.collections-note:active { background: #f1f5f9; }
+.collections-note-cover { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.collections-note-cover--ph { background: #f1f5f9; display: flex; align-items: center; justify-content: center; }
+.collections-note-info { flex: 1; min-width: 0; }
+.collections-note-title { font-size: 13px; font-weight: 600; color: #334155; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.collections-note-meta { display: flex; gap: 12px; font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.collections-note-meta span { display: inline-flex; align-items: center; gap: 3px; }
+.collections-note-del { padding: 6px; cursor: pointer; }
+.public-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 4px; font-size: 13px; color: #475569; }
+.public-hint { font-size: 11px; color: #94a3b8; padding: 0 16px 4px; margin: 6px 0 0; }
 
 .invite-pop { padding: 28px 20px 22px; position: relative; background: #fff; border-radius: 22px; }
 .invite-head { text-align: center; margin-bottom: 16px; }

@@ -179,7 +179,13 @@ export function setMyData(key, value) {
 export function clearSession() {
   try {
     localStorage.removeItem(CURRENT_USER_KEY)
+    sessionStorage.removeItem(CURRENT_USER_KEY)
+    // 【安全加固】Token 主存储已迁至 sessionStorage，两处一并清除
     localStorage.removeItem('TOKEN')
+    sessionStorage.removeItem('TOKEN')
+    // RefreshToken 一并清除（旋转刷新凭据，退出登录后失效）
+    localStorage.removeItem('REFRESH_TOKEN')
+    sessionStorage.removeItem('REFRESH_TOKEN')
     // 清除临时页面缓存
     localStorage.removeItem('redirectUrl')
   } catch { /* noop */ }

@@ -4,7 +4,11 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "notes")
+@Table(name = "notes", indexes = {
+        // 【修复】按用户查询我的游记、按时间倒序拉取发现页
+        @Index(name = "idx_notes_user_id", columnList = "user_id"),
+        @Index(name = "idx_notes_created_at", columnList = "created_at")
+})
 public class Note {
 
     @Id
@@ -37,6 +41,10 @@ public class Note {
 
     @Column(name = "status", length = 20)
     private String status = "published";
+
+    /** 【新功能】是否被举报隐藏（≥5 次举报自动隐藏，列表中过滤） */
+    @Column(name = "hidden")
+    private Boolean hidden = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -134,6 +142,9 @@ public class Note {
     public void setStatus(String status) {
         this.status = status;
     }
+
+    public Boolean getHidden() { return hidden; }
+    public void setHidden(Boolean hidden) { this.hidden = hidden; }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

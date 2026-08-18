@@ -11,6 +11,7 @@
 import { mapApi } from '../api'
 
 const GEO_CACHE_KEY = 'geo_cache_v1'
+const GEO_CACHE_MAX = 500  // 缓存条目上限，防无限增长撑爆 localStorage
 
 const normalize = (name) => (name || '').replace(/[【】·、\s]/g, '').trim()
 
@@ -22,6 +23,13 @@ function writeCache(cache) {
   try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache)) } catch { /* 存储满/禁用时忽略 */ }
 }
 
+/** 超上限时删除最早写入的条目（对象键插入顺序即写入顺序，近似 LRU） */
+function trimCache(cache) {
+  const keys = Object.keys(cache)
+  if (keys.length <= GEO_CACHE_MAX) return
+  keys.slice(0, keys.length - GEO_CACHE_MAX).forEach(k => { delete cache[k] })
+}
+
 async function geocodeOne(city, name) {
   try {
     const address = city ? `${city} ${name}` : name
@@ -31,6 +39,16 @@ async function geocodeOne(city, name) {
     }
   } catch (e) { /* 单点失败忽略 */ }
   return null
+}
+
+/**
+ * 简易并发池：分批执行，每批最多 limit 个并发，
+ * 避免行程动辄几十个点位一次性并发打爆后端/浏览器连接
+ */
+async function pool(tasks, limit = 6) {
+  for (let i = 0; i < tasks.length; i += limit) {
+    await Promise.all(tasks.slice(i, i + limit))
+  }
 }
 
 /**
@@ -53,6 +71,7 @@ export async function enrichTimeSlotCoords(planData, mapMarkers = []) {
   const cache = readCache()
   const city = planData.destination || ''
   const tasks = []
+  let cacheDirty = false
 
   for (const dp of planData.dayPlans) {
     for (const slot of (dp.timeSlots || [])) {
@@ -75,13 +94,17 @@ export async function enrichTimeSlotCoords(planData, mapMarkers = []) {
           slot.latitude = coord[0]
           slot.longitude = coord[1]
           cache[cacheKey] = coord
-          writeCache(cache)
+          cacheDirty = true
         }
       }))
     }
   }
 
-  await Promise.all(tasks)
+  await pool(tasks, 6)
+  if (cacheDirty) {
+    trimCache(cache)
+    writeCache(cache)  // 批量写一次，避免每个点位整包序列化
+  }
   return planData
 }
 

@@ -11,6 +11,8 @@ import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
 import { initTheme } from './utils/theme'
+import { runEnvCheck } from './utils/envCheck'
+import { showToast } from 'vant'
 
 // 深色模式：挂载前应用初始主题，避免深色首屏闪烁
 initTheme()
@@ -57,4 +59,21 @@ window.addEventListener('resize', setRootFontSize);
   strip()
 })();
 
-createApp(App).use(router).use(i18n).mount('#app')
+/* 【环境变量校验】dev 缺失必需变量 console.warn 明确提示；prod 静默降级默认值 */
+runEnvCheck()
+
+const app = createApp(App)
+
+/* 【全局错误兜底】未被 ErrorBoundary 捕获的错误：console.error + 节流 toast 提示 */
+let lastErrorToast = 0
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[全局错误]', err, instance ? String(instance?.$?.type?.name || instance.type?.name || '') : '', info)
+  if (typeof err === 'string') return
+  const now = Date.now()
+  if (now - lastErrorToast > 3000) {
+    lastErrorToast = now
+    try { showToast({ message: '页面出现异常，请重试', position: 'top', duration: 2000 }) } catch (e) { /* toast 失败不阻塞 */ }
+  }
+}
+
+app.use(router).use(i18n).mount('#app')

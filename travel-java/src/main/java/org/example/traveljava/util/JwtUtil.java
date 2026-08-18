@@ -49,13 +49,9 @@ public class JwtUtil {
     }
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            byte[] paddedKey = new byte[32];
-            System.arraycopy(keyBytes, 0, paddedKey, 0, keyBytes.length);
-            return Keys.hmacShaKeyFor(paddedKey);
-        }
-        return Keys.hmacShaKeyFor(keyBytes);
+        // 【安全】密钥长度由 @PostConstruct validate() 保证 >=32 字符；此处不再对短密钥做 0 字节填充
+        // （填充会把"123"变成"123"+29 个 0，弱密钥可被轻易猜出，等价于无认证）
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String extractUsername(String token) {

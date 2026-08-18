@@ -4,7 +4,7 @@
  */
 import { getToken } from '../utils/auth';
 
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
 /** 内联轻量 request（公共接口无需完整错误处理，复用 api/index.js 逻辑） */
 const request = async (url, options = {}) => {

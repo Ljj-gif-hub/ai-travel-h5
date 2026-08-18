@@ -31,16 +31,19 @@ public class OrderController {
 
     @GetMapping
     public Result<List<Map<String, Object>>> getOrders(@RequestHeader("Authorization") String authHeader,
-                                                       @RequestParam(required = false) String type) {
+                                                       @RequestParam(required = false) String type,
+                                                       @RequestParam(defaultValue = "0") int page,
+                                                       @RequestParam(defaultValue = "20") int size) {
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
 
+            // 分页（page 从 0 开始，默认 0/20，向后兼容：响应仍为列表）
             List<Order> orders;
             if (type != null && !type.isEmpty()) {
-                orders = orderService.getOrdersByType(userId, type);
+                orders = orderService.getOrdersByType(userId, type, page, size);
             } else {
-                orders = orderService.getOrders(userId);
+                orders = orderService.getOrders(userId, page, size);
             }
 
             List<Map<String, Object>> result = orders.stream().map(order -> {
@@ -83,54 +86,9 @@ public class OrderController {
         }
     }
 
-    @PostMapping
-    public Result<Map<String, Object>> createOrder(@RequestHeader("Authorization") String authHeader, @RequestBody Map<String, Object> params) {
-        try {
-            String token = authHeader.replace("Bearer ", "");
-            Long userId = jwtUtil.extractUserId(token);
-
-            Order order = orderService.createOrder(userId, params);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("id", order.getId());
-            result.put("orderNo", order.getOrderNo());
-            result.put("type", order.getType());
-            result.put("status", order.getStatus());
-            result.put("price", order.getPrice());
-
-            return Result.ok(result);
-        } catch (IllegalArgumentException e) {
-            log.warn("创建订单失败：{}", e.getMessage());
-            return Result.fail(e.getMessage());
-        } catch (AuthUtils.AuthException e) {
-            throw e; // let GlobalExceptionHandler return 401
-        } catch (Exception e) {
-            log.error("创建订单异常", e);
-            return Result.fail("创建订单失败");
-        }
-    }
-
-    @PutMapping("/{id}/status")
-    public Result<String> updateOrderStatus(@RequestHeader("Authorization") String authHeader,
-                                            @PathVariable Long id,
-                                            @RequestBody Map<String, String> body) {
-        try {
-            String token = authHeader.replace("Bearer ", "");
-            Long userId = jwtUtil.extractUserId(token);
-
-            String status = body.get("status");
-            orderService.updateOrderStatus(userId, id, status);
-            return Result.ok("更新成功");
-        } catch (IllegalArgumentException e) {
-            log.warn("更新订单状态失败：{}", e.getMessage());
-            return Result.fail(e.getMessage());
-        } catch (AuthUtils.AuthException e) {
-            throw e; // let GlobalExceptionHandler return 401
-        } catch (Exception e) {
-            log.error("更新订单状态异常", e);
-            return Result.fail("更新订单状态失败");
-        }
-    }
+    // 注意：裸 POST /api/orders（创建订单）与 PUT /api/orders/{id}/status（改状态）端点已移除——
+    // 二者曾允许客户端任意指定 price（改价下单）、pending 直接置 completed（跳过支付）。
+    // 下单请走 /api/hotel/book、/api/flight/book 等服务端报价接口；取消订单走下方 /{id}/cancel。
 
     @PostMapping("/{id}/cancel")
     public Result<String> cancelOrder(@RequestHeader("Authorization") String authHeader, @PathVariable Long id) {

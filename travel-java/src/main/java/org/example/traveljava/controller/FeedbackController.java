@@ -30,12 +30,15 @@ public class FeedbackController {
     }
 
     @GetMapping
-    public Result<List<Map<String, Object>>> getFeedbacks(@RequestHeader("Authorization") String authHeader) {
+    public Result<List<Map<String, Object>>> getFeedbacks(@RequestHeader("Authorization") String authHeader,
+                                                          @RequestParam(defaultValue = "0") int page,
+                                                          @RequestParam(defaultValue = "20") int size) {
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
 
-            List<Feedback> feedbacks = feedbackService.getFeedbacks(userId);
+            // 分页（page 从 0 开始，默认 0/20，向后兼容：响应仍为列表）
+            List<Feedback> feedbacks = feedbackService.getFeedbacks(userId, page, size);
 
             List<Map<String, Object>> result = feedbacks.stream().map(feedback -> {
                 Map<String, Object> item = new HashMap<>();

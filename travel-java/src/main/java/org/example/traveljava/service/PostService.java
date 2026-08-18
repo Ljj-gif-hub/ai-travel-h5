@@ -8,6 +8,7 @@ import org.example.traveljava.entity.User;
 import org.example.traveljava.repository.PostLikeRepository;
 import org.example.traveljava.repository.PostRepository;
 import org.example.traveljava.repository.UserRepository;
+import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,11 +28,16 @@ public class PostService {
     private final PostLikeRepository postLikeRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final UserService userService;
+    private final ContentModerationService moderationService;
 
-    public PostService(PostRepository postRepository, PostLikeRepository postLikeRepository, UserRepository userRepository) {
+    public PostService(PostRepository postRepository, PostLikeRepository postLikeRepository, UserRepository userRepository,
+                       UserService userService, ContentModerationService moderationService) {
         this.postRepository = postRepository;
         this.postLikeRepository = postLikeRepository;
         this.userRepository = userRepository;
+        this.userService = userService;
+        this.moderationService = moderationService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -45,8 +51,9 @@ public class PostService {
     public Map<String, Object> getPosts(Long currentUserId, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 50);
+        // 【新功能】社区广场过滤被举报隐藏的动态
         org.springframework.data.domain.Page<Post> postPage = postRepository
-                .findAllByOrderByCreatedAtDesc(org.springframework.data.domain.PageRequest.of(safePage, safeSize));
+                .findByHiddenFalseOrderByCreatedAtDesc(org.springframework.data.domain.PageRequest.of(safePage, safeSize));
         List<Post> posts = postPage.getContent();
         List<Map<String, Object>> result = new ArrayList<>();
 
@@ -114,7 +121,8 @@ public class PostService {
     public Post createPost(Long userId, Map<String, Object> params) {
         Post post = new Post();
         post.setUserId(userId);
-        post.setContent((String) params.get("content"));
+        // 【修复】存储前 OWASP 白名单消毒，防存储型 XSS
+        post.setContent(TextCleaner.sanitizeHtml((String) params.get("content")));
 
         if (params.containsKey("images")) {
             try {
@@ -127,7 +135,15 @@ public class PostService {
         post.setLikes(0);
         post.setComments(0);
 
+        // 【新功能】内容审核（开关控制，LLM 失败 fail-open）
+        ContentModerationService.ModerationResult m = moderationService.check(post.getContent());
+        if (!m.isSafe()) {
+            throw new IllegalArgumentException("内容包含违规信息，请修改后重试");
+        }
+
         Post saved = postRepository.save(post);
+        // 【新功能】发帖 +5 积分
+        userService.addPoints(userId, 5);
         log.info("创建动态：userId={}", userId);
         return saved;
     }
@@ -147,32 +163,34 @@ public class PostService {
 
     /**
      * 【修复】点赞/取消点赞 — 需要登录，按用户追踪，每人只能点赞一次
+     * 【并发安全】点赞数走原子 UPDATE（delta ±1），不再 count()+save() 读改写
      */
     @Transactional
     public Map<String, Object> toggleLike(Long postId, Long userId) {
-        Post post = postRepository.findById(postId)
+        postRepository.findById(postId)
                 .orElseThrow(() -> new IllegalArgumentException("动态不存在"));
 
         boolean alreadyLiked = postLikeRepository.existsByPostIdAndUserId(postId, userId);
 
         if (alreadyLiked) {
-            // 取消点赞
+            // 取消点赞：计数原子 -1（likes>=0 条件下不会减成负数）
             postLikeRepository.deleteByPostIdAndUserId(postId, userId);
-            post.setLikes(postLikeRepository.countByPostId(postId));
-            postRepository.save(post);
+            postRepository.adjustLikes(postId, -1);
         } else {
-            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞
+            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞（不重复计数）
             try {
                 postLikeRepository.save(new PostLike(postId, userId));
+                postRepository.adjustLikes(postId, 1);
             } catch (DataIntegrityViolationException e) {
                 log.debug("动态点赞并发冲突：postId={}, userId={}", postId, userId);
             }
-            post.setLikes(postLikeRepository.countByPostId(postId));
-            postRepository.save(post);
         }
 
+        // adjustLikes 已 clearAutomatically，重新读取最新计数
+        Post fresh = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("动态不存在"));
         Map<String, Object> result = new HashMap<>();
-        result.put("likes", post.getLikes());
+        result.put("likes", fresh.getLikes());
         result.put("isLiked", !alreadyLiked);
         return result;
     }

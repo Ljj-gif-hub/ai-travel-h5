@@ -65,6 +65,20 @@ export default {
   locationFailed: '定位失败',
   myLocation: '我的位置',
 
+  // ===== 行程模板（新功能） =====
+  tripTemplates: '行程模板',
+  templateSlogan: '一键套用达人行程，说走就走',
+  useTemplate: '使用此模板',
+  templateUsing: '正在创建行程...',
+  templateUsed: '行程创建成功',
+  templateUseFailed: '创建行程失败，请稍后重试',
+  templateConfirmTitle: '使用行程模板',
+  templateConfirmMsg: '将「{name}」变成你的行程，确定使用吗？',
+  templateBudget: '预算 ¥{budget}',
+  templatePeople: '{people}人',
+  templateDownloads: '{n}人使用过',
+  templateLoadFailed: '模板加载失败',
+
   // ===== SavedPlansView =====
   myPlans: '我的规划',
   noSavedPlans: '暂无保存的规划',

@@ -1,7 +1,9 @@
 package org.example.traveljava.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 public class ChatRequest {
 
@@ -11,6 +13,12 @@ public class ChatRequest {
     private Double temperature = 0.7;
     @JsonProperty("max_tokens")
     private Integer maxTokens = 3000;
+    /**
+     * DeepSeek V4 系列关闭思考模式的扩展参数：{"type":"disabled"}。
+     * 非 DeepSeek 供应商为 null，序列化时省略，避免影响其它兼容接口。
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Map<String, Object> thinking;
 
     public ChatRequest() {
     }
@@ -63,6 +71,14 @@ public class ChatRequest {
         this.maxTokens = maxTokens;
     }
 
+    public Map<String, Object> getThinking() {
+        return thinking;
+    }
+
+    public void setThinking(Map<String, Object> thinking) {
+        this.thinking = thinking;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -73,6 +89,7 @@ public class ChatRequest {
         private Boolean stream = false;
         private Double temperature = 0.7;
         private Integer maxTokens = 3000;
+        private Map<String, Object> thinking;
 
         public Builder model(String model) {
             this.model = model;
@@ -99,8 +116,15 @@ public class ChatRequest {
             return this;
         }
 
+        public Builder thinking(Map<String, Object> thinking) {
+            this.thinking = thinking;
+            return this;
+        }
+
         public ChatRequest build() {
-            return new ChatRequest(model, messages, stream, temperature, maxTokens);
+            ChatRequest req = new ChatRequest(model, messages, stream, temperature, maxTokens);
+            req.setThinking(thinking);
+            return req;
         }
     }
 }

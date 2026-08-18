@@ -37,4 +37,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Modifying
     @Query("update User u set u.followersCount = case when u.followersCount > 0 then u.followersCount - 1 else 0 end where u.id = :id")
     int decrementFollowersCount(@Param("id") Long id);
+
+    // ---- 【新功能】积分原子增减（发帖/评论/支付/被赞），clearAutomatically 保证后续读取拿到最新值 ----
+
+    @Modifying(clearAutomatically = true)
+    @Query("update User u set u.points = u.points + :delta where u.id = :id")
+    int addPoints(@Param("id") Long id, @Param("delta") int delta);
 }

@@ -1,10 +1,11 @@
 ﻿<script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { showToast, showLoadingToast, closeToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi } from '../api';
+import { useRequest } from '../composables/useRequest';
 
 const router = useRouter();
 const { t } = useI18n();
@@ -17,32 +18,36 @@ const goBack = () => {
   try { router.back() } catch (e) { router.push('/') }
 };
 
-const notes = ref([]);
-const isLoading = ref(false);
-
-const loadNotes = async () => {
-  isLoading.value = true;
-  try {
-    const response = await noteApi.getMyNotes();
+/*
+ * 【useRequest 迁移示例】列表加载三态统一封装：
+ * - loading/error/data 由 useRequest 管理，组件卸载自动 abort 在途请求
+ * - loadNotes 即 run()：重复调用会取消旧请求（防竞态），AbortError 静默
+ * - 其他视图可参照此写法逐步迁移（CommunityView 首屏请求已接 useRequest）
+ */
+const {
+  data: notesData,
+  loading: isLoading,
+  error: loadError,
+  run: loadNotes,
+} = useRequest(
+  async (opts) => {
+    const response = await noteApi.getMyNotes({ signal: opts.signal });
     if (response.code === 0) {
-      notes.value = response.data;
-    } else {
-      notes.value = [];
+      return Array.isArray(response.data) ? response.data : [];
     }
-  } catch (error) {
-    console.log('获取游记列表失败:', error);
-    notes.value = [];
-  } finally {
-    isLoading.value = false;
-  }
-};
+    return [];
+  },
+  { manual: true, initialData: [] }
+);
+
+const notes = computed(() => notesData.value ?? []);
 
 const handleDelete = async (id) => {
   try {
     const response = await noteApi.deleteNote(id);
     if (response.code === 0) {
       showToast(t('note.deleteSuccess'));
-      loadNotes();
+      loadNotes().catch(() => {});
     } else {
       showToast(response.message || t('note.deleteFailed'));
     }
@@ -67,7 +72,7 @@ const handleWriteNote = () => {
 
 onMounted(() => {
   if (getToken()) {
-    loadNotes();
+    loadNotes().catch(() => {});
   }
 });
 </script>

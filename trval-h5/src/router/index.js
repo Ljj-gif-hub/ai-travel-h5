@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { getToken } from '../utils/auth'
+import { getToken, removeToken, isTokenExpired } from '../utils/auth'
 
 /**
  * 4-Tab 底部导航架构路由
@@ -285,13 +285,22 @@ const whiteList = [
   '/login', '/register', '/about',
   '/planning', '/destinations', '/destination-detail',
   '/notes', '/note-detail', '/video-detail',
-  '/ai-planner', '/ai-planner/progress',
+  '/ai-planner', // 重定向路由（→/agent-planner，目标路由受守卫保护）
   '/city-select', '/attraction-select',
-  '/chat', '/Profile', '/saved-plans', // 旧路由兼容
+  '/Profile', '/saved-plans', // 旧路由兼容（重定向）
+  // 【安全】/chat 与 /ai-planner/progress 已从白名单移除：AI 接口需登录防配额滥用
 ]
 
 router.beforeEach((to, from, next) => {
   const token = getToken()
+
+  // Token 已过期（JWT exp 校验）→ 清登录态并回登录页（后端 401 的客户端前置兜底）
+  if (token && isTokenExpired(token) && to.path !== '/login') {
+    removeToken()
+    localStorage.setItem('redirectUrl', to.fullPath)
+    next({ path: '/login' })
+    return
+  }
 
   if (token) {
     if (to.path === '/login') {
@@ -307,6 +316,45 @@ router.beforeEach((to, from, next) => {
       localStorage.setItem('redirectUrl', to.fullPath)
       next({ path: '/login' })
     }
+  }
+})
+
+/* ==================== 路由预加载（审查报告"可补充新功能"） ====================
+ * afterEach：导航完成后预取"即将可能访问"的路由 chunk（import() 触发分块拉取）。
+ * - Tab 页 → 预取其余 3 个 Tab 兄弟路由（keep-alive 架构下命中概率最高）
+ * - 支持路由 meta.preload 指定额外路径
+ * - 空闲回调执行（requestIdleCallback，降级 setTimeout），不与首屏渲染抢带宽；
+ *   预取失败 try/catch 静默忽略（离线/慢网不影响当前页）。
+ */
+const preloaded = new Set()
+function preloadRoutePath(path) {
+  if (preloaded.has(path)) return
+  preloaded.add(path)
+  const route = routes.find((r) => r.path === path)
+  const loader = route?.component
+  if (typeof loader !== 'function') return
+  try {
+    Promise.resolve(loader()).catch(() => { /* 预取失败忽略 */ })
+  } catch (e) { /* 同步异常忽略 */ }
+}
+
+router.afterEach((to) => {
+  const preloadPaths = []
+  if (tabPaths.includes(to.path)) {
+    for (const p of tabPaths) {
+      if (p !== to.path) preloadPaths.push(p)
+    }
+  }
+  if (Array.isArray(to.meta?.preload)) preloadPaths.push(...to.meta.preload)
+
+  if (preloadPaths.length === 0) return
+  const schedule = () => {
+    for (const p of preloadPaths) preloadRoutePath(p)
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(schedule, { timeout: 2000 })
+  } else {
+    setTimeout(schedule, 300)
   }
 })
 

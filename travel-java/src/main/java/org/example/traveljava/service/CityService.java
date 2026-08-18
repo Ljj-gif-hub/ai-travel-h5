@@ -1,9 +1,12 @@
 package org.example.traveljava.service;
 
+import org.example.traveljava.config.CacheConfig;
 import org.example.traveljava.config.MapConfig;
 import org.example.traveljava.dto.CityDTO.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -19,18 +22,13 @@ public class CityService {
     private static final Logger log = LoggerFactory.getLogger(CityService.class);
     private final RestTemplate restTemplate;
     private final MapConfig mapConfig;
+    /** 【新功能】城市图片缓存迁移到统一 Caffeine 缓存 city-image（2000 条 / 1 小时，见 CacheConfig） */
+    private final Cache imageCache;
 
-    /** 城市图片本地缓存：cityName → imageUrl */
-    private final Map<String, String> imageCache = new LinkedHashMap<>() {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-            return size() > 500; // 最多缓存500个城市
-        }
-    };
-
-    public CityService(RestTemplate restTemplate, MapConfig mapConfig) {
+    public CityService(RestTemplate restTemplate, MapConfig mapConfig, CacheManager cacheManager) {
         this.restTemplate = restTemplate;
         this.mapConfig = mapConfig;
+        this.imageCache = cacheManager.getCache(CacheConfig.CACHE_CITY_IMAGE);
     }
 
     /**
@@ -40,7 +38,10 @@ public class CityService {
     @SuppressWarnings("unchecked")
     public String fetchCityImage(String cityName) {
         // 查缓存
-        if (imageCache.containsKey(cityName)) return imageCache.get(cityName);
+        Cache.ValueWrapper cached = imageCache.get(cityName);
+        if (cached != null) {
+            return (String) cached.get();
+        }
 
         // 1) 尝试 Flickr 公开 Feed（免费，无需 Key）
         try {

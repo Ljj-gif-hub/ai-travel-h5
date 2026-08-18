@@ -14,6 +14,7 @@ import org.example.traveljava.repository.SavedTravelPlanRepository;
 import org.example.traveljava.vo.RecommendItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -179,7 +180,8 @@ public class RecommendationService {
         Map<String, Candidate> byKey = new LinkedHashMap<>();
 
         // 收藏类候选：全站收藏聚合（名称/描述为画像与协同信号）
-        List<Favorite> favs = favoriteRepository.findAll();
+        // 【修复】限量 500 条，避免全表加载
+        List<Favorite> favs = favoriteRepository.findAll(PageRequest.of(0, 500)).getContent();
         for (Favorite f : favs) {
             Candidate c = byKey.computeIfAbsent(key(f), k -> new Candidate(
                     f.getTargetType(), f.getTargetId(),
@@ -191,7 +193,9 @@ public class RecommendationService {
         }
 
         // 游记类候选：已发布游记，标签+标题为画像信号，点赞者为协同邻居
-        List<Note> notes = noteRepository.findByStatusOrderByCreatedAtDesc("published");
+        // 【修复】限量 500 条，避免全表加载
+        List<Note> notes = noteRepository.findByStatusOrderByCreatedAtDesc("published", PageRequest.of(0, 500))
+                .getContent();
         for (Note n : notes) {
             Candidate c = byKey.computeIfAbsent("note:" + n.getId(), k -> new Candidate(
                     "note", n.getId(), nvl(n.getTitle()), nvl(n.getCover()),
@@ -200,7 +204,8 @@ public class RecommendationService {
                     + (n.getViews() == null ? 0 : n.getViews()) * 0.05;
             c.popularity += Math.max(0.5, pop);
         }
-        List<NoteLike> noteLikes = noteLikeRepository.findAll();
+        // 【修复】限量 500 条，避免全表加载
+        List<NoteLike> noteLikes = noteLikeRepository.findAll(PageRequest.of(0, 500)).getContent();
         for (NoteLike nl : noteLikes) {
             Candidate c = byKey.get("note:" + nl.getNoteId());
             if (c != null) c.users.add(nl.getUserId());

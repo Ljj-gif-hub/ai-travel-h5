@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, shallowRef, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -22,7 +22,8 @@ const domesticSubKey = ref(null)
 const overseasLeftKey = ref('recommend')
 const overseasSubKey = ref(null)
 const searchText = ref('')
-const historyCities = ref([])
+// 【shallowRef 安全点】历史缓存列表：仅整体替换（加载/追加去重/清空），无逐项响应式依赖
+const historyCities = shallowRef([])
 const searchHistory = computed(() => historyCities.value.map(c => ({
   text: c,
   url: '',

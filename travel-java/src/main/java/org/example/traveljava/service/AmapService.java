@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 高德地图（Amap）服务实现
@@ -41,18 +42,45 @@ public class AmapService implements MapService {
 
     private String key;
 
-    /** 全局调用限速：保证两次 API 调用至少间隔 300ms，避免触发高德 QPS 限制 */
-    private static long lastApiCallTime = 0;
-    private static final Object rateLock = new Object();
+    /** 【修复】全局令牌桶限速：容量 3、每 300ms 补 1 个令牌（约 3.3 QPS）。
+     *  AtomicLong CAS 无锁实现，替代原 synchronized 全局锁 + 每次调用固定 sleep 300ms；
+     *  仅在令牌耗尽时才短暂等待下一个补充周期。 */
+    private static final long REFILL_INTERVAL_MS = 300;
+    private static final long MAX_TOKENS = 3;
+    private static final AtomicLong tokens = new AtomicLong(MAX_TOKENS);
+    private static final AtomicLong lastRefillTs = new AtomicLong(System.currentTimeMillis());
 
     private void rateLimit() {
-        synchronized (rateLock) {
-            long now = System.currentTimeMillis();
-            long gap = 300 - (now - lastApiCallTime);
-            if (gap > 0) {
-                try { Thread.sleep(gap); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        while (true) {
+            refill();
+            if (tryAcquire()) {
+                return;
             }
-            lastApiCallTime = System.currentTimeMillis();
+            // 令牌耗尽：等到下一个补充周期再试（正常流量无锁、无需等待）
+            try {
+                Thread.sleep(REFILL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private void refill() {
+        long now = System.currentTimeMillis();
+        long last = lastRefillTs.get();
+        long add = (now - last) / REFILL_INTERVAL_MS;
+        if (add <= 0) return;
+        if (lastRefillTs.compareAndSet(last, now)) {
+            tokens.accumulateAndGet(add, (cur, inc) -> Math.min(cur + inc, MAX_TOKENS));
+        }
+    }
+
+    private boolean tryAcquire() {
+        while (true) {
+            long cur = tokens.get();
+            if (cur <= 0) return false;
+            if (tokens.compareAndSet(cur, cur - 1)) return true;
         }
     }
 

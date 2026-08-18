@@ -669,6 +669,7 @@ const onTabChange = (key) => {
 }
 
 /* ==================== 事件 ==================== */
+let planningTimer = null // 开始规划跳转定时器：onUnmounted 时清理
 const startPlanning = () => {
   try {
     if (!destination.value || String(destination.value).trim() === '') return showToast({ message: t('home.enterDestination'), position: 'middle' })
@@ -679,7 +680,8 @@ const startPlanning = () => {
     if (!people.value || String(people.value).trim() === '') return showToast({ message: t('home.enterPeople'), position: 'middle' })
     if (Number(people.value) < 1 || Number(people.value) > 50) return showToast({ message: t('home.peopleRange'), position: 'middle' })
     showLoadingToast({ message: t('home.aiPlanning'), duration: 500, forbidClick: true, loadingType: 'spinner' })
-    setTimeout(() => router.push({ path: '/agent-map', query: { destination: destination.value, budget: budget.value, days: days.value, people: people.value } }), 500)
+    clearTimeout(planningTimer)
+    planningTimer = setTimeout(() => router.push({ path: '/agent-map', query: { destination: destination.value, budget: budget.value, days: days.value, people: people.value } }), 500)
   } catch (e) { console.error('startPlanning 失败:', e); showToast({ message: t('home.operationFailedRetry'), position: 'middle' }) }
 }
 
@@ -857,7 +859,7 @@ onMounted(async () => {
   await loadStaticImageMap()
   loadBanners(); loadHotDestinations(); loadExperiences()
   loadNotes(true).then(() => { hasLoadedOnce = true })
-  window.addEventListener('scroll', handleScroll, { passive: true })
+  // 滚动监听统一在 onActivated 注册（keep-alive 首挂载会触发 onActivated，避免重复注册）
 })
 
 onActivated(() => {
@@ -872,6 +874,7 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
+  clearTimeout(planningTimer); planningTimer = null
 })
 </script>
 

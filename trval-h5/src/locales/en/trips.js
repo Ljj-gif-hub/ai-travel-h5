@@ -65,6 +65,20 @@ export default {
   locationFailed: 'Failed to locate',
   myLocation: 'My location',
 
+  // ===== Trip templates (new feature) =====
+  tripTemplates: 'Trip Templates',
+  templateSlogan: 'Copy a curated itinerary in one tap',
+  useTemplate: 'Use this template',
+  templateUsing: 'Creating your trip...',
+  templateUsed: 'Trip created',
+  templateUseFailed: 'Failed to create trip. Please try again later.',
+  templateConfirmTitle: 'Use Trip Template',
+  templateConfirmMsg: 'Turn "{name}" into your own trip?',
+  templateBudget: 'Budget ¥{budget}',
+  templatePeople: '{people} people',
+  templateDownloads: 'Used by {n} travelers',
+  templateLoadFailed: 'Failed to load templates',
+
   // ===== SavedPlansView =====
   myPlans: 'My Plans',
   noSavedPlans: 'No saved plans',

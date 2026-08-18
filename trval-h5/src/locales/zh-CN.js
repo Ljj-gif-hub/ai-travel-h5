@@ -26,6 +26,8 @@ import about from './zh/about'
 import share from './zh/share'
 import chat from './zh/chat'
 import components from './zh/components'
+import report from './zh/report'
+import collection from './zh/collection'
 
 export default {
   app, settings, common, auth, profile,
@@ -33,5 +35,5 @@ export default {
   trips, planning, agent, map, calendar,
   booking, orders, payment, wallet,
   social, destination, feedback, about, share,
-  chat, components,
+  chat, components, report, collection,
 }

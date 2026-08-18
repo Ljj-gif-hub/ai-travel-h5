@@ -7,11 +7,11 @@
  *   圆角: 输入框12px / 卡片18px / 按钮14px
  *   字号: 标题24px / 正文15px / 辅助12px
  */
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
-import { setToken } from '../utils/auth'
+import { setToken, setRefreshToken } from '../utils/auth'
 import { authApi } from '../api'
 import {
   setCurrentUser, initAccountData, accountExists,
@@ -34,8 +34,8 @@ const loginForm = reactive({ username: '', password: '' })
 const loginErrors = reactive({ username: '', password: '' })
 const loginLoading = ref(false)
 
-const registerForm = reactive({ username: '', phone: '', verifyCode: '', password: '', confirmPassword: '' })
-const registerErrors = reactive({ username: '', phone: '', verifyCode: '', password: '', confirmPassword: '' })
+const registerForm = reactive({ username: '', phone: '', password: '', confirmPassword: '' })
+const registerErrors = reactive({ username: '', phone: '', password: '', confirmPassword: '' })
 const agreeTerms = ref(false)
 const registerLoading = ref(false)
 
@@ -58,18 +58,7 @@ const openTerms = (type) => {
   showTermsPopup.value = true
 }
 
-const codeCountdown = ref(0)
-let countdownTimer = null
 const isPhoneValid = computed(() => /^1[3-9]\d{9}$/.test(registerForm.phone.trim()))
-const sendVerifyCode = () => {
-  if (codeCountdown.value > 0) return
-  if (!isPhoneValid.value) { showToast({ message: t('auth.enterValidPhone'), position: 'middle', duration: 1800 }); return }
-  if (import.meta.env.DEV) console.warn('[DEV] 验证码使用固定值 123456')
-  showToast({ message: t('auth.verifyCodeSent'), position: 'middle', duration: 2000 })
-  codeCountdown.value = 60
-  countdownTimer = setInterval(() => { codeCountdown.value--; if (codeCountdown.value <= 0) { clearInterval(countdownTimer); countdownTimer = null } }, 1000)
-}
-onUnmounted(() => { if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null } })
 
 const validateLogin = () => {
   loginErrors.username = ''; loginErrors.password = ''
@@ -80,12 +69,11 @@ const validateLogin = () => {
 }
 
 const validateRegister = () => {
-  registerErrors.username = ''; registerErrors.phone = ''; registerErrors.verifyCode = ''; registerErrors.password = ''; registerErrors.confirmPassword = ''
+  registerErrors.username = ''; registerErrors.phone = ''; registerErrors.password = ''; registerErrors.confirmPassword = ''
   let valid = true
   if (!registerForm.username.trim()) { registerErrors.username = t('auth.enterUsername'); valid = false }
   if (!registerForm.phone.trim()) { registerErrors.phone = t('auth.enterPhone'); valid = false }
   else if (!isPhoneValid.value) { registerErrors.phone = t('auth.enterValidPhone'); valid = false }
-  if (!registerForm.verifyCode.trim()) { registerErrors.verifyCode = t('auth.enterVerifyCode'); valid = false }
   if (!registerForm.password.trim()) { registerErrors.password = t('auth.enterPassword'); valid = false }
   else if (registerForm.password.length < 6) { registerErrors.password = t('auth.passwordTooShort'); valid = false }
   if (!registerForm.confirmPassword.trim()) { registerErrors.confirmPassword = t('auth.enterConfirmPassword'); valid = false }
@@ -94,7 +82,7 @@ const validateRegister = () => {
   return valid
 }
 
-const canRegister = computed(() => registerForm.username.trim() && isPhoneValid.value && registerForm.verifyCode.trim() && registerForm.password.length >= 6 && registerForm.confirmPassword.trim() && registerForm.password === registerForm.confirmPassword && agreeTerms.value)
+const canRegister = computed(() => registerForm.username.trim() && isPhoneValid.value && registerForm.password.length >= 6 && registerForm.confirmPassword.trim() && registerForm.password === registerForm.confirmPassword && agreeTerms.value)
 
 const clearLoginError = (field) => { loginErrors[field] = '' }
 const clearRegisterError = (field) => { registerErrors[field] = '' }
@@ -107,12 +95,13 @@ const handleLogin = async () => {
     const response = await authApi.login({ username: loginForm.username.trim(), password: loginForm.password })
     if (response.code === 0) {
       const data = response.data; setToken(data.token)
+      // 【Token 自动刷新】保存长寿命 refreshToken（7 天），401 时 api 层自动旋转刷新
+      if (data.refreshToken) setRefreshToken(data.refreshToken)
       const username = data.user?.username || loginForm.username.trim()
       setCurrentUser(username)
       if (!accountExists(username)) initAccountData(username)
       const userInfo = { avatar: data.user?.avatar || '', nickname: data.user?.nickname || username, username, level: data.user?.level || '普通会员', points: data.user?.points || 0, following: data.user?.following || 0, followers: data.user?.followers || 0, travelNotes: data.user?.travelNotes || 0, bio: data.user?.bio || '', citiesVisited: data.user?.citiesVisited || 0, totalDays: data.user?.totalDays || 0, totalSpent: data.user?.totalSpent || 0, totalPhotos: data.user?.totalPhotos || 0 }
       setAccountData(username, 'userInfo', userInfo)
-      localStorage.setItem('userInfo', JSON.stringify(userInfo))
       closeToast()
       showToast({ message: t('auth.loginSuccess'), position: 'middle', duration: 1800 })
       setTimeout(() => { const u = localStorage.getItem('redirectUrl'); if (u) { localStorage.removeItem('redirectUrl'); router.push(u) } else router.push('/') }, 600)
@@ -126,13 +115,14 @@ const handleRegister = async () => {
   registerLoading.value = true
   showLoadingToast({ message: t('auth.registering'), duration: 0, forbidClick: true, loadingType: 'spinner' })
   try {
+    // 后端 AuthController.register 只接收 username/password/phone（无验证码流程）
     const response = await authApi.register({ username: registerForm.username.trim(), password: registerForm.password, confirmPassword: registerForm.confirmPassword, phone: registerForm.phone.trim() || null })
     if (response.code === 0) {
       const newUsername = registerForm.username.trim()
       if (!accountExists(newUsername)) initAccountData(newUsername)
       closeToast(); showToast({ message: t('auth.registerSuccess'), position: 'middle', duration: 2000 })
       activeTab.value = 'login'; loginForm.username = registerForm.username
-      Object.assign(registerForm, { username: '', phone: '', verifyCode: '', password: '', confirmPassword: '' }); agreeTerms.value = false
+      Object.assign(registerForm, { username: '', phone: '', password: '', confirmPassword: '' }); agreeTerms.value = false
     } else if (response.code === -2 || (response.message && response.message.includes('已存在'))) { closeToast(); showToast({ message: t('auth.usernameTaken'), position: 'middle', duration: 2000 }) }
     else { closeToast(); showToast({ message: response.message || t('auth.registerFailed'), position: 'middle', duration: 1800 }) }
   } catch { closeToast(); showToast({ message: t('auth.networkError'), position: 'middle', duration: 1800 }) }
@@ -154,6 +144,13 @@ const OAUTH_CONFIG = {
   },
 }
 
+/** 生成 OAuth 防 CSRF state：crypto 强随机（32 位 hex），替代可预测的 Math.random */
+const generateOAuthState = () => {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 const handleThirdPartyLogin = async (platform) => {
   const key = platform
   const cfg = OAUTH_CONFIG[key]
@@ -166,7 +163,7 @@ const handleThirdPartyLogin = async (platform) => {
   try {
     if (key === 'wechat') {
       // ──── 微信 OAuth 2.0 ────
-      const state = Math.random().toString(36).substring(2, 10)
+      const state = generateOAuthState()
       localStorage.setItem('oauth_state', state)
       localStorage.setItem('oauth_platform', 'wechat')
       const url = `${cfg.authUrl}?appid=${cfg.appid}&redirect_uri=${cfg.redirectUri}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`
@@ -174,7 +171,7 @@ const handleThirdPartyLogin = async (platform) => {
     }
     else if (key === 'alipay') {
       // ──── 支付宝 OAuth 2.0 ────
-      const state = Math.random().toString(36).substring(2, 10)
+      const state = generateOAuthState()
       localStorage.setItem('oauth_state', state)
       localStorage.setItem('oauth_platform', 'alipay')
       const url = `${cfg.authUrl}?app_id=${cfg.appid}&redirect_uri=${cfg.redirectUri}&scope=auth_user&state=${state}`
@@ -210,10 +207,11 @@ const handleOAuthCallback = async () => {
     if (response.code === 0) {
       const data = response.data
       setToken(data.token)
+      if (data.refreshToken) setRefreshToken(data.refreshToken)
       const username = data.user?.username || `user_${Date.now()}`
       setCurrentUser(username)
       if (!accountExists(username)) initAccountData(username)
-      localStorage.setItem('userInfo', JSON.stringify(data.user || {}))
+      if (data.user) setAccountData(username, 'userInfo', { ...(getAccountData(username, 'userInfo') || {}), ...data.user })
       closeToast()
       showToast({ message: t('auth.loginSuccessOAuth'), position: 'middle', duration: 1500 })
       setTimeout(() => {
@@ -328,11 +326,6 @@ onMounted(() => {
             <div class="input-group" :class="{ err: registerErrors.phone }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="1" width="10" height="18" rx="2.5"/><line x1="8" y1="15" x2="12" y2="15" stroke-linecap="round"/></svg>
               <input v-model="registerForm.phone" type="tel" maxlength="11" :placeholder="t('auth.phone')" class="form-input" @focus="clearRegisterError('phone')" @input="clearRegisterError('phone')"/>
-            </div>
-            <div class="input-group" :class="{ err: registerErrors.verifyCode }">
-              <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="16" height="12" rx="2"/><polyline points="3 5 10 11 17 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <input v-model="registerForm.verifyCode" type="text" maxlength="6" :placeholder="t('auth.verifyCode')" class="form-input" @focus="clearRegisterError('verifyCode')" @input="clearRegisterError('verifyCode')"/>
-              <button class="code-btn" :class="{ off: codeCountdown > 0 || !isPhoneValid }" :disabled="codeCountdown > 0 || !isPhoneValid" @click="sendVerifyCode" type="button">{{ codeCountdown > 0 ? `${codeCountdown}s` : t('auth.getVerifyCode') }}</button>
             </div>
             <div class="input-group" :class="{ err: registerErrors.password }">
               <svg class="input-ico" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="12" height="10" rx="2.5"/><path d="M7 7 V5 A3 3 0 0 1 13 5 V7"/><circle cx="10" cy="12.5" r="1"/></svg>
@@ -544,16 +537,6 @@ onMounted(() => {
   transition: opacity .2s, transform .2s; margin-left: 2px;
 }
 .pwd-btn:active { background: rgba(123,66,245,.08); color: #7b42f5; transform: scale(.88); }
-
-/* ──── 验证码按钮 ──── */
-.code-btn {
-  flex-shrink: 0; margin-left: 8px; padding: 6px 14px; border: none;
-  border-radius: 20px; background: #7b42f5; color: #fff;
-  font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity .2s, transform .2s;
-  white-space: nowrap;
-}
-.code-btn:active { transform: scale(.94); }
-.code-btn.off { background: rgba(0,0,0,.06); color: rgba(0,0,0,.2); pointer-events: none; }
 
 /* ──── 忘记密码 ──── */
 .forgot-row { display: flex; justify-content: flex-end; margin-top: -4px; }

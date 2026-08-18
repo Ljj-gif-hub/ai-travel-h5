@@ -4,6 +4,7 @@ import org.example.traveljava.entity.Order;
 import org.example.traveljava.repository.OrderRepository;
 import org.example.traveljava.service.payment.PaymentProvider;
 import org.example.traveljava.service.payment.PaymentResult;
+import org.example.traveljava.util.AuthUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -65,12 +66,17 @@ public class PaymentService {
     }
 
     /**
-     * 处理支付渠道回调（公开接口，验签后幂等标记已支付）
+     * 处理支付渠道回调（公开接口，验签后幂等标记已支付）。
+     * 仅真实渠道（alipay/wechat）会产生异步回调；mock 渠道无验签语义，
+     * 若 /notify 收到回调说明是伪造请求，直接拒绝，防止免单。
      * @param params 回调参数（必须含 orderNo）
      * @return 已支付的订单号
      */
     @Transactional
     public String handleNotify(Map<String, String> params) {
+        if ("mock".equals(paymentProvider.getProviderName())) {
+            throw new IllegalArgumentException("当前支付渠道不支持异步回调");
+        }
         if (!paymentProvider.verifyNotify(params)) {
             throw new IllegalArgumentException("支付回调验签失败");
         }
@@ -80,6 +86,29 @@ public class PaymentService {
         }
         orderService.markOrderPaid(orderNo);
         log.info("支付回调处理完成：orderNo={}", orderNo);
+        return orderNo;
+    }
+
+    /**
+     * mock 渠道专用确认（仅由受 mock-pay-enabled 开关保护的 /mock-pay 端点调用）。
+     * 与 handleNotify 分离：mock 无验签语义，确认依赖开关 + 登录属主双重保护，不暴露到公开 /notify。
+     * 【安全】校验订单属主：非属主 403，防止任何人凭订单号给他人订单免单。
+     */
+    @Transactional
+    public String mockConfirm(Long userId, String orderNo) {
+        if (!"mock".equals(paymentProvider.getProviderName())) {
+            throw new IllegalArgumentException("当前支付渠道不支持模拟确认");
+        }
+        if (orderNo == null || orderNo.isBlank()) {
+            throw new IllegalArgumentException("缺少订单号");
+        }
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
+        if (!order.getUserId().equals(userId)) {
+            throw new AuthUtils.ForbiddenException("无权操作该订单");
+        }
+        orderService.markOrderPaid(orderNo);
+        log.info("模拟支付确认：userId={}, orderNo={}", userId, orderNo);
         return orderNo;
     }
 

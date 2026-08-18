@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -104,7 +105,10 @@ class PermissionManager:
             if coroutine is not None:
                 return await coroutine(*args, **kwargs)
             if func is not None:
-                return func(*args, **kwargs)
+                # 同步工具（如 httpx.Client 阻塞 HTTP 搜索）不能在协程里直接调用，
+                # 否则阻塞事件循环，导致 asyncio.gather 的并行子调研退化为串行。
+                # 丢线程池执行，保持并行性。
+                return await asyncio.to_thread(func, *args, **kwargs)
             raise TypeError(f"工具 {name} 无可调用实现")
 
         # 纯异步工具（如 MCP 适配器工具）func 为 None，只保留异步入口

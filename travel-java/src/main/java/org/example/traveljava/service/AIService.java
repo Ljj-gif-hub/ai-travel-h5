@@ -20,7 +20,10 @@ import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.example.traveljava.config.AIProviderConfig;
+import org.example.traveljava.config.CacheConfig;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -49,35 +52,27 @@ public class AIService {
 
     private final WebClient webClient;
     private final AIProviderConfig aiConfig;
-    /** 有界 LRU 缓存（容量 200），防止长期运行内存无限增长 */
-    private final Map<String, String> planCache = lruCache(200);
-    private final Map<String, String> chatCache = lruCache(200);
+    /** 【新功能】迁移到统一 Caffeine 缓存 ai-plan（1000 条 / 1 小时，见 CacheConfig）；缓存键含 userId 按用户隔离 */
+    private final Cache planCache;
+    /** 【新功能】迁移到统一 Caffeine 缓存 ai-chat（500 条 / 10 分钟，见 CacheConfig） */
+    private final Cache chatCache;
     private final SceneImageService sceneImageService;
     private final ExecutorService imageFetchExecutor;
     private final org.example.traveljava.config.AppMetrics appMetrics;
-    /** 用户出行偏好（由 Controller 在生成前设置） */
-    private Map<String, Object> userPrefs;
 
     public AIService(WebClient aiWebClient, AIProviderConfig aiConfig, ObjectMapper objectMapper,
                      SceneImageService sceneImageService,
                      @Qualifier("imageFetchExecutor") ExecutorService imageFetchExecutor,
-                     org.example.traveljava.config.AppMetrics appMetrics) {
+                     org.example.traveljava.config.AppMetrics appMetrics,
+                     CacheManager cacheManager) {
         this.webClient = aiWebClient;
         this.aiConfig = aiConfig;
         this.objectMapper = objectMapper;
         this.sceneImageService = sceneImageService;
         this.imageFetchExecutor = imageFetchExecutor;
         this.appMetrics = appMetrics;
-    }
-
-    /** 线程安全的有界 LRU 缓存 */
-    private static <K, V> Map<K, V> lruCache(int maxEntries) {
-        return Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-                return size() > maxEntries;
-            }
-        });
+        this.planCache = cacheManager.getCache(CacheConfig.CACHE_AI_PLAN);
+        this.chatCache = cacheManager.getCache(CacheConfig.CACHE_AI_CHAT);
     }
 
     /** 当前活跃模型名（从配置动态读取） */
@@ -91,8 +86,17 @@ public class AIService {
         return cfg.getChatPath() != null ? cfg.getChatPath() : "/chat/completions";
     }
 
-    /** 设置用户出行偏好（在生成行程前调用） */
-    public void setUserPreferences(Map<String, Object> prefs) { this.userPrefs = prefs; }
+    /**
+     * DeepSeek V4 系列（deepseek-v4-flash/pro）默认开启思考模式：流式响应里
+     * 长时间只输出 reasoning_content（delta.content 为 null），慢且费 token，
+     * 容易撞超时触发兜底行程。本服务需要快速、JSON 纪律好的输出，故对
+     * DeepSeek 供应商统一显式关闭思考（其它供应商不传，避免影响兼容接口）。
+     */
+    private void applyDeepSeekThinking(ChatRequest req) {
+        if ("deepseek".equalsIgnoreCase(aiConfig.getActiveProvider())) {
+            req.setThinking(Map.of("type", "disabled"));
+        }
+    }
 
     /**
      * 流式对话 — 将 AI 返回的文本逐块推送给回调
@@ -109,6 +113,7 @@ public class AIService {
                     ChatMessage.builder().role("system").content("你是资深旅行规划师，回复必须详细全面，每个景点至少写2-3句介绍，每天规划不能少于200字，整体回复不少于2000字。用Markdown格式输出，适当使用emoji让排版生动。").build(),
                     ChatMessage.builder().role("user").content(userPrompt).build()
                 )).build();
+            applyDeepSeekThinking(req);
 
             // 使用 Flux 处理流式 SSE 响应
             String result = webClient.post().uri(chatPath())
@@ -211,6 +216,7 @@ public class AIService {
                     .stream(false)
                     .maxTokens(20)
                     .build();
+            applyDeepSeekThinking(request);
 
             ChatResponse response = webClient.post()
                     .uri(chatPath())
@@ -241,9 +247,10 @@ public class AIService {
     }
 
     /* ==================== 非流式行程规划 ==================== */
-    public String generateTravelPlan(String destination, Long budget, Integer days) {
-        String cacheKey = destination + "_" + budget + "_" + days;
-        String cached = planCache.get(cacheKey);
+    public String generateTravelPlan(Long userId, String destination, Long budget, Integer days) {
+        // 【安全】缓存键加入 userId：行程缓存按用户隔离，防止跨用户共享他人行程
+        String cacheKey = userId + "_" + destination + "_" + budget + "_" + days;
+        String cached = cacheGet(planCache, cacheKey);
         if (cached != null) {
             log.info("从缓存返回行程: {}", cacheKey);
             return cached;
@@ -262,6 +269,7 @@ public class AIService {
                 .temperature(0.5)
                 .maxTokens(800)
                 .build();
+            applyDeepSeekThinking(request);
 
         log.info("DeepSeek生成行程: destination={}, days={}, budget={}", destination, days, budget);
         long startTime = System.currentTimeMillis();
@@ -308,7 +316,7 @@ public class AIService {
     /* ==================== 非流式聊天 ==================== */
     public String chat(List<ChatMessage> messages) {
         String cacheKey = messages.toString();
-        String cached = chatCache.get(cacheKey);
+        String cached = cacheGet(chatCache, cacheKey);
         if (cached != null) {
             log.info("从缓存返回聊天");
             return cached;
@@ -322,6 +330,7 @@ public class AIService {
                 .temperature(0.7)
                 .maxTokens(1500)
                 .build();
+            applyDeepSeekThinking(request);
 
         try {
             ChatResponse response = webClient.post()
@@ -362,6 +371,7 @@ public class AIService {
                 .temperature(0.7)
                 .maxTokens(2000)
                 .build();
+            applyDeepSeekThinking(request);
 
         return webClient.post()
                 .uri(chatPath())
@@ -441,6 +451,7 @@ public class AIService {
                 .temperature(0.7)
                 .maxTokens(3000)
                 .build();
+            applyDeepSeekThinking(request);
 
         log.info("DeepSeek行程规划: destination={}, days={}, budget={}", destination, days, budget);
 
@@ -489,17 +500,25 @@ public class AIService {
 
     /* ==================== 清空缓存 ==================== */
     public void clearCache() {
-        planCache.clear();
-        chatCache.clear();
+        if (planCache != null) planCache.clear();
+        if (chatCache != null) chatCache.clear();
         log.info("缓存已清空");
     }
 
+    /** Caffeine 缓存读取：Cache.get 返回 ValueWrapper，null 表示未命中 */
+    private static String cacheGet(Cache cache, Object key) {
+        if (cache == null) return null;
+        Cache.ValueWrapper wrapper = cache.get(key);
+        return wrapper == null ? null : (String) wrapper.get();
+    }
+
     /* ==================== 结构化行程（JSON格式） ==================== */
-    public TravelPlanDTO generateStructuredTravelPlan(String destination, Long budget, Integer days) {
+    public TravelPlanDTO generateStructuredTravelPlan(Long userId, String destination, Long budget, Integer days) {
         appMetrics.planGenerated();
         appMetrics.aiCall(aiConfig.getActiveProvider());
-        String cacheKey = "structured_" + destination + "_" + budget + "_" + days;
-        String cached = planCache.get(cacheKey);
+        // 【安全】缓存键加入 userId：结构化行程缓存按用户隔离，防止跨用户共享
+        String cacheKey = "structured_" + userId + "_" + destination + "_" + budget + "_" + days;
+        String cached = cacheGet(planCache, cacheKey);
         if (cached != null) {
             log.info("从缓存返回结构化行程");
             try { return objectMapper.readValue(cached, TravelPlanDTO.class); }
@@ -521,6 +540,7 @@ public class AIService {
                 .temperature(0.6)
                 .maxTokens(10000)
                 .build();
+            applyDeepSeekThinking(request);
 
         log.info("DeepSeek结构化行程: destination={}, days={}, budget={}", destination, days, budget);
 
@@ -652,6 +672,7 @@ public class AIService {
                 .temperature(0.7)
                 .maxTokens(4000)
                 .build();
+            applyDeepSeekThinking(request);
 
         log.info("AI规划器流式: dest={}, days={}", req.getDestination(), req.getDays());
 
@@ -921,26 +942,11 @@ public class AIService {
         }
     }
 
-    /** 调用 AI 生成单日行程 JSON — 含用户偏好 */
+    /** 调用 AI 生成单日行程 JSON */
     private Map<String, Object> generateDayFromAI(String dest, int dayNum, int totalDays, Long budget) {
         log.info("AI Day{}/{}: {}", dayNum, totalDays, dest);
-        // 构建偏好上下文
-        String prefStr = "";
-        if (userPrefs != null && !userPrefs.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            if (userPrefs.containsKey("companion") && !userPrefs.get("companion").toString().isEmpty())
-                sb.append("同行:").append(userPrefs.get("companion")).append("。");
-            if (userPrefs.containsKey("styles") && !userPrefs.get("styles").toString().isEmpty())
-                sb.append("偏好:").append(userPrefs.get("styles")).append("。");
-            if (userPrefs.containsKey("hotel") && !userPrefs.get("hotel").toString().isEmpty())
-                sb.append("酒店:").append(userPrefs.get("hotel")).append("。");
-            if (userPrefs.containsKey("pace") && !userPrefs.get("pace").toString().isEmpty())
-                sb.append("节奏:").append(userPrefs.get("pace")).append("。");
-            prefStr = sb.toString();
-        }
         String prompt = String.format(
             "你是资深旅行规划师。请为%s第%d天（共%d天，预算%d元）规划详细行程。" +
-            (prefStr.isEmpty() ? "" : "出行偏好：" + prefStr) +
             "用真实景点名、真实活动描述，每条duration写具体时长如\"2小时\"，cost写具体金额如\"80元\"，" +
             "transport写\"步行\"/\"地铁\"/\"公交\"/\"打车\"，tips写实用小贴士如\"提前预约免排队\"。" +
             "严格输出JSON:{\"dayTitle\":\"第%d天:简短主题(5-10字)\",\"timeSlots\":[" +
@@ -1157,6 +1163,7 @@ public class AIService {
                         ChatMessage.builder().role("system").content(JSON_RULES).build(),
                         ChatMessage.builder().role("user").content(prompt).build()
                     )).build();
+                applyDeepSeekThinking(req);
                 ChatResponse resp = webClient.post().uri(chatPath())
                     .contentType(MediaType.APPLICATION_JSON).bodyValue(req).retrieve()
                     .bodyToMono(ChatResponse.class).timeout(Duration.ofSeconds(90)).block(Duration.ofSeconds(95));
@@ -1237,7 +1244,7 @@ public class AIService {
         if (attractionName == null || attractionName.trim().isEmpty()) return "";
 
         String cacheKey = "image_" + attractionName;
-        String cached = planCache.get(cacheKey);
+        String cached = cacheGet(planCache, cacheKey);
         if (cached != null) return cached;
 
         try {
@@ -1249,5 +1256,76 @@ public class AIService {
         } catch (java.io.UnsupportedEncodingException e) {
             return "";
         }
+    }
+
+    /* ==================== 【新功能】AI 出行打包清单 ==================== */
+
+    /**
+     * 生成 5 大类出行打包清单（证件/衣物/电子/药品/其他）。
+     * AI 失败时返回兜底清单，保证前端始终拿到数据。
+     */
+    public Map<String, Object> generatePackingList(String destination, Integer days, String companion) {
+        String ctx = (companion == null || companion.isBlank()) ? "" : ("，同行：" + companion);
+        String prompt = String.format(
+            "请为前往%s的%d天旅行%s生成打包清单。输出严格JSON对象，键为5个分类：{\"证件\":[\"物品1\",\"物品2\"],\"衣物\":[],\"电子\":[],\"药品\":[],\"其他\":[]}，每类3-5项，物品名简短（8字以内）。" + JSON_RULES,
+            destination, days, ctx);
+        Map<String, Object> result = callAIForJsonShort(prompt);
+        if (result == null || result.isEmpty()) {
+            log.info("打包清单 AI 失败，返回兜底清单");
+            return buildFallbackPackingList(days);
+        }
+        return result;
+    }
+
+    /** 兜底打包清单（AI 不可用时） */
+    private Map<String, Object> buildFallbackPackingList(Integer days) {
+        Map<String, Object> list = new LinkedHashMap<>();
+        list.put("证件", List.of("身份证", "银行卡", "现金", "学生证"));
+        list.put("衣物", List.of("换洗衣物", "外套", "舒适鞋", "遮阳帽"));
+        list.put("电子", List.of("手机充电器", "充电宝", "转换插头", "耳机"));
+        list.put("药品", List.of("感冒药", "肠胃药", "创可贴", "晕车药"));
+        list.put("其他", List.of("洗漱用品", "防晒霜", "雨伞", "水杯"));
+        return list;
+    }
+
+    /* ==================== 【新功能】AI 行程评分 ==================== */
+
+    /**
+     * 对旅行计划评分：5 个维度各 1-10 分 + 总体评价 + 3 条改进建议。
+     * AI 失败返回 null，由 Controller 兜底（HTTP 502）。
+     */
+    public Map<String, Object> scoreTravelPlan(String destination, Integer days, Object planContent) {
+        String planText;
+        try {
+            planText = planContent instanceof String ? (String) planContent
+                    : objectMapper.writeValueAsString(planContent);
+        } catch (JsonProcessingException e) {
+            planText = String.valueOf(planContent);
+        }
+        if (planText == null || planText.isBlank()) {
+            throw new IllegalArgumentException("行程内容不能为空");
+        }
+        // 内容过长会挤爆 token：截取前 4000 字符足够覆盖典型行程
+        if (planText.length() > 4000) {
+            planText = planText.substring(0, 4000);
+        }
+        String prompt = String.format(
+            "请对以下%s%d天旅行计划评分。输出严格JSON：{\"scores\":{\"行程合理度\":8,\"景点丰富度\":7,\"交通便利性\":8,\"预算合理性\":9,\"美食覆盖度\":6},\"summary\":\"总体评价100字内\",\"suggestions\":[\"建议1\",\"建议2\",\"建议3\"]}，每项分数1-10整数，建议具体可执行。" + JSON_RULES
+            + "\n旅行计划内容：\n" + planText,
+            destination, days);
+        return callAIForJsonWithRetry(prompt, 3, 1200);
+    }
+
+    /* ==================== 【新功能】LLM 内容审核判定 ==================== */
+
+    /**
+     * 用 LLM 判定内容是否违规（供 ContentModerationService 调用）。
+     * 返回 JSON：{"safe":true/false,"reason":"..."}；AI 异常返回 null（调用方 fail-open）。
+     */
+    public Map<String, Object> judgeContent(String content) {
+        String prompt = "请审核以下用户发布的内容是否违规（违规类型：色情低俗、暴力恐怖、政治敏感、违法广告、人身攻击、诈骗引流）。"
+            + "输出严格JSON：{\"safe\":true,\"reason\":\"\"}。safe=true 表示合规；safe=false 表示违规，reason 为违规类型（6字以内）。"
+            + JSON_RULES + "\n待审核内容：\n" + content;
+        return callAIForJsonShort(prompt);
     }
 }

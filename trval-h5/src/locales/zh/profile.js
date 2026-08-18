@@ -27,6 +27,8 @@ export default {
   myOrdersDesc: '机票、酒店、门票订单',
   myFavoritesDesc: '收藏的景点和攻略',
   myCouponsDesc: '可用优惠券和折扣',
+  myCollections: '我的收藏夹',
+  myCollectionsDesc: '整理的游记合集',
   myServices: '我的服务',
   quickActions: '快捷操作',
   planShortcut: '我的规划',

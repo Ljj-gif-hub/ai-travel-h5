@@ -27,6 +27,8 @@ export default {
   myOrdersDesc: 'Flight, hotel and ticket orders',
   myFavoritesDesc: 'Favorited attractions and guides',
   myCouponsDesc: 'Available coupons and discounts',
+  myCollections: 'My Collections',
+  myCollectionsDesc: 'Curated note collections',
   myServices: 'My Services',
   quickActions: 'Quick Actions',
   planShortcut: 'My Plans',

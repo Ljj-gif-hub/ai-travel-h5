@@ -4,6 +4,9 @@ import { useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getToken } from '../utils/auth'
 import { noteApi, followApi, commentApi, uploadApi } from '../api'
+import { useRequest } from '../composables/useRequest'
+import SkeletonList from '../components/skeleton/SkeletonList.vue'
+import LazyImage from '../components/LazyImage.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { avatarUrl } from '../utils/avatar'
 import { useI18n } from 'vue-i18n'
@@ -148,6 +151,17 @@ const seedNotes = [
 ]
 
 /* ==================== 加载笔记 ==================== */
+/*
+ * 【useRequest 演示接入】首屏列表请求由 useRequest 统一管理：
+ * - 组件卸载自动 abort 在途请求（其余视图可参照 NotesView 全量迁移的写法）
+ * - 重复 run 自动取消旧请求（防竞态：旧响应覆盖新响应）
+ * - loading/error/data 三态；分页 loadMore 仍走 loadNotes 原有逻辑
+ */
+const firstPageRequest = useRequest(
+  (opts) => noteApi.getAllNotes(1, 10, { signal: opts.signal }),
+  { manual: true }
+)
+
 const loadNotes = async (reset = false) => {
   if (reset) {
     page.value = 1
@@ -159,8 +173,8 @@ const loadNotes = async (reset = false) => {
 
   try {
     loadingMore.value = !reset
-    // 服务端分页加载所有用户的游记
-    const res = await noteApi.getAllNotes(page.value)
+    // 服务端分页加载所有用户的游记；首屏（reset）走 useRequest，分页直连
+    const res = reset ? await firstPageRequest.run() : await noteApi.getAllNotes(page.value)
 
     if (res && res.code === 0 && res.data) {
       const list = Array.isArray(res.data) ? res.data : (res.data.list || [])
@@ -517,7 +531,6 @@ const initFollowingList = async () => {
 onMounted(async () => {
   await initFollowingList()
   loadNotes(true).then(() => { hasLoadedOnce = true })
-  window.addEventListener('scroll', handleScroll, { passive: true })
 })
 
 onActivated(async () => {
@@ -525,6 +538,11 @@ onActivated(async () => {
   if (hasLoadedOnce) {
     loadNotes(true)
   }
+  window.addEventListener('scroll', handleScroll, { passive: true })
+})
+
+onDeactivated(() => {
+  window.removeEventListener('scroll', handleScroll)
 })
 
 onBeforeUnmount(() => {
@@ -613,18 +631,8 @@ onBeforeUnmount(() => {
 
     <!-- ==================== 3. Notes Feed ==================== -->
     <div class="notes-feed entrance-item entrance-d2">
-      <!-- 加载骨架屏 -->
-      <template v-if="isLoading">
-        <div class="skeleton-card" v-for="i in 4" :key="'sk-'+i">
-          <div class="sk-header">
-            <van-skeleton avatar :avatar-size="30" :row="1" />
-          </div>
-          <van-skeleton :row="2" class="sk-body" />
-          <div class="sk-images">
-            <div class="sk-img" v-for="j in 2" :key="j"></div>
-          </div>
-        </div>
-      </template>
+      <!-- 加载骨架屏（统一骨架组件） -->
+      <SkeletonList v-if="isLoading" :count="4" :rows="2" show-image />
 
       <!-- 空状态 -->
       <EmptyState
@@ -697,15 +705,14 @@ onBeforeUnmount(() => {
                   class="img-wrap"
                   style="grid-column: span 2"
                 >
-                  <img :src="url" class="card-img" loading="lazy" @click.stop="previewImages(note.images, 4)" />
+                  <LazyImage :src="url" class="card-img" @click.stop="previewImages(note.images, 4)" />
                   <div class="img-overlay"><span>+{{ note.images.length - 5 }}</span></div>
                 </div>
-                <img
+                <LazyImage
                   v-else
                   :src="url"
                   class="card-img"
                   :style="{ gridColumn: idx < 2 ? 'span 3' : 'span 2' }"
-                  loading="lazy"
                   @click.stop="previewImages(note.images, idx)"
                 />
               </template>
@@ -716,7 +723,7 @@ onBeforeUnmount(() => {
                 <video :src="url" :data-video="`${note.id}-${idx}`" class="card-img" preload="metadata" muted playsinline :controls="!!playingVideos[`${note.id}-${idx}`]" />
                 <div v-if="!playingVideos[`${note.id}-${idx}`]" class="video-play-icon"><van-icon name="play-circle-o" size="28" color="rgba(255,255,255,0.9)" /></div>
               </div>
-              <img v-else :src="url" class="card-img" loading="lazy" @click.stop="previewImages(note.images, idx)" />
+              <LazyImage v-else :src="url" class="card-img" @click.stop="previewImages(note.images, idx)" />
             </template>
           </div>
 

@@ -26,6 +26,8 @@ import about from './en/about'
 import share from './en/share'
 import chat from './en/chat'
 import components from './en/components'
+import report from './en/report'
+import collection from './en/collection'
 
 export default {
   app, settings, common, auth, profile,
@@ -33,5 +35,5 @@ export default {
   trips, planning, agent, map, calendar,
   booking, orders, payment, wallet,
   social, destination, feedback, about, share,
-  chat, components,
+  chat, components, report, collection,
 }

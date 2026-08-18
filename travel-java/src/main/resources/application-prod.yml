@@ -14,6 +14,11 @@ spring:
       maximum-pool-size: ${DB_POOL_SIZE:20}
       minimum-idle: ${DB_MIN_IDLE:5}
       connection-timeout: 30000
+  jpa:
+    hibernate:
+      # 【修复】生产禁用 Hibernate 自动建表/改表（默认值 update 可能在上线时意外修改表结构）。
+      # 表结构变更必须走迁移脚本（Flyway/Liquibase 或手工 SQL）评审后执行。
+      ddl-auto: ${JPA_DDL_AUTO:none}
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -31,8 +36,15 @@ logging:
 # 生产环境安全：
 #  - Actuator 只暴露 health/info/metrics/prometheus，不暴露 env/loggers（防密钥泄露/日志级别篡改）
 #  - 关闭模拟支付确认端点（防免单）
+#  - 关闭 Swagger/OpenAPI 文档（生产不暴露接口文档）
 payment:
   mock-pay-enabled: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 management:
   endpoints:

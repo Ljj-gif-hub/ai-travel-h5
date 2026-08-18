@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi, commentApi } from '../api';
+import ReportSheet from '../components/ReportSheet.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -99,6 +100,7 @@ document.addEventListener('webkitfullscreenchange', onFullscreenChange)
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('webkitfullscreenchange', onFullscreenChange)
+  if (hideControlsTimer) clearTimeout(hideControlsTimer)
 })
 
 const formatTime = (s) => {
@@ -512,6 +514,14 @@ const toggleHeart = () => {
 const handleShare = () => {
   navigator.clipboard?.writeText(window.location.href).then(() => showToast(t('community.linkCopied'))).catch(() => {});
 };
+
+/* ==================== 举报（新功能） ==================== */
+const showReportSheet = ref(false);
+const openReport = () => {
+  if (!getToken()) { showToast(t('common.notLoggedIn')); return; }
+  if (!current.value?.id) return;
+  showReportSheet.value = true;
+};
 const stripHtml = (html) => {
   if (!html) return '';
   return html.replace(/<img[^>]*>/gi,'[图片]').replace(/<video[^>]*\/?>/gi,'').replace(/<[^>]+>/g,'').trim();
@@ -575,6 +585,9 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
           </div>
           <div class="side-btn" @click.stop="handleShare">
             <van-icon name="share" size="30" color="#fff"/><span class="side-num">{{ t('community.share') }}</span>
+          </div>
+          <div class="side-btn" @click.stop="openReport">
+            <van-icon name="warning-o" size="30" color="#fff"/><span class="side-num">{{ t('report.title') }}</span>
           </div>
         </div>
         <div class="bottom-info">
@@ -686,6 +699,9 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
       </Transition>
   </div>
   <div v-else class="video-loading"><van-loading size="40" color="#fff"/></div>
+
+  <!-- 举报弹层（新功能，视频即游记 note） -->
+  <ReportSheet v-model:show="showReportSheet" target-type="note" :target-id="current.id" />
 </template>
 
 <style scoped>

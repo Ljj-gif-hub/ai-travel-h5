@@ -29,7 +29,7 @@ public class FollowController {
 
     @GetMapping("/user/following")
     public Result<List<Map<String, Object>>> getFollowing(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        if (authHeader == null) return Result.ok(java.util.Collections.emptyList());
+        if (authHeader == null || authHeader.isBlank()) return Result.ok(java.util.Collections.emptyList());
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -46,6 +46,8 @@ public class FollowController {
 
     @GetMapping("/user/followers")
     public Result<List<Map<String, Object>>> getFollowers(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // 未登录返回空列表（与 getFollowing 一致的兜底），不再对 null 调用 replace 触发 NPE
+        if (authHeader == null || authHeader.isBlank()) return Result.ok(java.util.Collections.emptyList());
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -102,6 +104,12 @@ public class FollowController {
 
     @GetMapping("/user/following/count")
     public Result<Map<String, Object>> getFollowingCount(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // 未登录返回 count=0（与列表接口的空结果口径一致），不再对 null 调用 replace 触发 NPE
+        if (authHeader == null || authHeader.isBlank()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("count", 0);
+            return Result.ok(empty);
+        }
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);
@@ -119,6 +127,12 @@ public class FollowController {
 
     @GetMapping("/user/followers/count")
     public Result<Map<String, Object>> getFollowersCount(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // 未登录返回 count=0（与列表接口的空结果口径一致），不再对 null 调用 replace 触发 NPE
+        if (authHeader == null || authHeader.isBlank()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("count", 0);
+            return Result.ok(empty);
+        }
         try {
             String token = authHeader.replace("Bearer ", "");
             Long userId = jwtUtil.extractUserId(token);

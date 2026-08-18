@@ -2,6 +2,8 @@ package org.example.traveljava.controller;
 
 import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.service.VoiceToTextService;
+import org.example.traveljava.util.AuthUtils;
+import org.example.traveljava.util.JwtUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +29,11 @@ public class VoiceController {
     private static final long MAX_AUDIO_SIZE = 10L * 1024 * 1024; // 10MB，与服务端 VoiceToTextService 上限一致
 
     private final VoiceToTextService voiceToTextService;
+    private final JwtUtil jwtUtil;
 
-    public VoiceController(VoiceToTextService voiceToTextService) {
+    public VoiceController(VoiceToTextService voiceToTextService, JwtUtil jwtUtil) {
         this.voiceToTextService = voiceToTextService;
+        this.jwtUtil = jwtUtil;
     }
 
     /**
@@ -41,7 +45,9 @@ public class VoiceController {
      */
     @PostMapping("/transcribe")
     @RateLimit(max = 10, duration = 60, key = "voice_transcribe")
-    public Result<Map<String, Object>> transcribe(@RequestParam("file") MultipartFile file) {
+    public Result<Map<String, Object>> transcribe(@RequestHeader("Authorization") String authHeader,
+                                                   @RequestParam("file") MultipartFile file) {
+        AuthUtils.requireUserId(authHeader, jwtUtil);
         log.info("语音转文字请求：fileName={}, fileSize={}, contentType={}",
                 file != null ? file.getOriginalFilename() : "null",
                 file != null ? file.getSize() : 0,

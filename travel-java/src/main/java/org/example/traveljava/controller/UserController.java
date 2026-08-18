@@ -1,6 +1,5 @@
 package org.example.traveljava.controller;
 
-import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.entity.User;
 import org.example.traveljava.service.UserService;
 import org.example.traveljava.util.AuthUtils;
@@ -102,16 +101,31 @@ public class UserController {
     }
 
     @PostMapping("/logout")
-    public Result<String> logout(@RequestHeader("Authorization") String authHeader) {
+    public Result<String> logout(@RequestHeader("Authorization") String authHeader,
+                                 @RequestBody(required = false) Map<String, String> params) {
         try {
             String token = authHeader.replace("Bearer ", "");
-            userService.logout(token);
+            // 【新功能】前端附带 refreshToken 时一并撤销，退出后无法再刷新
+            String refreshToken = params != null ? params.get("refreshToken") : null;
+            userService.logout(token, refreshToken);
             return Result.ok("退出成功");
         } catch (AuthUtils.AuthException e) {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
             log.error("退出登录异常", e);
             return Result.ok("退出成功");
+        }
+    }
+
+    /** 【新功能】当前用户等级：积分、等级名（青铜/白银/黄金/铂金/钻石）、下一级及差值 */
+    @GetMapping("/level")
+    public Result<Map<String, Object>> getLevel(@RequestHeader("Authorization") String authHeader) {
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        try {
+            return Result.ok(userService.getUserLevel(userId));
+        } catch (Exception e) {
+            log.error("获取用户等级失败", e);
+            return Result.fail("获取等级失败");
         }
     }
 }

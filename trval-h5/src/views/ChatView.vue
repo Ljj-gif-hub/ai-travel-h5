@@ -11,21 +11,24 @@ import { showToast, showDialog, showConfirmDialog } from 'vant'
 defineOptions({ name: 'ChatView' })
 import { getToken } from '../utils/auth'
 import { chatApi } from '../api'
+import { CHAT_SYSTEM_PROMPT } from '../constants/systemPrompts'
 
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import VirtualList from '../components/VirtualList.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 
 /* ==================== 规划参数 ==================== */
-const destination = route.query.destination || ''
-const budget = route.query.budget || ''
-const days = route.query.days || ''
+/* 响应式读取 query：keep-alive 复用组件时 query 变化也能同步（避免一次性解构快照） */
+const destination = computed(() => route.query.destination || '')
+const budget = computed(() => route.query.budget || '')
+const days = computed(() => route.query.days || '')
 /** 语音识别预填：从行程地图页语音输入跳转而来时自动发送 */
-const initialQuery = route.query.q || ''
+const initialQuery = computed(() => route.query.q || '')
 
 /* ==================== 状态 ==================== */
 const messages = ref([])
@@ -77,14 +80,16 @@ const updatePageHeight = () => {
     // 不支持 visualViewport 的降级方案
     pageHeight.value = `calc(100dvh - ${TAB_BAR_H}px - env(safe-area-inset-bottom, 0px))`
   }
+  // 虚拟列表视口高度同步（布局变化后 clientHeight 更新）
+  if (chatContent.value) chatViewportHeight.value = chatContent.value.clientHeight
 }
 
-/* ==================== 快捷问题 ==================== */
+/* ==================== 快捷问题（正文同样走 i18n，语言切换一致） ==================== */
 const quickQuestions = [
-  { label: t('chat.quickCheaper'), query: '能否帮我调整成更省钱的方案？' },
-  { label: t('chat.quickFood'), query: '请多推荐一些当地必吃的美食' },
-  { label: t('chat.quickShorter'), query: '帮我压缩行程天数' },
-  { label: t('chat.quickFamily'), query: '帮我优化成适合带孩子的亲子游方案' },
+  { label: t('chat.quickCheaper'), query: t('chat.quickCheaperQuery') },
+  { label: t('chat.quickFood'), query: t('chat.quickFoodQuery') },
+  { label: t('chat.quickShorter'), query: t('chat.quickShorterQuery') },
+  { label: t('chat.quickFamily'), query: t('chat.quickFamilyQuery') },
 ]
 
 /* ==================== Markdown 渲染 ==================== */
@@ -174,20 +179,40 @@ const renderMarkdown = (text) => text ? md.render(preprocessMarkdown(text)) : ''
 const sendQuickQuestion = (question) => { inputText.value = question; sendMessage() }
 /* 【性能优化】发送节流：500ms内禁止重复发送 */
 let sendDebounce = false
+let sendDebounceTimer = null
+/** 语音入口自动发送定时器（onMounted 中 400ms 延迟触发） */
+let initialQueryTimer = null
 
 /* ==================== 滚动 ==================== */
 let scrollScheduled = false; let lastScrollTime = 0
+let scrollScheduledTimer = null
+
+/* 虚拟列表视口参数（透传给 VirtualList 计算可视窗口） */
+const chatScrollTop = ref(0)
+const chatViewportHeight = ref(0)
+
 const isNearBottom = () => {
   if (!chatContent.value) return true
   const el = chatContent.value; return el.scrollHeight - el.scrollTop - el.clientHeight < 100
 }
-const handleScroll = () => { isAutoScrollEnabled.value = isNearBottom() }
+const handleScroll = () => {
+  isAutoScrollEnabled.value = isNearBottom()
+  if (chatContent.value) {
+    chatScrollTop.value = chatContent.value.scrollTop
+    chatViewportHeight.value = chatContent.value.clientHeight
+  }
+}
+
+/* 虚拟列表高度变化（新消息/流式增长/实测修正）→ 用户贴底时保持滚动锚定 */
+const onListHeightChange = () => {
+  if (isAutoScrollEnabled.value) scrollToBottom()
+}
 
 const scrollToBottom = async (force = false) => {
   await nextTick()
   if (!chatContent.value) return
   const now = Date.now()
-  if (now - lastScrollTime < 50) { if (!scrollScheduled) { scrollScheduled = true; setTimeout(() => { scrollToBottom(force); scrollScheduled = false }, 60) } return }
+  if (now - lastScrollTime < 50) { if (!scrollScheduled) { scrollScheduled = true; scrollScheduledTimer = setTimeout(() => { scrollToBottom(force); scrollScheduled = false }, 60) } return }
   lastScrollTime = now
   if (force || isAutoScrollEnabled.value) chatContent.value.scrollTo({ top: chatContent.value.scrollHeight, behavior: isSending.value ? 'auto' : 'smooth' })
 }
@@ -218,13 +243,74 @@ const toggleVoiceInput = () => {
   if (isListening.value) recognition.value.stop(); else { inputText.value = ''; recognition.value.start() }
 }
 
+/* ==================== SSE 断线重连 ==================== */
+// 【注意】后端限流 20 次/分钟，重连退避间隔必须 ≥2s（2s / 4s，最多 2 次）
+const SSE_RECONNECT_DELAYS = [2000, 4000]
+const isReconnecting = ref(false)
+
+/**
+ * 流式对话 + 网络错误自动重连：
+ * - AbortError（主动取消/Tab切走）→ 原样上抛，静默不提示
+ * - 网络错误 → 丢弃半截回复，退避后重新发送完整消息列表（后端重新生成）
+ * - 重连等待期间组件切走（abortController 被置 null）→ 中止，不复活
+ */
+const streamChatWithReconnect = async (chatHistory, aiMsgIndex) => {
+  let reconnectCount = 0
+  for (;;) {
+    abortController = new AbortController()
+    try {
+      const response = await chatApi.getChatStream([
+        { role: 'system', content: CHAT_SYSTEM_PROMPT },
+        ...chatHistory,
+      ], abortController.signal)
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''
+      let isDone = false
+      while (!isDone) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n'); buffer = events.pop() || ''
+        for (const evt of events) {
+          const trimmedEvt = evt.trim()
+          if (!trimmedEvt) continue
+          if (trimmedEvt === 'data: [DONE]' || trimmedEvt === 'data:[DONE]') { isDone = true; break }
+          if (!trimmedEvt.startsWith('data:')) continue
+          try {
+            const dataLines = trimmedEvt.split('\n')
+            let content = dataLines.map(line => { const t = line.trim(); if (t.startsWith('data: ')) return t.slice(6); if (t.startsWith('data:')) return t.slice(5); return '' }).join('\n')
+            if (content && content !== '[DONE]') { if (isThinking.value) isThinking.value = false; messages.value[aiMsgIndex].content += content; scrollToBottom() }
+          } catch (e) { /* SSE skip */ }
+        }
+      }
+      return // 流正常结束
+    } catch (e) {
+      if (e?.name === 'AbortError') throw e // 主动取消，不重连
+      if (reconnectCount >= SSE_RECONNECT_DELAYS.length) throw e // 重连次数耗尽
+      const delay = SSE_RECONNECT_DELAYS[reconnectCount]
+      reconnectCount += 1
+      if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].content = '' // 丢弃半截回复，重发完整消息列表
+      isReconnecting.value = true
+      await new Promise((r) => setTimeout(r, delay))
+      isReconnecting.value = false
+      // 重连等待期间 Tab 切走/卸载 → 中止，避免后台悄悄重连
+      if (!abortController) {
+        const err = new Error('aborted during reconnect wait')
+        err.name = 'AbortError'
+        throw err
+      }
+    }
+  }
+}
+
 /* ==================== 发送消息 ==================== */
 const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || isSending.value) { showToast(t('chat.inputRequired')); return }
   if (sendDebounce) return // 节流：500ms内重复点击忽略
   sendDebounce = true
-  setTimeout(() => { sendDebounce = false }, 500)
+  sendDebounceTimer = setTimeout(() => { sendDebounce = false }, 500)
 
   isSending.value = true; isThinking.value = true; showQuickBar.value = false
 
@@ -236,44 +322,20 @@ const sendMessage = async () => {
   messages.value.push({ id: generateUniqueId(), type: 'ai', content: '', isStreaming: true })
 
   let prompt = text
-  if (destination && budget && days) prompt = `我计划去${destination}旅游，预算${budget}元，共${days}天。${text}`
+  if (destination.value && budget.value && days.value) prompt = `我计划去${destination.value}旅游，预算${budget.value}元，共${days.value}天。${text}`
 
   const chatHistory = messages.value
     .filter((m) => m.type === 'user' || (m.type === 'ai' && m.content && m.content.length > 0))
     .map((m) => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }))
 
   try {
-    abortController = new AbortController()
-    const response = await chatApi.getChatStream([
-      { role: 'system', content: `你是一个专业的旅游规划助手，擅长提供详细、实用的旅行建议。排版规范：Markdown语法标准，##/###后须有空格，-和1.后须有空格，使用**加粗**，禁止HTML标签。内容区块空一行，步骤用列表，表格仅用于费用汇总。标题只用##/###两级。` },
-      ...chatHistory,
-    ])
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''
-    let isDone = false
-    while (!isDone) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split('\n\n'); buffer = events.pop() || ''
-      for (const evt of events) {
-        const trimmedEvt = evt.trim()
-        if (!trimmedEvt) continue
-        if (trimmedEvt === 'data: [DONE]' || trimmedEvt === 'data:[DONE]') { isDone = true; break }
-        if (!trimmedEvt.startsWith('data:')) continue
-        try {
-          const dataLines = trimmedEvt.split('\n')
-          let content = dataLines.map(line => { const t = line.trim(); if (t.startsWith('data: ')) return t.slice(6); if (t.startsWith('data:')) return t.slice(5); return '' }).join('\n')
-          if (content && content !== '[DONE]') { if (isThinking.value) isThinking.value = false; messages.value[aiMsgIndex].content += content; scrollToBottom() }
-        } catch (e) { /* SSE skip */ }
-      }
-    }
+    await streamChatWithReconnect(chatHistory, aiMsgIndex)
     if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
     isSending.value = false; isThinking.value = false; showQuickBar.value = true; saveMessagesToStorage()
   } catch (e) {
     if (e?.name === 'AbortError') return // SSE被主动中断，不提示错误
-    isSending.value = false; isThinking.value = false; showQuickBar.value = true; showToast(t('chat.requestFailed'))
+    if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
+    isSending.value = false; isThinking.value = false; isReconnecting.value = false; showQuickBar.value = true; showToast(t('chat.requestFailed'))
   }
 }
 
@@ -281,12 +343,12 @@ const sendMessage = async () => {
 onMounted(async () => {
   if (getToken()) await loadMessagesFromStorage()
   if (messages.value.length === 0) messages.value = [{ id: 1, type: 'system', content: t('chat.greeting') }]
-  if (destination && budget && days) messages.value.push({ id: generateUniqueId(), type: 'system', content: t('chat.loadedInfo', { dest: destination, days: days, budget: budget }) })
+  if (destination.value && budget.value && days.value) messages.value.push({ id: generateUniqueId(), type: 'system', content: t('chat.loadedInfo', { dest: destination.value, days: days.value, budget: budget.value }) })
 
   // 【语音入口】从行程地图页语音跳转而来：预填并自动发送
-  if (initialQuery) {
-    inputText.value = initialQuery
-    setTimeout(() => { sendMessage(); }, 400)
+  if (initialQuery.value) {
+    inputText.value = initialQuery.value
+    initialQueryTimer = setTimeout(() => { sendMessage(); }, 400)
   }
 
   // 【关键修复】监听 visualViewport 变化，处理软键盘弹出/收起
@@ -299,7 +361,12 @@ onMounted(async () => {
   window.addEventListener('resize', updatePageHeight)
 
   initSpeechRecognition()
-  await nextTick(); await nextTick(); scrollToBottom(true)
+  await nextTick(); await nextTick()
+  if (chatContent.value) {
+    chatScrollTop.value = chatContent.value.scrollTop
+    chatViewportHeight.value = chatContent.value.clientHeight
+  }
+  scrollToBottom(true)
 })
 
 /* 【性能优化】Tab切走：中断SSE、停止语音、解绑监听 */
@@ -309,25 +376,44 @@ onDeactivated(() => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   isSending.value = false
   isThinking.value = false
+  isReconnecting.value = false
 })
 
 /* 【性能优化】Tab切回：恢复页面高度计算、滚动到底部 */
 onActivated(() => {
   updatePageHeight()
-  nextTick(() => scrollToBottom())
+  nextTick(() => {
+    if (chatContent.value) {
+      chatScrollTop.value = chatContent.value.scrollTop
+      chatViewportHeight.value = chatContent.value.clientHeight
+    }
+    scrollToBottom()
+  })
 })
 
 onUnmounted(() => {
+  if (abortController) { abortController.abort(); abortController = null }
+  isReconnecting.value = false
   if (window.visualViewport) {
     window.visualViewport.removeEventListener('resize', updatePageHeight)
     window.visualViewport.removeEventListener('scroll', updatePageHeight)
   }
   window.removeEventListener('resize', updatePageHeight)
   if (recognition.value) recognition.value.stop()
+  // 清理全部未决定时器，防止卸载后回调操作已销毁组件
+  clearTimeout(initialQueryTimer); initialQueryTimer = null
+  clearTimeout(sendDebounceTimer); sendDebounceTimer = null
+  clearTimeout(scrollScheduledTimer); scrollScheduledTimer = null
+  clearTimeout(saveTimer); saveTimer = null
 })
 
 let saveTimer = null
-watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => saveMessagesToStorage(), 1000) }, { deep: true })
+/* 轻量签名监听替代 deep watch：内容流式追加/增删都会改变签名（length+type+内容长度），
+   大历史记录下避免深度遍历整棵消息树 */
+watch(
+  () => messages.value.map(m => `${m.id}:${m.type}:${m.content ? m.content.length : 0}`).join('|'),
+  () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => saveMessagesToStorage(), 1000) }
+)
 </script>
 
 <template>
@@ -350,8 +436,8 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
         </div>
       </template>
       <template #right>
-        <van-icon name="replay" size="20" color="#fff" class="nav-btn" @click="loadMessagesFromStorage" />
-        <van-icon name="delete-o" size="20" color="#fff" class="nav-btn" @click="clearChat" />
+        <van-icon name="replay" size="20" color="#fff" class="nav-btn" role="button" :aria-label="t('chat.restoreHistory')" @click="loadMessagesFromStorage" />
+        <van-icon name="delete-o" size="20" color="#fff" class="nav-btn" role="button" :aria-label="t('chat.clearChat')" @click="clearChat" />
       </template>
     </van-nav-bar>
 
@@ -374,45 +460,61 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
           <p class="guide-heading">{{ t('chat.guideHeading') }}</p>
           <p class="guide-hint">{{ t('chat.guideHint') }}</p>
           <div class="guide-chips">
-            <button class="guide-chip" @click="sendQuickQuestion('推荐几个适合情侣的国内旅游目的地')">{{ t('chat.guideCouples') }}</button>
-            <button class="guide-chip" @click="sendQuickQuestion('带父母去哪里旅游比较合适？')">{{ t('chat.guideParents') }}</button>
-            <button class="guide-chip" @click="sendQuickQuestion('预算3000元可以去哪里玩？')">{{ t('chat.guideBudget3000') }}</button>
-            <button class="guide-chip" @click="sendQuickQuestion('推荐北京三日游攻略')">{{ t('chat.guideBeijing') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion(t('chat.guideCouplesQuery'))">{{ t('chat.guideCouples') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion(t('chat.guideParentsQuery'))">{{ t('chat.guideParents') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion(t('chat.guideBudget3000Query'))">{{ t('chat.guideBudget3000') }}</button>
+            <button class="guide-chip" @click="sendQuickQuestion(t('chat.guideBeijingQuery'))">{{ t('chat.guideBeijing') }}</button>
           </div>
         </div>
 
-        <!-- 消息列表 -->
-        <div v-else class="msg-list">
-          <div v-for="msg in messages" :key="msg.id" :class="['msg-row', msg.type]">
-            <!-- 系统消息 -->
-            <div v-if="msg.type === 'system'" class="sys-msg">
-              <span>{{ msg.content }}</span>
-            </div>
+        <!-- 消息列表（虚拟滚动：仅渲染可视区消息，估高 72px + ResizeObserver 实测修正） -->
+        <VirtualList
+          v-else
+          :items="messages"
+          item-key="id"
+          :estimated-item-height="72"
+          :gap="18"
+          :overscan="5"
+          :scroll-top="chatScrollTop"
+          :viewport-height="chatViewportHeight"
+          @height-change="onListHeightChange"
+        >
+          <template #default="{ item: msg }">
+            <div :class="['msg-row', msg.type]">
+              <!-- 系统消息 -->
+              <div v-if="msg.type === 'system'" class="sys-msg">
+                <span>{{ msg.content }}</span>
+              </div>
 
-            <!-- 用户消息 -->
-            <div v-else-if="msg.type === 'user'" class="user-msg-row">
-              <div class="user-bubble">{{ msg.content }}</div>
-              <div class="user-avatar"><van-icon name="user-o" color="#fff" size="16" /></div>
-            </div>
+              <!-- 用户消息 -->
+              <div v-else-if="msg.type === 'user'" class="user-msg-row">
+                <div class="user-bubble">{{ msg.content }}</div>
+                <div class="user-avatar"><van-icon name="user-o" color="#fff" size="16" /></div>
+              </div>
 
-            <!-- AI 消息 -->
-            <div v-else-if="msg.type === 'ai'" class="ai-msg-row">
-              <div class="ai-avatar">🤖</div>
-              <div class="ai-bubble" :class="{ streaming: msg.isStreaming }">
-                <div v-if="isThinking && msg === messages[messages.length - 1]" class="thinking">
-                  <span class="think-dot" /><span class="think-dot" /><span class="think-dot" />
-                  <span class="think-text">{{ t('chat.thinking') }}</span>
+              <!-- AI 消息 -->
+              <div v-else-if="msg.type === 'ai'" class="ai-msg-row">
+                <div class="ai-avatar">🤖</div>
+                <div class="ai-bubble" :class="{ streaming: msg.isStreaming }">
+                  <div v-if="isThinking && msg === messages[messages.length - 1]" class="thinking">
+                    <span class="think-dot" /><span class="think-dot" /><span class="think-dot" />
+                    <span class="think-text">{{ t('chat.thinking') }}</span>
+                  </div>
+                  <div v-else class="md-body" v-html="renderMarkdown(msg.content)" />
                 </div>
-                <div v-else class="md-body" v-html="renderMarkdown(msg.content)" />
               </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </VirtualList>
       </div>
     </div>
 
     <!-- ======== 第三层：底部输入固定栏 ======== -->
     <div class="chat-footer" :class="{ 'keyboard-up': keyboardOpen }">
+      <!-- SSE 断线重连提示 -->
+      <div v-if="isReconnecting" class="reconnect-tip">
+        <van-loading size="14" color="#8B5CF6" />{{ t('chat.reconnecting') }}
+      </div>
       <!-- 快捷提问栏 — 固定于输入框上方 -->
       <div v-if="showQuickBar && messages.length > 1" class="quick-bar">
         <button v-for="(q, i) in quickQuestions" :key="i" class="quick-chip" @click="sendQuickQuestion(q.query)">
@@ -422,7 +524,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 
       <div class="input-row">
         <div class="input-glass">
-          <button class="input-action" @click="toggleVoiceInput" :class="{ listening: isListening }">
+          <button class="input-action" @click="toggleVoiceInput" :class="{ listening: isListening }" :aria-label="t('chat.voiceInput')">
             <van-icon :name="isListening ? 'volume' : 'volume-o'" size="20" :color="isListening ? '#8B5CF6' : 'var(--text-hint)'" />
           </button>
           <input
@@ -433,7 +535,7 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
             @keyup.enter="sendMessage"
             @focus="scrollToBottom(true)"
           />
-          <button class="send-btn" :class="{ disabled: !inputText.trim() || isSending }" :disabled="!inputText.trim() || isSending" @click="sendMessage">
+          <button class="send-btn" :class="{ disabled: !inputText.trim() || isSending }" :disabled="!inputText.trim() || isSending" :aria-label="t('chat.send')" @click="sendMessage">
             <van-icon v-if="!isSending" name="arrow-up" size="20" color="#fff" />
             <van-loading v-else size="16" color="#fff" />
           </button>
@@ -630,6 +732,10 @@ watch(messages, () => { if (saveTimer) clearTimeout(saveTimer); saveTimer = setT
 }
 
 /* ==================== 快捷提问栏 ==================== */
+.reconnect-tip {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; color: #8B5CF6; padding: 2px 0 6px;
+}
 .quick-bar {
   display: flex; gap: 8px; overflow-x: auto;
   padding: 4px 0 8px;

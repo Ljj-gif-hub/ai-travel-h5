@@ -30,17 +30,20 @@ public class FavoriteController {
 
     @GetMapping
     public Result<List<Map<String, Object>>> getFavorites(@RequestHeader("Authorization") String authHeader,
-                                                          @RequestParam(required = false) String type) {
+                                                          @RequestParam(required = false) String type,
+                                                          @RequestParam(defaultValue = "0") int page,
+                                                          @RequestParam(defaultValue = "20") int size) {
         try {
             String token = authHeader.replace("Bearer ", "");
             String username = jwtUtil.extractUsername(token);
             Long userId = jwtUtil.extractUserId(token);
 
+            // 分页（page 从 0 开始，默认 0/20，向后兼容：响应仍为列表）
             List<Favorite> favorites;
             if (type != null && !type.isEmpty()) {
-                favorites = favoriteService.getFavoritesByType(userId, type);
+                favorites = favoriteService.getFavoritesByType(userId, type, page, size);
             } else {
-                favorites = favoriteService.getFavorites(userId);
+                favorites = favoriteService.getFavorites(userId, page, size);
             }
 
             List<Map<String, Object>> result = favorites.stream().map(favorite -> {

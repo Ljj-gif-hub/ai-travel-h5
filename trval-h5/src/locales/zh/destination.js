@@ -16,4 +16,13 @@ export default {
   hotAttractions: '热门景点',
   countSuffix: '个',
   noAttractions: '暂无景点数据',
+
+  // ===== 目的地天气（新功能） =====
+  weather: '目的地天气',
+  weatherUnavailable: '天气服务暂不可用，请稍后重试',
+  weatherHumidity: '湿度',
+  weatherWind: '{dir} {power}级',
+  weatherNight: '夜间',
+  weatherForecast: '未来天气',
+  weatherUpdated: '更新于 {time}',
 }

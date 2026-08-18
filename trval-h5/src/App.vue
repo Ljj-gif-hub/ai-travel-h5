@@ -14,6 +14,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { initTabBarHide, destroyTabBarHide } from './utils/tabBarHide'
 import { useTheme } from './utils/theme'
+import ErrorBoundary from './components/ErrorBoundary.vue'
 
 const { theme, setTheme } = useTheme()
 const { t } = useI18n()
@@ -124,13 +125,19 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
         - keep-alive 缓存 Tab 页面，切换不销毁
         - 过渡只用 transform，不用 absolute，不破坏文档流
       -->
-      <router-view v-slot="{ Component }">
-        <transition :name="transitionName" :duration="300">
-          <keep-alive :include="CACHED_VIEWS" :max="5">
-            <component :is="Component" :key="route.path" />
-          </keep-alive>
-        </transition>
-      </router-view>
+      <!-- 【A11y】主内容区 landmark -->
+      <main role="main" class="app-main">
+        <!-- 【错误边界】捕获子树渲染错误，显示重试代替白屏 -->
+        <ErrorBoundary>
+          <router-view v-slot="{ Component }">
+            <transition :name="transitionName" :duration="300">
+              <keep-alive :include="CACHED_VIEWS" :max="5">
+                <component :is="Component" :key="route.path" />
+              </keep-alive>
+            </transition>
+          </router-view>
+        </ErrorBoundary>
+      </main>
 
       <!-- 底部悬浮椭圆 Tab 导航 -->
       <div class="custom-tabbar" :class="{ 'tab-hidden': hideTabBar }">
@@ -144,6 +151,9 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
           :key="index"
           class="tab-item"
           :class="{ active: isActive(tab.path) }"
+          role="tab"
+          :aria-label="t(`app.tabs.${tab.nameKey}`)"
+          :aria-selected="isActive(tab.path)"
           @click="handleTabClick(tab.path)"
         >
           <svg class="tab-icon" :viewBox="tabIcons[tab.icon].viewBox" v-html="tabIcons[tab.icon].body" />
@@ -284,6 +294,12 @@ html[data-theme='dark'] .van-dialog {
   overflow-x: hidden;
   background: transparent;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 【A11y】主内容区 */
+.app-main {
+  position: relative;
+  min-height: 100vh;
 }
 
 /*

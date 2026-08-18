@@ -48,6 +48,21 @@ export function agentPlanStream(params, callbacks) {
 
   // 兜底：非 2xx 或从未收到任何 data: 事件（如校验失败返回 422 JSON）→ 报错，避免永久卡在"生成中"
   xhr.onload = function () {
+    // flush 末尾残留的半个 data: 事件（无尾随换行时），避免漏掉最后的 complete/error 事件
+    const rest = buf.trim()
+    if (rest.startsWith('data:')) {
+      receivedAny = true
+      const json = rest.substring(5).trim()
+      if (json) {
+        try {
+          const ev = JSON.parse(json)
+          const type = ev.event_type || ''
+          if (type === 'complete') { if (onComplete) onComplete(ev) }
+          else if (type === 'error') { if (onError) onError(ev.message || 'Agent 服务异常') }
+          else { if (onProgress) onProgress(ev) }
+        } catch {}
+      }
+    }
     if (xhr.status < 200 || xhr.status >= 300 || !receivedAny) {
       let msg = 'Agent 请求失败 (' + xhr.status + ')'
       if (!receivedAny && xhr.responseText) {
