@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,12 +74,12 @@ public class WeatherService {
     /** 调用高德 weatherInfo（extensions=all 返回实时+预报） */
     private JsonNode callWeather(String cityOrAdcode, String key) {
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(WEATHER_URL)
+            URI uri = UriComponentsBuilder.fromHttpUrl(WEATHER_URL)
                     .queryParam("city", cityOrAdcode)
                     .queryParam("key", key)
                     .queryParam("extensions", "all")
-                    .build().encode().toUriString();
-            String resp = restTemplate.getForObject(url, String.class);
+                    .build().encode().toUri();
+            String resp = restTemplate.getForObject(uri, String.class);
             if (resp == null || resp.isEmpty()) {
                 log.warn("天气接口返回空: {}", cityOrAdcode);
                 return null;
@@ -98,12 +99,12 @@ public class WeatherService {
     /** config/district 接口：城市名 → adcode（区县级兜底） */
     private String resolveAdcode(String city, String key) {
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(DISTRICT_URL)
+            URI uri = UriComponentsBuilder.fromHttpUrl(DISTRICT_URL)
                     .queryParam("keywords", city)
                     .queryParam("key", key)
                     .queryParam("subdistrict", "0")
-                    .build().encode().toUriString();
-            String resp = restTemplate.getForObject(url, String.class);
+                    .build().encode().toUri();
+            String resp = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(resp);
             JsonNode districts = root.path("districts");
             if (districts.isArray() && districts.size() > 0) {

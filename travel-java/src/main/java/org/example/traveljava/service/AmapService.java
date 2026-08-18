@@ -130,12 +130,12 @@ public class AmapService implements MapService {
         if (key == null || key.isBlank() || address == null || address.isBlank()) return null;
         rateLimit();
         try {
-            String url = UriComponentsBuilder.fromHttpUrl("https://restapi.amap.com/v3/geocode/geo")
+            URI uri = UriComponentsBuilder.fromHttpUrl("https://restapi.amap.com/v3/geocode/geo")
                     .queryParam("address", address)
                     .queryParam("key", key)
                     .queryParam("output", "JSON")
-                    .toUriString();
-            String resp = restTemplate.getForObject(url, String.class);
+                    .build().encode().toUri();
+            String resp = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(resp);
             if ("1".equals(root.get("status").asText()) && root.get("geocodes").isArray()) {
                 JsonNode geo = root.get("geocodes").get(0);
@@ -209,7 +209,7 @@ public class AmapService implements MapService {
                 builder.queryParam("location", lng + "," + lat);
             }
 
-            String response = restTemplate.getForObject(builder.toUriString(), String.class);
+            String response = restTemplate.getForObject(builder.build().encode().toUri(), String.class);
             return parseDetailResponse(response);
         } catch (RestClientException e) {
             log.error("调用高德地图Detail API失败", e);
@@ -275,7 +275,7 @@ public class AmapService implements MapService {
         rateLimit();
         try {
             // type=110000 风景名胜, 110100 公园广场 — 过滤掉商铺/餐饮
-            String url = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
+            URI uri = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
                     .queryParam("keywords", "景点")
                     .queryParam("types", "110000|110100|140000")
                     .queryParam("city", cityName.trim())
@@ -283,9 +283,9 @@ public class AmapService implements MapService {
                     .queryParam("offset", 20)
                     .queryParam("page", 1)
                     .queryParam("extensions", "all")
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             return parseAttractionsResponse(response);
         } catch (RestClientException e) {
             log.error("调用高德地图Text Search API(城市景点)失败, city={}", cityName, e);
@@ -306,7 +306,7 @@ public class AmapService implements MapService {
         rateLimit();
         try {
             // 高德 location 格式为 "lng,lat"
-            String url = UriComponentsBuilder.fromHttpUrl(PLACE_AROUND_URL)
+            URI uri = UriComponentsBuilder.fromHttpUrl(PLACE_AROUND_URL)
                     .queryParam("keywords", "景点")
                     .queryParam("location", lng + "," + lat)
                     .queryParam("radius", radius)
@@ -314,9 +314,9 @@ public class AmapService implements MapService {
                     .queryParam("offset", 20)
                     .queryParam("page", 1)
                     .queryParam("extensions", "all")
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             return parseAttractionsResponse(response);
         } catch (RestClientException e) {
             log.error("调用高德地图Around Search API(周边景点)失败, lat={}, lng={}", lat, lng, e);
@@ -533,15 +533,15 @@ public class AmapService implements MapService {
     private HotDestinationDTO fetchHotDestination(String cityName) {
         rateLimit();
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
+            URI uri = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
                     .queryParam("keywords", "景点")
                     .queryParam("city", cityName)
                     .queryParam("key", key)
                     .queryParam("offset", 10)
                     .queryParam("page", 1)
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             HotDestinationDTO dto = parseHotDestinationResponse(response, cityName);
             if (dto != null) return dto;
         } catch (Exception e) {
@@ -834,9 +834,9 @@ public class AmapService implements MapService {
             if (city != null && !city.isEmpty() && !"全国".equals(city)) {
                 builder.queryParam("city", city);
             }
-            String apiUrl = builder.toUriString();
+            URI apiUri = builder.build().encode().toUri();
 
-            String response = restTemplate.getForObject(apiUrl, String.class);
+            String response = restTemplate.getForObject(apiUri, String.class);
             if (response == null) return null;
 
             JsonNode root = objectMapper.readTree(response);

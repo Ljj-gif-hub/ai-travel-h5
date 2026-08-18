@@ -1,4 +1,4 @@
-param([string]$RepoRoot = '')
+﻿param([string]$RepoRoot = '')
 
 # ================================================================
 # 本地打包部署包：把 travel-java / agent-service / trval-h5
