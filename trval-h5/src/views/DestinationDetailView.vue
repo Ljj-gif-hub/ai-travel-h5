@@ -146,8 +146,6 @@ const route = useRoute()
 const { t } = useI18n()
 const router = useRouter()
 
-const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
-
 const staticImageMap = ref({})
 
 const loadStaticImageMap = async () => {
@@ -157,30 +155,34 @@ const loadStaticImageMap = async () => {
   } catch {}
 }
 
-/** 主渠道：后端 API / AI 生成 → 静态 JSON 兜底 */
-const getImageUrl = (keyword) => {
-  if (staticImageMap.value[keyword]) return staticImageMap.value[keyword]
-  const encodedKeyword = encodeURIComponent(`${keyword} 风景 旅游摄影`)
-  return `${IMAGE_API}?prompt=${encodedKeyword}&image_size=landscape_4_3`
-}
-
 /*
  * 【修复】无city参数时自动跳转热门目的地列表，避免空白页
  * 根因：直接访问 /destination-detail 无 query 时 city 为空，页面完全空白
  */
 const city = ref(route.query.city || '')
 const cityInfo = ref({})
-const cityImage = ref('')
+const cityImageOverride = ref('') // 后端素材库/热门目的地接口返回的封面图（优先级最高）
 const attractions = ref([])
 const isLoadingAttractions = ref(false)
 const mapError = ref(false)
 const expandedIds = ref([])
 let mapInstance = null
 
-// 【修复】参数校验：无城市名时自动跳转目的地列表
-if (!city.value || !city.value.trim()) {
+// BUGID L-DEST-1 修复：无城市名时跳转目的地列表。
+// 注意：`<script setup>` 顶层不能用 `return`（编译器报错），
+// 故用 hasCity 标志短路后续 onMounted 副作用（见 onMounted 开头判空返回）
+const hasCity = !!(city.value && city.value.trim())
+if (!hasCity) {
   router.replace('/destinations')
 }
+
+// BUGID FEAT-7 修复：封面图改为 computed——staticImageMap 异步加载完成会自动重新求值，
+// 不再同步求值拿到空 map 后直连外部 AI 生图接口；无图时回退本地占位图
+const cityImage = computed(() => {
+  if (cityImageOverride.value) return cityImageOverride.value
+  if (staticImageMap.value[city.value]) return staticImageMap.value[city.value]
+  return '/images/default-placeholder.png'
+})
 
 const goBack = () => {
   try {
@@ -188,9 +190,6 @@ const goBack = () => {
     else { router.back() }
   } catch (e) { router.push('/') }
 }
-
-// 初始化城市图片（需在city有值后才设置）
-cityImage.value = city.value ? getImageUrl(city.value) : ''
 
 const isExpanded = (index) => expandedIds.value.includes(index)
 
@@ -212,8 +211,9 @@ const getSafeImageUrl = (url) => {
 }
 
 const handleImageError = (type) => {
+  // BUGID FEAT-7 修复：cityImage 已为 computed，改由覆盖源兜底占位图
   if (type === 'city') {
-    cityImage.value = '/images/default-placeholder.png'
+    cityImageOverride.value = '/images/default-placeholder.png'
   }
 }
 
@@ -224,7 +224,7 @@ const loadCityInfo = async () => {
     if (found) {
       cityInfo.value = found
       if (found.imageUrl) {
-        cityImage.value = found.imageUrl
+        cityImageOverride.value = found.imageUrl
       }
     }
   } catch (e) {
@@ -423,6 +423,8 @@ const initMap = async () => {
 }
 
 onMounted(async () => {
+  // BUGID L-DEST-1 修复：无 city 参数时直接返回，不再执行加载/地图/天气等副作用
+  if (!hasCity) return
   await loadStaticImageMap()
   await Promise.all([loadCityInfo(), loadAttractions()])
   await initMap()

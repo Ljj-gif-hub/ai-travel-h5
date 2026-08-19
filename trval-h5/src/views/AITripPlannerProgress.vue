@@ -23,6 +23,13 @@ const isGenerating = ref(false)
 const isStopping = ref(false) // 停止中锁
 const taskId = ref('')
 let abortCtrl = null
+// BUGID 修复：taskId 持久化到 sessionStorage，刷新/重进组件后仍能停止后端任务
+const TASK_ID_KEY = 'ai_planner_task_id'
+// BUGID 修复：可中断 sleep 用的停止信号，点停止时 resolve
+let stopResolve = null
+const stopSignal = new Promise(r => { stopResolve = r })
+// BUGID 修复：generate-finish 跳转定时器句柄，卸载时取消
+let finishJumpTimer = null
 
 const statusIcon = (s) => s === 'done' ? '✓' : s === 'doing' ? '◌' : '○'
 const statusClass = (s) => 'step-dot ' + s
@@ -83,7 +90,10 @@ const connect = () => {
     for (let retry = 1; retry <= 2; retry++) {
       if (isFinish.value || isStopping.value) return
       summary.value = t('agent.retryMsg', { retry })
-      await new Promise(r => setTimeout(r, 2000))
+      // BUGID 修复：sleep 用可中断方式，点停止时 stopSignal resolve，立即结束等待
+      await Promise.race([new Promise(r => setTimeout(r, 2000)), stopSignal])
+      // BUGID 修复：sleep 结束后再判一次停止状态，停止后不再重连
+      if (isFinish.value || isStopping.value) return
       try {
         abortCtrl = new AbortController()
         const r2 = await fetch('/api/travel/planner/progress', {
@@ -116,11 +126,16 @@ const handleEvent = (data) => {
       if (data.previewData && Object.keys(data.previewData).length) {
         previewData.value = { ...previewData.value, ...data.previewData }
       }
-      if (data.taskId) { taskId.value = data.taskId }
+      if (data.taskId) {
+        taskId.value = data.taskId
+        // BUGID 修复：持久化 taskId，刷新/重进后仍可停止后端任务
+        try { sessionStorage.setItem(TASK_ID_KEY, data.taskId) } catch (e) { /* 存储不可用 */ }
+      }
       break
     case 'generate-finish':
       isFinish.value = true; progress.value = 100
-      setTimeout(() => {
+      // BUGID 修复：存跳转定时器句柄，卸载时 clearTimeout 取消
+      finishJumpTimer = setTimeout(() => {
         try {
           router.push({ path: '/planning', query: { destination: data.destination || route.query.destination || '', days: route.query.days || '1', budget: '5000', people: '2', taskId: taskId.value, streamMode: 'true' } })
         } catch (e) { console.error(e) }
@@ -144,15 +159,21 @@ const handleEvent = (data) => {
 const stopFlow = async () => {
   if (isStopping.value) { return }
   isStopping.value = true
+  // BUGID 修复：通知等待中的可中断 sleep 立即结束（重试循环点停止即时生效）
+  if (stopResolve) { stopResolve(); stopResolve = null }
   // 1. 断开前端连接
   if (abortCtrl) { abortCtrl.abort(); abortCtrl = null }
   // 2. 通知后端终止
-  if (taskId.value) {
+  // BUGID 修复：taskId 可能为组件局部 ref（刷新后丢失），回退到 sessionStorage 中持久化的 taskId
+  const persistTaskId = taskId.value || (() => { try { return sessionStorage.getItem(TASK_ID_KEY) || '' } catch (e) { return '' } })()
+  if (persistTaskId) {
     fetch('/api/travel/planner/stop', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken() || ''}` },
-      body: JSON.stringify({ taskId: taskId.value }),
+      body: JSON.stringify({ taskId: persistTaskId }),
     }).catch(() => {})
   }
+  // BUGID 修复：停止后清除持久化 taskId，避免下次进入误停新任务
+  try { sessionStorage.removeItem(TASK_ID_KEY) } catch (e) {}
   showToast({ message: t('agent.terminatingGen'), position: 'middle', duration: 1200 })
   isFinish.value = true
   summary.value = t('agent.genTerminated')
@@ -171,10 +192,17 @@ const alreadyStarted = ref(false)
 onMounted(() => {
   if (alreadyStarted.value) { return }
   alreadyStarted.value = true
+  // BUGID 修复：组件刷新/重进后恢复持久化的 taskId，使 stopFlow 仍能停止后端任务（停止按钮保持可用）
+  try {
+    const savedTaskId = sessionStorage.getItem(TASK_ID_KEY)
+    if (savedTaskId) taskId.value = savedTaskId
+  } catch (e) { /* 存储不可用 */ }
   connect()
 })
 onUnmounted(() => {
   if (abortCtrl) { abortCtrl.abort(); abortCtrl = null }
+  // BUGID 修复：取消 generate-finish 的跳转定时器，避免卸载后仍跳转
+  if (finishJumpTimer) { clearTimeout(finishJumpTimer); finishJumpTimer = null }
 })
 </script>
 

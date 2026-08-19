@@ -26,7 +26,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 from .schemas import TripPlanOutput, AgentEvent
-from .knowledge import create_knowledge_provider
+from .knowledge import knowledge_store
 from .parsers import parse_json, to_int as _to_int
 from .demo_data import get_demo_research, build_demo_plan
 
@@ -193,7 +193,9 @@ class TravelAgentPlanner:
         except (ValueError, TypeError):
             self.max_refine_rounds = 2
         # RAG 知识库检索器（内置攻略 / 未来外部语料库）
-        self.knowledge = create_knowledge_provider()
+        # L-PY-1 修复：复用模块级全局单例（knowledge.py 启动时已建好 TF-IDF 索引），
+        # 不再每个请求重建（读盘 + 建索引同步阻塞事件循环）
+        self.knowledge = knowledge_store
         # MCP 外部工具（可选依赖，惰性加载）
         self._mcp_loader = None
         self._mcp_tools_cache: Optional[List] = None

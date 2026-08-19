@@ -56,7 +56,10 @@ public class FileUploadController {
         "application/xml", "text/xml", "application/javascript", "text/javascript"
     );
     private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-    private static final long MAX_VIDEO_SIZE = 1024L * 1024 * 1024;
+    // L-UPLOAD-2 修复：视频上限与框架 multipart.max-file-size（50MB，内存安全考量）对齐。
+    // 此前声明 1GB 永远不可达——50MB 以上请求在进入控制器前就被 Spring 拒绝（MaxUploadSizeExceededException 统一兜底），
+    // 保留 1GB 会让前端按错误上限提示、控制器自身的大小校验形同虚设。
+    private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;
 
     private final Path uploadDir;
     private final JwtUtil jwtUtil;
@@ -98,18 +101,19 @@ public class FileUploadController {
             ext = originalName.substring(originalName.lastIndexOf(".")).toLowerCase();
         }
 
-        boolean isImage = IMAGE_TYPES.contains(contentType) || IMAGE_EXTENSIONS.contains(ext);
-        boolean isVideo = VIDEO_TYPES.contains(contentType) || VIDEO_EXTENSIONS.contains(ext);
+        // UPLOAD-1 修复：part 无 Content-Type 时 getContentType() 返回 null，Set.of/Map.of 不允许 null
+        boolean isImage = contentType != null && (IMAGE_TYPES.contains(contentType) || IMAGE_EXTENSIONS.contains(ext));
+        boolean isVideo = contentType != null && (VIDEO_TYPES.contains(contentType) || VIDEO_EXTENSIONS.contains(ext));
 
         if (!isImage && !isVideo) {
             return Result.fail("不支持的文件类型：" + contentType + "，扩展名：" + ext);
         }
         // 如果 MIME 和扩展名冲突（如图片 MIME 但视频扩展名），优先信任 MIME
-        if (IMAGE_TYPES.contains(contentType) && VIDEO_EXTENSIONS.contains(ext)) {
+        if (contentType != null && IMAGE_TYPES.contains(contentType) && VIDEO_EXTENSIONS.contains(ext)) {
             isVideo = false;
             isImage = true;
         }
-        if (VIDEO_TYPES.contains(contentType) && IMAGE_EXTENSIONS.contains(ext)) {
+        if (contentType != null && VIDEO_TYPES.contains(contentType) && IMAGE_EXTENSIONS.contains(ext)) {
             isImage = false;
             isVideo = true;
         }
@@ -117,12 +121,14 @@ public class FileUploadController {
             return Result.fail("图片大小不能超过10MB");
         }
         if (isVideo && size > MAX_VIDEO_SIZE) {
-            return Result.fail("视频大小不能超过1GB");
+            return Result.fail("视频大小不能超过50MB");
         }
 
         try {
             // 落盘扩展名由服务端按校验后的类型决定，绝不沿用客户端可控的原始扩展名
-            String storedExt = MIME_TO_EXT.getOrDefault(contentType, isImage ? ".jpg" : ".mp4");
+            // UPLOAD-1 修复：contentType 为 null 时 getOrDefault 传入 null 会对 Map.of 抛 NPE
+            String storedExt = contentType != null ? MIME_TO_EXT.getOrDefault(contentType, isImage ? ".jpg" : ".mp4")
+                    : (isImage ? ".jpg" : ".mp4");
             String newName = UUID.randomUUID().toString() + storedExt;
 
             Path targetPath = uploadDir.resolve(newName);

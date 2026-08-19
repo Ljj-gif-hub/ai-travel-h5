@@ -59,7 +59,14 @@ public class AiQuotaInterceptor implements HandlerInterceptor {
         long quota;
         if (path.startsWith("/api/agent/")) {
             quota = agentDailyQuota;
-        } else if (path.startsWith("/api/travel/ai/") || path.startsWith("/api/travel/stream/")) {
+        } else if (path.startsWith("/api/travel/ai/")
+                || path.startsWith("/api/travel/stream/")
+                || path.startsWith("/api/travel/plan")
+                || path.startsWith("/api/travel/chat")
+                || path.startsWith("/api/travel/planner/")
+                || path.startsWith("/api/travel/trip/")
+                || path.startsWith("/api/trip/ai/")) {
+            // QUOTA-1 修复：补全真正烧钱的 AI 路径（plan/stream/structured/chat/planner/trip-ai/trip-generate）
             quota = aiDailyQuota;
         } else {
             // 非 AI 接口不校验配额

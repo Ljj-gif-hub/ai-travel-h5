@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 public class Refund {
 
     public static final String STATUS_PENDING = "pending";
+    public static final String STATUS_PROCESSING = "processing";
     public static final String STATUS_REFUNDED = "refunded";
     public static final String STATUS_REJECTED = "rejected";
 
@@ -34,7 +35,7 @@ public class Refund {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    /** 退款金额（单位：分，与订单 price 一致） */
+    /** 退款金额（单位：元，与订单 price 一致） */
     @Column(nullable = false)
     private Long amount;
 

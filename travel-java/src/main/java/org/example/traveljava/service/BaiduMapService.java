@@ -42,10 +42,12 @@ public class BaiduMapService implements MapService {
     private static final String SUGGESTION_URL = "https://api.map.baidu.com/place/v2/suggestion";
     private static final String DETAIL_URL = "https://api.map.baidu.com/place/v2/detail";
     private static final String PLACE_SEARCH_URL = "https://api.map.baidu.com/place/v2/search";
+    /**
+     * 不再返回 picsum 随机占位图（会导致首页图片与城市不匹配）。
+     * 返回空串，由前端 /images/landmarks/*.jpg 静态图映射兜底。
+     */
     private static String imageUrl(String name) {
-        try {
-            return "https://picsum.photos/seed/" + java.net.URLEncoder.encode(name, "UTF-8") + "/400/300";
-        } catch (Exception e) { return "https://picsum.photos/400/300"; }
+        return "";
     }
 
     /** 热门目的地缓存过期时间：1小时 */
@@ -87,12 +89,13 @@ public class BaiduMapService implements MapService {
     public double[] geocode(String address) {
         if (ak == null || ak.isBlank() || address == null || address.isBlank()) return null;
         try {
-            String url = UriComponentsBuilder.fromHttpUrl("https://api.map.baidu.com/geocoding/v3/")
+            // AMAP-1 修复：用 toUri() 传 URI 对象，避免 toUriString() + getForObject(String) 二次编码（%→%25）
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl("https://api.map.baidu.com/geocoding/v3/")
                     .queryParam("address", address)
                     .queryParam("output", "json")
                     .queryParam("ak", ak)
-                    .toUriString();
-            String resp = restTemplate.getForObject(url, String.class);
+                    .build().encode().toUri();
+            String resp = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(resp);
             if (root.has("status") && root.get("status").asInt() == 0) {
                 JsonNode loc = root.get("result").get("location");
@@ -131,15 +134,16 @@ public class BaiduMapService implements MapService {
         log.info("调用百度地图Suggestion API, keyword={}, city={}", keyword, city);
 
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(SUGGESTION_URL)
+            // AMAP-1 修复：用 URI 对象避免二次编码
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(SUGGESTION_URL)
                     .queryParam("query", keyword.trim())
                     .queryParam("region", (city != null && !city.isBlank()) ? city.trim() : "全国")
                     .queryParam("city_limit", false)
                     .queryParam("output", "json")
                     .queryParam("ak", ak)
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             return parseSuggestionResponse(response);
         } catch (RestClientException e) {
             log.error("调用百度地图Suggestion API失败", e);
@@ -200,14 +204,15 @@ public class BaiduMapService implements MapService {
         log.info("调用百度地图Detail API, uid={}", uid);
 
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
+            // AMAP-1 修复：用 toUri() 传 URI 对象，避免 toUriString() + getForObject(String) 二次编码（%→%25）
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
                     .queryParam("uid", uid)
                     .queryParam("output", "json")
                     .queryParam("scope", 2)
                     .queryParam("ak", ak)
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             return parseDetailResponse(response);
         } catch (RestClientException e) {
             log.error("调用百度地图Detail API失败", e);
@@ -219,14 +224,15 @@ public class BaiduMapService implements MapService {
         log.info("调用百度地图Detail API, lat={}, lng={}", lat, lng);
 
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
+            // AMAP-1 修复：用 toUri() 传 URI 对象，避免二次编码
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
                     .queryParam("location", lat + "," + lng)
                     .queryParam("output", "json")
                     .queryParam("scope", 2)
                     .queryParam("ak", ak)
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             return parseDetailResponse(response);
         } catch (RestClientException e) {
             log.error("调用百度地图Detail API(经纬度)失败", e);
@@ -422,26 +428,45 @@ public class BaiduMapService implements MapService {
         return result;
     }
 
+    /** 【L-MAP-1 修复】带超时的 HTTP GET 辅助方法。
+     *  try-with-resources 保证 reader/连接在成功与异常路径都被关闭；非 2xx 时消费 errorStream
+     *  后抛异常（避免连接复用池被污染）。此前三处手写 HttpURLConnection 无 finally，读流中途
+     *  异常会泄漏 reader/conn 且不消费 errorStream。 */
+    private String httpGet(String urlStr) throws java.io.IOException {
+        java.net.HttpURLConnection conn = null;
+        try {
+            java.net.URL url = new java.net.URL(urlStr);
+            conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(10000);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                try (java.io.InputStream es = conn.getErrorStream()) { /* 消费错误体，防连接池污染 */ }
+                throw new java.io.IOException("HTTP " + code);
+            }
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                return response.toString();
+            }
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
     private HotDestinationDTO fetchHotDestination(String cityName) {
         try {
             String urlStr = PLACE_SEARCH_URL + "?query=" + java.net.URLEncoder.encode("景点", "UTF-8") + "&region=" + java.net.URLEncoder.encode(cityName, "UTF-8") + "&output=json&page_size=10&ak=" + ak;
 
-            java.net.URL url = new java.net.URL(urlStr);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
-            
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-            conn.disconnect();
-            
-            HotDestinationDTO dto = parseHotDestinationResponse(response.toString(), cityName);
+            String response = httpGet(urlStr);
+            HotDestinationDTO dto = parseHotDestinationResponse(response, cityName);
             if (dto != null) {
                 return dto;
             }
@@ -590,25 +615,9 @@ public class BaiduMapService implements MapService {
             // 安全：不打印完整 URL（含 ak 密钥），仅脱敏后 debug 输出
             log.debug("请求URL(已脱敏): {}", urlStr.replaceAll("ak=[^&]+", "ak=***"));
             
-            java.net.URL url = new java.net.URL(urlStr);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
-            
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-            conn.disconnect();
-            
-            log.debug("HTTP响应码: {}", conn.getResponseCode());
-            String responseBody = response.toString();
+            String responseBody = httpGet(urlStr);
             log.debug("响应长度: {}", responseBody.length());
-            
+
             return parseAttractionsResponse(responseBody);
         } catch (Exception e) {
             log.error("调用百度地图Place API(城市景点)失败, city={}", cityName, e);
@@ -633,22 +642,7 @@ public class BaiduMapService implements MapService {
             // 安全：不打印完整 URL（含 ak 密钥），仅脱敏后 debug 输出
             log.debug("请求URL(已脱敏): {}", urlStr.replaceAll("ak=[^&]+", "ak=***"));
             
-            java.net.URL url = new java.net.URL(urlStr);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
-            
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-            conn.disconnect();
-            
-            return parseAttractionsResponse(response.toString());
+            return parseAttractionsResponse(httpGet(urlStr));
         } catch (Exception e) {
             log.error("调用百度地图Place API(周边景点)失败, lat={}, lng={}", lat, lng, e);
             return Collections.emptyList();
@@ -748,9 +742,8 @@ public class BaiduMapService implements MapService {
             return imageUrl;
         }
 
-        String fallbackUrl = imageUrl(attractionName);
-        saveAttractionImage(attractionName, fallbackUrl, "picsum");
-        return fallbackUrl;
+        // 不再回落到 picsum 随机图：返回空串，由前端本地图片兜底
+        return "";
     }
 
     private String fetchRealImageFromBaidu(String attractionName, String uid) {
@@ -760,16 +753,17 @@ public class BaiduMapService implements MapService {
         }
 
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
+            // AMAP-1 修复：用 URI 对象避免二次编码
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(DETAIL_URL)
                     .queryParam("uid", uid)
                     .queryParam("output", "json")
                     .queryParam("scope", 2)
                     .queryParam("ak", ak)
-                    .toUriString();
+                    .build().encode().toUri();
 
-            log.debug("[百度地图] 获取图片详情URL: {}", url);
+            log.debug("[百度地图] 获取图片详情URL: {}", uri);
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             if (response == null || response.isEmpty()) {
                 return null;
             }

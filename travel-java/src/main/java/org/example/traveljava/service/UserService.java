@@ -178,8 +178,21 @@ public class UserService {
             // 黑名单失败不阻断退出（token 过期后自然失效）
             log.warn("退出登录黑名单失效失败: {}", e.getMessage());
         }
-        // 【新功能】同时撤销刷新令牌，退出后旧 refreshToken 彻底失效
-        refreshTokenService.revoke(refreshToken);
+
+        // 【L-TOKEN-1】退出登录 = 全局注销：吊销该账号所有刷新令牌（含被窃取的旧令牌），
+        // 不再只撤销携带的那一个。token 未过期时能解出 userId（extractUserId 只读 claim 不校验），
+        // 解析失败则退回撤销携带的单个 refreshToken。
+        Long userId = null;
+        try {
+            userId = jwtUtil.extractUserId(token);
+        } catch (Exception e) {
+            log.warn("退出登录提取 userId 失败，退回单令牌撤销: {}", e.getMessage());
+        }
+        if (userId != null) {
+            refreshTokenService.revokeAll(userId);
+        } else {
+            refreshTokenService.revoke(refreshToken);
+        }
     }
 
     /* ==================== 【新功能】积分与等级 ==================== */

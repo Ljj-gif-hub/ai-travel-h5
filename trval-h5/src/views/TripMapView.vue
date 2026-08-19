@@ -116,6 +116,7 @@ const mapContainerRef = ref(null)
 // 地图单例：页面切换不销毁地图实例，避免重复加载卡顿
 let mapInstance = null
 let mapMarkers = []      // 当前地图上的标记集合
+let cityLabels = []      // L-MAP-5 修复：城市标签集合（切换引擎/清除标记时一并清理，防跨引擎残留叠加）
 let mapProvider = null   // 'baidu' | 'amap' | 'leaflet' — 当前使用的地图引擎
 let leafletLoaded = false
 let amapLoaded = false
@@ -328,13 +329,20 @@ const initMap = async (centerCity) => {
  */
 const initBaiduMap = async (centerCity) => {
   const center = await getCityCenter(centerCity)
-  if (mapInstance) {
+  // L-MAP-3 修复：仅当当前实例确为百度地图时才复用 centerAndZoom；Leaflet/高德实例无此方法会 TypeError
+  if (mapInstance && mapProvider === 'baidu') {
     const container = document.getElementById('trip-bmap-container')
     if (container && mapInstance.getContainer() !== container) {
       container.appendChild(mapInstance.getContainer())
     }
     mapInstance.centerAndZoom(new window.BMapGL.Point(center.lng, center.lat), 13)
     return
+  }
+  // L-MAP-3 修复：非百度实例 → 双判断销毁（destroy/remove）后再重建百度实例
+  if (mapInstance) {
+    try { if (typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch (e) {}
+    try { if (typeof mapInstance.remove === 'function') mapInstance.remove() } catch (e) {}
+    mapInstance = null
   }
 
   const container = document.getElementById('trip-bmap-container')
@@ -361,9 +369,10 @@ const initLeafletMap = async (centerCity, L) => {
     return
   }
 
-  // 销毁旧地图实例
+  // 销毁旧地图实例（AMap 有 destroy、Leaflet 有 remove、BMapGL 有 destroy，双判断避免泄漏）
   if (mapInstance) {
-    try { mapInstance.remove() } catch (e) {}
+    try { if (typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch (e) {}
+    try { if (typeof mapInstance.remove === 'function') mapInstance.remove() } catch (e) {}
     mapInstance = null
   }
 
@@ -493,6 +502,11 @@ const getCityCenter = async (city) => {
 }
 
 /**
+ * 转义 HTML，防止 city（来自 route.query.destination，URL 可控）XSS
+ */
+const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
+/**
  * 百度地图城市标签
  */
 const addCityLabelBaidu = (city, center) => {
@@ -507,6 +521,7 @@ const addCityLabelBaidu = (city, center) => {
     borderRadius: '12px', padding: '8px 20px', letterSpacing: '2px',
   })
   mapInstance.addOverlay(label)
+  cityLabels.push({ el: label, provider: 'baidu' })
 }
 
 /**
@@ -520,9 +535,10 @@ const initAmapMap = async (centerCity) => {
     return
   }
 
-  // 销毁旧的非高德实例
+  // 销毁旧的非高德实例（双判断 destroy/remove，避免 Leaflet 实例只调 destroy 而泄漏）
   if (mapInstance) {
-    try { mapInstance.destroy() } catch (e) {}
+    try { if (typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch (e) {}
+    try { if (typeof mapInstance.remove === 'function') mapInstance.remove() } catch (e) {}
     mapInstance = null
   }
 
@@ -563,6 +579,7 @@ const addCityLabelAmap = (city, center) => {
     },
   })
   mapInstance.add(label)
+  cityLabels.push({ el: label, provider: 'amap' })
 }
 
 /**
@@ -571,13 +588,17 @@ const addCityLabelAmap = (city, center) => {
 const addCityLabelLeaflet = async (city, L) => {
   if (!mapInstance) return
   const center = await getCityCenter(city)
+  // MAPXSS-1 修复：city 来自 route.query（URL 可控），divIcon 的 html 会被解析为 innerHTML，
+  // 含 <img onerror> 等标签可注入脚本，必须转义后再拼模板
+  const safeCity = escapeHtml(city || t('map.destination'))
   const icon = L.divIcon({
     className: 'city-label-marker',
-    html: `<div style="font-size:18px;font-weight:700;color:#fff;background:rgba(0,0,0,0.5);border-radius:12px;padding:6px 18px;white-space:nowrap;letter-spacing:2px;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${city || t('map.destination')}</div>`,
+    html: `<div style="font-size:18px;font-weight:700;color:#fff;background:rgba(0,0,0,0.5);border-radius:12px;padding:6px 18px;white-space:nowrap;letter-spacing:2px;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${safeCity}</div>`,
     iconSize: [120, 36],
     iconAnchor: [60, 50],
   })
-  L.marker([center.lat, center.lng], { icon, interactive: false }).addTo(mapInstance)
+  const marker = L.marker([center.lat, center.lng], { icon, interactive: false }).addTo(mapInstance)
+  cityLabels.push({ el: marker, provider: 'leaflet' })
 }
 
 /**
@@ -722,6 +743,18 @@ const clearMapMarkers = () => {
     }
   })
   mapMarkers = []
+  // L-MAP-5 修复：城市标签独立追踪，一并清理（跨引擎残留的旧标签不再叠加）
+  cityLabels.forEach(({ el, provider }) => {
+    if (!el) return
+    if (provider === 'baidu') {
+      try { mapInstance.removeOverlay(el) } catch (e) {}
+    } else if (provider === 'amap') {
+      try { mapInstance.remove(el) } catch (e) {}
+    } else if (provider === 'leaflet') {
+      try { mapInstance.removeLayer(el) } catch (e) {}
+    }
+  })
+  cityLabels = []
 }
 
 /* ==================== 蒙版透明度：联动抽屉高度 ==================== */
@@ -741,6 +774,11 @@ let abortSSE = null
  * 3. GET /trip/progress/{taskId} SSE 订阅进度
  */
 const startGeneration = async () => {
+  // SSERACE-1 修复：重新生成前先中止旧的 SSE 流，避免新旧流并发写入状态（generateAndStream 返回的是中止函数）
+  if (abortSSE) {
+    try { if (typeof abortSSE === 'function') abortSSE(); else if (abortSSE.abort) abortSSE.abort() } catch (e) {}
+    abortSSE = null
+  }
   store.resetState()
   store.state.phase = 'generating'
   store.state.drawerState = 'mid'
@@ -761,8 +799,10 @@ const startGeneration = async () => {
   store.state.params = params
 
   // 初始化地图（与生成并行，不阻塞）
-  initMap(params.destination)
-  loadMapMarkers(params.destination)
+  // MAP-1 修复：loadMapMarkers 必须在 initMap 完成后执行，否则 mapInstance 尚为 null 时地标/地铁圆点永不显示
+  initMap(params.destination).then(() => {
+    loadMapMarkers(params.destination)
+  })
 
   // 构建初始 planData 骨架
   store.state.planData = {
@@ -914,8 +954,9 @@ const onVoiceResult = (text) => {
   if (!text) return
   // 语音输入 → 跳转 AI 对话页并自动发送该问题（U8 接线）
   const dest = (store.state.planData && store.state.planData.destination) || store.state.destination || ''
-  const budget = store.state.budget || ''
-  const days = store.state.days || ''
+  // L-MAP-4 修复：budget/days 在 store.state.params 下，顶层无此字段（保持默认空串）
+  const budget = store.state.params?.budget || ''
+  const days = store.state.params?.days || ''
   router.push({ path: '/chat', query: { q: text, destination: dest, budget, days } })
 }
 
@@ -926,7 +967,8 @@ const goCalendar = () => {
     showToast(t('map.noPlanToView'))
     return
   }
-  router.push('/trip-calendar')
+  // CAL-1 修复：传 savedPlanId 到日历页，防止组件卸载 resetState 后日历页读到 null planData
+  router.push({ path: '/trip-calendar', query: { planId: store.state.savedPlanId || '' } })
 }
 
 /* 离线地图开关（B5）：强制 Leaflet + 缓存 OSM 瓦片 */
@@ -1087,12 +1129,7 @@ const goBack = () => {
   router.back()
 }
 
-const onUnmountedCleanup = () => {
-  if (abortSSE) {
-    abortSSE()
-    abortSSE = null
-  }
-}
+// L-TRIPMAP-1 修复：onUnmountedCleanup 是死代码（从未被调用），其 abortSSE 清理逻辑已由下方 onUnmounted 直接承担，删除孤立函数
 
 /* ==================== 生命周期 ==================== */
 onMounted(async () => {
@@ -1117,7 +1154,8 @@ onUnmounted(() => {
     else if (mapInstance && typeof mapInstance.remove === 'function') mapInstance.remove()
   } catch {}
   mapInstance = null
-  store.resetState()
+  // CAL-1 修复：不在 onUnmounted 中立即 resetState，避免跳转日历页时 planData 被清空
+  // 仅清理地图和 SSE 资源，planData 保留供日历页等关联页面读取
 })
 </script>
 

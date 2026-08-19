@@ -48,7 +48,9 @@ export function useRequest(requestFn, options = {}) {
     } catch (e) {
       if (e?.name === 'AbortError') return undefined // 主动取消/被新请求替代
       if (id === seq) error.value = e
-      throw e
+      // BUGID COMP-3 修复：不再重抛异常，避免调用方未接 try/catch 时产生 unhandled rejection。
+      // 失败结果统一收敛到 error.value，调用方按需读取。
+      return undefined
     } finally {
       // 仅最新请求负责收尾（旧请求被新请求/手动 cancel 取代后不触碰状态）
       if (id === seq) {

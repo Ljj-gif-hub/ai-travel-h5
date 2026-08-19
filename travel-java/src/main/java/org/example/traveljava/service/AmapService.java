@@ -60,8 +60,10 @@ public class AmapService implements MapService {
             try {
                 Thread.sleep(REFILL_INTERVAL_MS);
             } catch (InterruptedException e) {
+                // L-MAP-2 修复：中断不再 return 放行（原实现未获令牌仍发外部调用，限速被旁路）。
+                // 令牌桶纯本地、按时间补充，正常路径最多等一个补充周期；中断属异常，恢复标志并抛出让本次调用失败（fail-closed）。
                 Thread.currentThread().interrupt();
-                return;
+                throw new IllegalStateException("地图限速等待被中断，放弃本次调用", e);
             }
         }
     }
@@ -89,8 +91,12 @@ public class AmapService implements MapService {
     private static final String PLACE_DETAIL_URL = "https://restapi.amap.com/v3/place/detail";
     private static final String PLACE_TEXT_URL = "https://restapi.amap.com/v3/place/text";
     private static final String PLACE_AROUND_URL = "https://restapi.amap.com/v3/place/around";
+    /**
+     * 不再返回 picsum 随机占位图（会导致首页图片与城市不匹配）。
+     * 返回空串，由前端 /images/landmarks/*.jpg 静态图映射兜底。
+     */
     private static String imageUrl(String cityName) {
-        return "https://picsum.photos/seed/" + java.net.URLEncoder.encode(cityName, java.nio.charset.StandardCharsets.UTF_8) + "/400/300";
+        return "";
     }
 
     /** 热门目的地缓存过期时间：1小时 */

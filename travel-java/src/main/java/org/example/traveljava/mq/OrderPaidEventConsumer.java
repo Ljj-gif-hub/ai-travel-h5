@@ -1,5 +1,6 @@
 package org.example.traveljava.mq;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.traveljava.config.AppMetrics;
 import org.example.traveljava.entity.AsyncAudit;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -43,18 +45,34 @@ public class OrderPaidEventConsumer {
         log.info("[MQ-CONSUMER] 收到订单支付成功事件: orderNo={} userId={}",
                 event.payload().get("orderNo"), event.payload().get("userId"));
 
-        // 异步落库（审计/对账用），失败不影响消息确认 —— 由业务层兜底
-        try {
-            AsyncAudit audit = new AsyncAudit();
-            audit.setEventId(event.eventId());
-            audit.setEventType(event.eventType());
-            audit.setPayload(objectMapper.writeValueAsString(event.payload()));
-            audit.setCreatedAt(LocalDateTime.now());
-            auditRepository.save(audit);
-            appMetrics.eventProcessed(event.eventType());
-        } catch (Exception e) {
-            log.error("[MQ-CONSUMER] 审计落库失败: eventId={} err={}", event.eventId(), e.getMessage(), e);
+        // MQ-1 修复①：eventId 幂等检查，防止 redelivery 重复插审计行
+        if (event.eventId() != null && auditRepository.existsByEventId(event.eventId())) {
+            log.info("[MQ-CONSUMER] 事件已处理（幂等跳过）: eventId={}", event.eventId());
+            return;
         }
+
+        // MQ-1 修复②：不再 catch 所有异常照常 ACK（会丢事件），
+        // 让基础设施异常（DB 不可达等）传播出去触发 RabbitMQ 重投（requeue）
+        // 例外：payload 序列化失败是永久性错误，重投也无法成功，捕获后记录并跳过（照常 ACK，不空转重投）
+        AsyncAudit audit = new AsyncAudit();
+        audit.setEventId(event.eventId());
+        audit.setEventType(event.eventType());
+        try {
+            audit.setPayload(objectMapper.writeValueAsString(event.payload()));
+        } catch (JsonProcessingException e) {
+            log.error("[MQ-CONSUMER] 事件 payload 序列化失败，跳过该事件（不重投）: eventId={}", event.eventId(), e);
+            return;
+        }
+        audit.setCreatedAt(LocalDateTime.now());
+        try {
+            auditRepository.save(audit);
+        } catch (DataIntegrityViolationException e) {
+            // MQ-1 修复③：并发 redelivery 下唯一约束兜底——另一线程已插入同 event_id 行，
+            // 视为已处理（ACK 跳过），避免无限 requeue
+            log.info("[MQ-CONSUMER] 事件已被并发处理（唯一约束兜底）: eventId={}", event.eventId());
+            return;
+        }
+        appMetrics.eventProcessed(event.eventType());
 
         // TODO: 扩展点 — 发送站内信 / 邮件 / 短信通知
     }

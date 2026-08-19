@@ -32,17 +32,39 @@ public class RabbitEventPublisher implements TravelEventPublisher {
         this.appMetrics = appMetrics;
     }
 
+    /** MQ-1 修复：投递失败重试次数（含首次共 3 次），降低瞬时抖动丢事件概率 */
+    private static final int MAX_ATTEMPTS = 3;
+    /** MQ-1 修复：重试间隔，短暂等待避免对 RabbitMQ 造成压力 */
+    private static final long RETRY_SLEEP_MS = 300L;
+
     @Override
     public void publish(TravelEvent event) {
         String routingKey = routeKeyFor(event.eventType());
-        try {
-            rabbitTemplate.convertAndSend(props.getExchange(), routingKey, event);
-            appMetrics.eventPublished(event.eventType());
-            log.info("[MQ] 事件已投递: type={} routingKey={} eventId={}", event.eventType(), routingKey, event.eventId());
-        } catch (Exception e) {
-            log.warn("[MQ] RabbitMQ 不可用，事件降级记录: type={} eventId={} err={}",
-                    event.eventType(), event.eventId(), e.getMessage());
-            appMetrics.eventDropped(event.eventType());
+        int attempts = 0;
+        while (true) {
+            try {
+                rabbitTemplate.convertAndSend(props.getExchange(), routingKey, event);
+                appMetrics.eventPublished(event.eventType());
+                log.info("[MQ] 事件已投递: type={} routingKey={} eventId={}", event.eventType(), routingKey, event.eventId());
+                return;
+            } catch (Exception e) {
+                attempts++;
+                if (attempts < MAX_ATTEMPTS) {
+                    log.warn("[MQ] 投递失败（第{}次，重试）: type={} eventId={} err={}",
+                            attempts, event.eventType(), event.eventId(), e.getMessage());
+                    try {
+                        Thread.sleep(RETRY_SLEEP_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                } else {
+                    log.error("[MQ] RabbitMQ 不可用，事件降级记录（已重试 {} 次）: type={} eventId={} err={}",
+                            MAX_ATTEMPTS - 1, event.eventType(), event.eventId(), e.getMessage());
+                    appMetrics.eventDropped(event.eventType());
+                    return;
+                }
+            }
         }
     }
 

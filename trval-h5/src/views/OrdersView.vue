@@ -6,7 +6,7 @@
 import { ref, onMounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { orderApi, paymentApi, refundApi, invoiceApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
@@ -30,22 +30,28 @@ const orders = ref([])
 const isLoading = ref(false)
 const loadError = ref(false)
 
+// BUGID TAB-1 修复：请求序号计数器，快速切 Tab 时丢弃过期响应
+let loadSeq = 0
+
 const loadOrders = async (type = '') => {
+  const seq = ++loadSeq
   isLoading.value = true
   loadError.value = false
   try {
     const response = await orderApi.getOrders(type)
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     if (response.code === 0) {
       orders.value = response.data || []
     } else {
       orders.value = []
     }
   } catch (error) {
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     console.log('获取订单列表失败:', error)
     orders.value = []
     if (error?.response?.status === 502) loadError.value = true
   } finally {
-    isLoading.value = false
+    if (seq === loadSeq) isLoading.value = false
   }
 }
 
@@ -56,7 +62,11 @@ const handleTabChange = (key) => {
 }
 
 /* ==================== 操作 ==================== */
+// PAY-1 修复：支付防重锁，防止弱网双击并发创建两笔支付单
+const payingOrderId = ref(null)
 const handlePay = async (order) => {
+  if (payingOrderId.value !== null) return
+  payingOrderId.value = order.id
   try {
     // 走支付对接层：先发起支付拿到渠道支付地址，再完成支付
     const res = await paymentApi.createPayment(order.id)
@@ -73,9 +83,14 @@ const handlePay = async (order) => {
     }
     loadOrders(activeTab.value === 'all' ? '' : activeTab.value)
   } catch (error) { showToast(t('payment.payFail')) }
+  finally { payingOrderId.value = null }
 }
 
 const handleCancel = async (order) => {
+  // BUGID FEAT-4 修复：取消订单前二次确认，防止误触
+  try {
+    await showConfirmDialog({ title: '确认取消订单？', message: '取消后订单将无法恢复' })
+  } catch (e) { return }
   try {
     const response = await orderApi.cancelOrder(order.id)
     if (response.code === 0) {
@@ -294,7 +309,7 @@ onDeactivated(() => {
               <div class="order-footer">
                 <div class="order-price">¥{{ order.price }}</div>
                 <div class="order-actions">
-                  <van-button v-if="order.status === 'pending'" size="small" class="pay-btn" @click="handlePay(order)">{{ t('orders.payNow') }}</van-button>
+                  <van-button v-if="order.status === 'pending'" size="small" class="pay-btn" :loading="payingOrderId === order.id" :disabled="payingOrderId !== null" @click="handlePay(order)">{{ t('orders.payNow') }}</van-button>
                   <van-button v-if="order.status === 'pending'" size="small" plain type="danger" class="cancel-btn" @click="handleCancel(order)">{{ t('orders.cancelOrder') }}</van-button>
                   <van-button v-if="order.status === 'paid' || order.status === 'completed'" size="small" plain class="invoice-btn" @click="openInvoice(order)">{{ t('orders.invoice') }}</van-button>
                   <van-button v-if="order.status === 'paid' || order.status === 'completed'" size="small" plain class="refund-btn" @click="openRefund(order)">{{ t('orders.applyRefund') }}</van-button>

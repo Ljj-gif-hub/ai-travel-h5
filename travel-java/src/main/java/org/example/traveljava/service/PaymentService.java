@@ -39,6 +39,8 @@ public class PaymentService {
 
     /**
      * 发起支付（需登录）
+     * 【并发安全】PAYMENT-1 修复：用原子 UPDATE（仅 pending 时更新 payChannel/payTradeNo）
+     * 替代全字段 merge，避免与支付回调并发时旧实体（pending）覆盖已支付订单。
      * @param userId  当前用户（校验订单属主）
      * @param orderId 待支付订单
      * @return {orderNo, payUrl, providerTradeNo}
@@ -51,9 +53,12 @@ public class PaymentService {
         }
 
         PaymentResult result = paymentProvider.createPayment(order);
-        order.setPayChannel(paymentProvider.getProviderName());
-        order.setPayTradeNo(result.providerTradeNo());
-        orderRepository.save(order);
+        // PAYMENT-1 修复：原子更新，仅 pending 时生效，避免全字段 merge 覆盖并发回调
+        int updated = orderRepository.updatePaymentInfoIfPending(orderId,
+                paymentProvider.getProviderName(), result.providerTradeNo());
+        if (updated == 0) {
+            throw new IllegalStateException("订单状态已变更，请刷新后重试");
+        }
 
         log.info("发起支付：userId={}, orderNo={}, channel={}", userId, order.getOrderNo(), paymentProvider.getProviderName());
 
@@ -69,6 +74,7 @@ public class PaymentService {
      * 处理支付渠道回调（公开接口，验签后幂等标记已支付）。
      * 仅真实渠道（alipay/wechat）会产生异步回调；mock 渠道无验签语义，
      * 若 /notify 收到回调说明是伪造请求，直接拒绝，防止免单。
+     * 【安全】PAYMENT-2 修复：验签后比对回调金额与订单金额，不一致则拒绝（防 1 分钱回调标记整单已付）。
      * @param params 回调参数（必须含 orderNo）
      * @return 已支付的订单号
      */
@@ -83,6 +89,22 @@ public class PaymentService {
         String orderNo = params.get("orderNo");
         if (orderNo == null || orderNo.isBlank()) {
             throw new IllegalArgumentException("支付回调缺少订单号");
+        }
+        // PAYMENT-2 修复：比对回调金额与订单金额，防止金额不符的回调标记已付
+        String callbackAmount = params.get("amount");
+        if (callbackAmount != null && !callbackAmount.isBlank()) {
+            Order orderForCheck = orderRepository.findByOrderNo(orderNo).orElse(null);
+            if (orderForCheck != null) {
+                try {
+                    long cbAmount = Long.parseLong(callbackAmount.trim());
+                    if (cbAmount != orderForCheck.getPrice().longValue()) {
+                        log.warn("支付回调金额不符: orderNo={}, 订单金额={}, 回调金额={}", orderNo, orderForCheck.getPrice(), cbAmount);
+                        throw new IllegalArgumentException("支付回调金额与订单金额不符");
+                    }
+                } catch (NumberFormatException e) {
+                    log.warn("支付回调金额格式非法: orderNo={}, amount={}", orderNo, callbackAmount);
+                }
+            }
         }
         orderService.markOrderPaid(orderNo);
         log.info("支付回调处理完成：orderNo={}", orderNo);

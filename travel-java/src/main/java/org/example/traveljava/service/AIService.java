@@ -56,6 +56,8 @@ public class AIService {
     private final Cache planCache;
     /** 【新功能】迁移到统一 Caffeine 缓存 ai-chat（500 条 / 10 分钟，见 CacheConfig） */
     private final Cache chatCache;
+    /** 【L-AI-3 修复】景点图独立缓存（2000 条 / 10 分钟），不再写入 planCache 挤掉行程缓存 */
+    private final Cache imageCache;
     private final SceneImageService sceneImageService;
     private final ExecutorService imageFetchExecutor;
     private final org.example.traveljava.config.AppMetrics appMetrics;
@@ -73,6 +75,7 @@ public class AIService {
         this.appMetrics = appMetrics;
         this.planCache = cacheManager.getCache(CacheConfig.CACHE_AI_PLAN);
         this.chatCache = cacheManager.getCache(CacheConfig.CACHE_AI_CHAT);
+        this.imageCache = cacheManager.getCache(CacheConfig.CACHE_AI_IMAGE);
     }
 
     /** 当前活跃模型名（从配置动态读取） */
@@ -236,7 +239,11 @@ public class AIService {
             log.info("DeepSeek连接成功，耗时={}ms", costTime);
 
             if (response != null && response.getChoices() != null && !response.getChoices().isEmpty()) {
-                return "DeepSeek连接成功: " + response.getChoices().get(0).getMessage().getContent();
+                // L-AI-1 修复：choice/message 可能为 null，逐一防护避免 NPE 500
+                ChatResponse.Choice choice = response.getChoices().get(0);
+                if (choice != null && choice.getMessage() != null && choice.getMessage().getContent() != null) {
+                    return "DeepSeek连接成功: " + choice.getMessage().getContent();
+                }
             }
             return "DeepSeek连接成功，但响应为空";
         } catch (Exception e) {
@@ -315,7 +322,24 @@ public class AIService {
 
     /* ==================== 非流式聊天 ==================== */
     public String chat(List<ChatMessage> messages) {
-        String cacheKey = messages.toString();
+        // L-AI-2 修复：内部调用（无 userId）走空 userId 键；用户可见聊天走带 userId 重载
+        return chat(null, messages);
+    }
+
+    /** 【L-AI-2 修复】带 userId 的聊天：缓存键加入 userId，防止不同用户相同提问共享同一缓存回复 */
+    public String chat(Long userId, List<ChatMessage> messages) {
+        // 缓存键含 userId 按用户隔离；仅取最近 5 条消息做键，避免全量历史使键无限膨胀
+        StringBuilder keySb = new StringBuilder();
+        if (userId != null) keySb.append(userId).append('_');
+        if (messages != null) {
+            int from = Math.max(0, messages.size() - 5);
+            for (int i = from; i < messages.size(); i++) {
+                ChatMessage m = messages.get(i);
+                if (m == null) continue;
+                keySb.append(m.getRole()).append(':').append(m.getContent()).append('\n');
+            }
+        }
+        String cacheKey = keySb.toString();
         String cached = cacheGet(chatCache, cacheKey);
         if (cached != null) {
             log.info("从缓存返回聊天");
@@ -476,10 +500,15 @@ public class AIService {
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(3))
                         .filter(e -> e instanceof WebClientRequestException))
                 .map(response -> {
+                    // L-AI-1 修复：choice/message 可能为 null，空内容也归入「AI返回内容为空」而不是 NPE
                     if (response != null && response.getChoices() != null && !response.getChoices().isEmpty()) {
-                        String content = response.getChoices().get(0).getMessage().getContent();
+                        ChatResponse.Choice choice = response.getChoices().get(0);
+                        String content = (choice != null && choice.getMessage() != null)
+                                ? choice.getMessage().getContent() : null;
                         log.info("DeepSeek行程内容长度={}", content != null ? content.length() : 0);
-                        return content;
+                        if (content != null) {
+                            return content;
+                        }
                     }
                     throw new RuntimeException("AI返回内容为空");
                 })
@@ -753,10 +782,23 @@ public class AIService {
     /* ==================== 多阶段 SSE 进度生成 ==================== */
 
     // 任务取消容器（线程安全）
+    // AI-1 修复：限制大小防泄漏，定期清理已完成的 taskId
     private final ConcurrentHashMap<String, Boolean> cancelFlags = new ConcurrentHashMap<>();
+    private static final int MAX_CANCEL_FLAGS = 500;
 
     public void cancelTask(String taskId) {
-        if (taskId != null) { cancelFlags.put(taskId, Boolean.TRUE); }
+        if (taskId != null) {
+            // AI-1 修复：容量满时驱逐一个旧条目腾位，保证新取消请求一定生效。
+            // 泄漏残留绝大多数是已结束任务的陈旧标志，驱逐任一条目的影响可忽略；
+            // 若静默丢弃则取消功能在攒满后悄悄失效。
+            if (cancelFlags.size() >= MAX_CANCEL_FLAGS) {
+                for (String stale : cancelFlags.keySet()) {
+                    cancelFlags.remove(stale);
+                    break;
+                }
+            }
+            cancelFlags.put(taskId, Boolean.TRUE);
+        }
         log.info("任务已标记取消: {}", taskId);
     }
 
@@ -916,29 +958,35 @@ public class AIService {
                                          java.util.function.Consumer<Object> onPush,
                                          String taskId,
                                          java.util.function.Supplier<Boolean> isAlive) {
-        // 阶段1：逐天 AI
-        for (int d = 1; d <= days; d++) {
+        // AI-1 修复：整个方法 try/finally 包裹——无论正常完成/通道关闭/取消/异常，
+        // 都清理取消标志，消除 detail 任务标志残留泄漏（此前仅 streamPlannerWithStages 一处清理）
+        try {
+            // 阶段1：逐天 AI
+            for (int d = 1; d <= days; d++) {
+                checkTaskCancel(taskId);
+                if (!isAlive.get()) { log.info("通道已关闭，停止生成 Day{}", d); return; }
+                Map<String, Object> dayData = generateDayFromAI(dest, d, days, budget);
+                if (dayData == null) { dayData = buildMockDayData(dest, d, budget, days); }
+                try { onPush.accept(new DailyTripDTO(d, dayData, days)); Thread.sleep(50); }
+                catch (Exception e) { log.warn("Day{}推送失败", d); return; }
+                try { Thread.sleep(400); } catch (InterruptedException e) { return; }
+            }
+            // 阶段2：预算
             checkTaskCancel(taskId);
-            if (!isAlive.get()) { log.info("通道已关闭，停止生成 Day{}", d); return; }
-            Map<String, Object> dayData = generateDayFromAI(dest, d, days, budget);
-            if (dayData == null) { dayData = buildMockDayData(dest, d, budget, days); }
-            try { onPush.accept(new DailyTripDTO(d, dayData, days)); Thread.sleep(50); }
-            catch (Exception e) { log.warn("Day{}推送失败", d); return; }
-            try { Thread.sleep(400); } catch (InterruptedException e) { return; }
-        }
-        // 阶段2：预算
-        checkTaskCancel(taskId);
-        if (isAlive.get()) {
-            BudgetDTO bd = generateBudgetFromAI(dest, days, budget);
-            if (bd == null) { int z=budget.intValue(); bd=new BudgetDTO(z*30/100,z*35/100,z*20/100,z-z*30/100-z*35/100-z*20/100,z); }
-            try { onPush.accept(bd); Thread.sleep(100); } catch (Exception e) {}
-        }
-        // 阶段3：贴士
-        checkTaskCancel(taskId);
-        if (isAlive.get()) {
-            TripTipsDTO td = generateTipsFromAI(dest, days);
-            if (td == null) { td = new TripTipsDTO(Arrays.asList("预订"+dest+"景点门票",dest+"早晚温差大","品尝当地美食","确认天气","保管财物","下载离线地图")); }
-            try { onPush.accept(td); Thread.sleep(100); } catch (Exception e) {}
+            if (isAlive.get()) {
+                BudgetDTO bd = generateBudgetFromAI(dest, days, budget);
+                if (bd == null) { int z=budget.intValue(); bd=new BudgetDTO(z*30/100,z*35/100,z*20/100,z-z*30/100-z*35/100-z*20/100,z); }
+                try { onPush.accept(bd); Thread.sleep(100); } catch (Exception e) {}
+            }
+            // 阶段3：贴士
+            checkTaskCancel(taskId);
+            if (isAlive.get()) {
+                TripTipsDTO td = generateTipsFromAI(dest, days);
+                if (td == null) { td = new TripTipsDTO(Arrays.asList("预订"+dest+"景点门票",dest+"早晚温差大","品尝当地美食","确认天气","保管财物","下载离线地图")); }
+                try { onPush.accept(td); Thread.sleep(100); } catch (Exception e) {}
+            }
+        } finally {
+            removeTask(taskId);
         }
     }
 
@@ -1243,15 +1291,16 @@ public class AIService {
     public String searchAttractionImage(String attractionName) {
         if (attractionName == null || attractionName.trim().isEmpty()) return "";
 
+        // L-AI-3 修复：改用独立 ai-image 缓存，用户可控的任意景点名不再把真正行程缓存（ai-plan）LRU 挤掉
         String cacheKey = "image_" + attractionName;
-        String cached = cacheGet(planCache, cacheKey);
+        String cached = cacheGet(imageCache, cacheKey);
         if (cached != null) return cached;
 
         try {
             String defaultImage = String.format(
                     "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=%s&image_size=landscape_16_9",
                     java.net.URLEncoder.encode(attractionName + " 景点风景", "UTF-8"));
-            planCache.put(cacheKey, defaultImage);
+            imageCache.put(cacheKey, defaultImage);
             return defaultImage;
         } catch (java.io.UnsupportedEncodingException e) {
             return "";

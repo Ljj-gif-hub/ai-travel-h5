@@ -8,6 +8,7 @@ import org.example.traveljava.service.AIService;
 import org.example.traveljava.service.TravelSseService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +18,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 行程规划 — 行程生成 SSE 端点（供 TripMapView 等调用）。
@@ -95,7 +95,7 @@ public class TravelController {
     @PostMapping("/planner/progress")
     @RateLimit(max = 5, duration = 60, key = "travel_planner_progress")
     public SseEmitter streamPlannerProgress(@RequestHeader("Authorization") String authHeader, @RequestBody TripPlannerRequest req, HttpServletResponse response) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         // SSE 标准响应头
         response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         response.setHeader("Connection", "keep-alive");
@@ -105,7 +105,8 @@ public class TravelController {
         SseEmitter emitter = new SseEmitter(600_000L); // 10分钟
         String dest = req.getDestination();
         // 提前生成任务ID，供断开回调取消后台 AI 生成，避免客户端断开后仍继续消耗 token
-        String taskId = UUID.randomUUID().toString().substring(0, 8);
+        // L-CTRL-6：登记任务归属，/planner/stop 校验操作者
+        String taskId = sseService.registerNewTaskOwner(userId);
 
         emitter.onCompletion(() -> log.info("进度SSE完成: {}", dest));
         emitter.onTimeout(() -> { aiService.cancelTask(taskId); log.warn("进度SSE超时: {}", dest); });
@@ -127,20 +128,22 @@ public class TravelController {
     @PostMapping("/planner/stream-detail")
     @RateLimit(max = 10, duration = 60, key = "travel_stream_detail")
     public SseEmitter streamTripDetail(@RequestHeader("Authorization") String authHeader, @RequestBody Map<String, Object> body, HttpServletResponse response) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         response.setHeader("Connection", "keep-alive");
         response.setHeader("X-Accel-Buffering", "no");
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
 
         String dest = (String) body.getOrDefault("destination", "");
-        int rawDays = ((Number) body.getOrDefault("days", 1)).intValue();
+        int rawDays = NumberUtil.toInt(body.getOrDefault("days", 1), 1);
         // 天数截断到 1-14，防止恶意传超大值刷爆逐天 AI 调用
         if (rawDays < 1) rawDays = 1;
         if (rawDays > 14) rawDays = 14;
         final int days = rawDays;
-        long budget = ((Number) body.getOrDefault("budget", 5000)).longValue();
-        String taskId = (String) body.getOrDefault("taskId", UUID.randomUUID().toString().substring(0, 8));
+        long budget = NumberUtil.toLong(body.getOrDefault("budget", 5000), 5000);
+        // L-CTRL-6：登记任务归属。前端常复用 /planner/progress 的 taskId——同用户沿用，
+        // 空值/被他人占用时换新，杜绝伪造他人 taskId 占坑。返回值才是最终 taskId。
+        String taskId = sseService.registerTaskOwner((String) body.get("taskId"), userId);
 
         SseEmitter emitter = new SseEmitter(600_000L); // 10分钟
         emitter.onCompletion(() -> log.info("详情SSE完成: {} d{}", dest, days));
@@ -156,11 +159,14 @@ public class TravelController {
      */
     @PostMapping("/planner/stop")
     public Result<String> stopPlanner(@RequestHeader("Authorization") String authHeader, @RequestBody Map<String, String> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String taskId = body != null ? body.get("taskId") : null;
-        if (taskId != null) {
+        // L-CTRL-6：仅允许任务创建者终止；非本人也统一返回"已终止"，不暴露 taskId 是否存在（防探测）
+        if (taskId != null && sseService.isTaskOwner(taskId, userId)) {
             aiService.cancelTask(taskId);
             log.info("规划任务已终止: taskId={}", taskId);
+        } else if (taskId != null) {
+            log.warn("越权终止尝试被拒绝: taskId={}, userId={}", taskId, userId);
         }
         return Result.ok("已终止");
     }
@@ -174,11 +180,11 @@ public class TravelController {
     @PostMapping(value = "/trip/generate/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @RateLimit(max = 10, duration = 60, key = "trip_sse")
     public SseEmitter generateAndStream(@RequestHeader("Authorization") String authHeader, @RequestBody Map<String, Object> body, HttpServletResponse response) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String destination = (String) body.getOrDefault("destination", "");
-        int days = ((Number) body.getOrDefault("days", 3)).intValue();
-        int people = ((Number) body.getOrDefault("people", 2)).intValue();
-        long budget = ((Number) body.getOrDefault("budget", 5000L)).longValue();
+        int days = NumberUtil.toInt(body.getOrDefault("days", 3), 3);
+        int people = NumberUtil.toInt(body.getOrDefault("people", 2), 2);
+        long budget = NumberUtil.toLong(body.getOrDefault("budget", 5000L), 5000L);
         String origin = (String) body.getOrDefault("origin", "");
         String companion = (String) body.getOrDefault("companion", "");
         String styles = (String) body.getOrDefault("styles", "");
@@ -206,7 +212,8 @@ public class TravelController {
         response.setBufferSize(0); // 禁用响应缓冲，强制实时输出
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
 
-        String taskId = UUID.randomUUID().toString().substring(0, 8);
+        // L-CTRL-6：登记任务归属，/trip/stop/{taskId} 校验操作者
+        String taskId = sseService.registerNewTaskOwner(userId);
         SseEmitter emitter = new SseEmitter(600_000L);
         log.info("单端点SSE: dest={}, days={}, taskId={}", destination, days, taskId);
 
@@ -236,11 +243,11 @@ public class TravelController {
     @PostMapping("/trip/generate")
     @RateLimit(max = 10, duration = 60, key = "trip_generate")
     public Result<Map<String, Object>> generateTrip(@RequestHeader("Authorization") String authHeader, @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String destination = (String) body.getOrDefault("destination", "");
-        int days = ((Number) body.getOrDefault("days", 3)).intValue();
-        int people = ((Number) body.getOrDefault("people", 2)).intValue();
-        long budget = ((Number) body.getOrDefault("budget", 5000L)).longValue();
+        int days = NumberUtil.toInt(body.getOrDefault("days", 3), 3);
+        int people = NumberUtil.toInt(body.getOrDefault("people", 2), 2);
+        long budget = NumberUtil.toLong(body.getOrDefault("budget", 5000L), 5000L);
 
         if (destination == null || destination.trim().isEmpty()) {
             return Result.fail("请输入目的地");
@@ -249,7 +256,8 @@ public class TravelController {
             return Result.fail("出行天数需在1-30之间");
         }
 
-        String taskId = UUID.randomUUID().toString().substring(0, 8);
+        // L-CTRL-6：登记任务归属，/trip/progress/{taskId} 订阅时校验操作者
+        String taskId = sseService.registerNewTaskOwner(userId);
         log.info("新版行程生成: dest={}, days={}, people={}, budget={}, taskId={}",
                 destination, days, people, budget, taskId);
 
@@ -277,7 +285,17 @@ public class TravelController {
     @GetMapping("/trip/progress/{taskId}")
     @RateLimit(max = 30, duration = 60, key = "trip_progress")
     public SseEmitter streamTripProgress(@RequestHeader("Authorization") String authHeader, @PathVariable String taskId, HttpServletResponse response) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        // L-CTRL-6：仅允许任务创建者订阅进度，防跨用户接管事件流。
+        // 必须在注册 emitter / takePending 之前校验——否则攻击者的 onCompletion 回调会
+        // removeEmitter + removePending + cancelTask 直接拆掉他人任务。
+        if (!sseService.isTaskOwner(taskId, userId)) {
+            log.warn("越权订阅任务进度被拒绝: taskId={}, userId={}", taskId, userId);
+            SseEmitter err = new SseEmitter();
+            sseService.safeSendJson(err, Map.of("eventType", "stream-error", "message", "任务不存在或无权操作"));
+            err.complete();
+            return err;
+        }
         // SSE响应头：防止缓存 + 禁用缓冲
         response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
         response.setHeader("Pragma", "no-cache");
@@ -340,12 +358,15 @@ public class TravelController {
     /** 停止生成 */
     @PostMapping("/trip/stop/{taskId}")
     public Result<String> stopTrip(@RequestHeader("Authorization") String authHeader, @PathVariable String taskId) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
-        if (taskId != null && !taskId.isEmpty()) {
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        // L-CTRL-6：仅允许任务创建者终止；非本人也统一返回"已终止"，不暴露 taskId 是否存在（防探测）
+        if (taskId != null && !taskId.isEmpty() && sseService.isTaskOwner(taskId, userId)) {
             aiService.cancelTask(taskId);
             sseService.removePending(taskId);
             sseService.completeAndRemoveEmitter(taskId);
             log.info("已终止: taskId={}", taskId);
+        } else if (taskId != null && !taskId.isEmpty()) {
+            log.warn("越权终止行程任务被拒绝: taskId={}, userId={}", taskId, userId);
         }
         return Result.ok("已终止");
     }

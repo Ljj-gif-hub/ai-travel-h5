@@ -9,7 +9,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
 import { getToken } from '../utils/auth'
-import { couponApi } from '../api'
+import { couponApi, orderApi } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
@@ -30,22 +30,28 @@ const coupons = ref([])
 const isLoading = ref(false)
 const loadError = ref(false)
 
+// BUGID TAB-1 修复：请求序号计数器，快速切 Tab 时丢弃过期响应
+let loadSeq = 0
+
 const loadCoupons = async (status) => {
+  const seq = ++loadSeq
   isLoading.value = true
   loadError.value = false
   try {
     const response = await couponApi.getCoupons(status)
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     if (response.code === 0) {
       coupons.value = response.data || []
     } else {
       coupons.value = []
     }
   } catch (error) {
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     console.log('获取优惠券列表失败:', error)
     coupons.value = []
     if (error?.response?.status === 502) loadError.value = true
   } finally {
-    isLoading.value = false
+    if (seq === loadSeq) isLoading.value = false
   }
 }
 
@@ -57,7 +63,18 @@ const handleTabChange = (key) => {
 
 const handleUse = async (coupon) => {
   try {
-    const response = await couponApi.useCoupon(coupon.id, null)
+    // BUGID FEAT-2 修复：useCoupon 需携带待支付订单 orderId 才能完成核销（后端按订单校验门槛/状态并抵扣）
+    // 先取用户第一个待支付订单，作为优惠券作用目标
+    let orderId = null
+    const orderRes = await orderApi.getOrders('pending')
+    const pendingOrders = (orderRes && orderRes.code === 0 && orderRes.data) || []
+    if (pendingOrders.length > 0) orderId = pendingOrders[0].id
+    if (!orderId) {
+      // 无待支付订单可核销：提示用户先下单（该文案不新增 i18n key，仅此处硬编码）
+      showToast('暂无待支付订单，请先下单后再使用优惠券')
+      return
+    }
+    const response = await couponApi.useCoupon(coupon.id, orderId)
     if (response.code === 0) {
       showToast(t('wallet.useSuccess'))
       loadCoupons(activeTab.value)

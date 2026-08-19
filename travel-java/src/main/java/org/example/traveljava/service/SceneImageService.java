@@ -41,7 +41,8 @@ public class SceneImageService {
     private static final String BAIDU_PLACE_DETAIL_URL = "https://api.map.baidu.com/place/v2/detail";
     private static final String BAIDU_PLACE_SEARCH_URL = "https://api.map.baidu.com/place/v2/search";
 
-    private static final String DEFAULT_IMAGE_URL = "https://picsum.photos/id/1036/800/480";
+    /** 【图片纠错】兜底图改为前端本地占位图（原 picsum 随机图与景点无关） */
+    private static final String DEFAULT_IMAGE_URL = "/images/city-placeholder.svg";
 
     private static final int TIMEOUT_MS = 3000;
 
@@ -116,16 +117,15 @@ public class SceneImageService {
             }
             log.debug("[百度地图] 搜索POI成功，uid: {}", uid);
 
-            String url = UriComponentsBuilder.fromHttpUrl(BAIDU_PLACE_DETAIL_URL)
+            // RestTemplate 双重编码坑修复：必须传 URI 对象，禁止传 String URL
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(BAIDU_PLACE_DETAIL_URL)
                     .queryParam("uid", uid)
                     .queryParam("output", "json")
                     .queryParam("scope", 2)
                     .queryParam("ak", mapConfig.getBaidu().getAk())
-                    .toUriString();
+                    .build().encode().toUri();
 
-            log.debug("[百度地图] POI详情请求URL: {}", url);
-
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             String imageUrl = parseBaiduDetailResponse(response);
             
             log.debug("[百度地图] 请求耗时: {}ms, 图片URL: {}", 
@@ -144,14 +144,15 @@ public class SceneImageService {
 
     private String searchPOIUid(String scenicName) {
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(BAIDU_PLACE_SEARCH_URL)
+            // RestTemplate 双重编码坑修复：必须传 URI 对象，禁止传 String URL
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(BAIDU_PLACE_SEARCH_URL)
                     .queryParam("query", scenicName)
                     .queryParam("region", "全国")
                     .queryParam("output", "json")
                     .queryParam("ak", mapConfig.getBaidu().getAk())
-                    .toUriString();
+                    .build().encode().toUri();
 
-            String response = restTemplate.getForObject(url, String.class);
+            String response = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(response);
 
             if (root.has("status") && root.get("status").asInt() == 0) {

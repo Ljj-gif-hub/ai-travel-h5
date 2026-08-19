@@ -24,7 +24,11 @@ const goBack = () => router.back()
 
 /* 日期计算：优先用行程的 travelDate，否则以今天为第 1 天顺延 */
 function computeDate(offset, base) {
-  const d = base ? new Date(base) : new Date()
+  // BUGID 修复：base 无效（非法日期串解析失败）时回退空串，避免输出「NaN月NaN日」
+  if (base == null || isNaN(base.getTime())) {
+    return { dateStr: '', weekday: '' }
+  }
+  const d = new Date(base)
   d.setDate(d.getDate() + offset)
   const weekdays = [t('calendar.week0'), t('calendar.week1'), t('calendar.week2'), t('calendar.week3'), t('calendar.week4'), t('calendar.week5'), t('calendar.week6')]
   return { dateStr: t('calendar.dateStr', { month: d.getMonth() + 1, day: d.getDate() }), weekday: t('calendar.weekday', { day: weekdays[d.getDay()] }) }
@@ -35,7 +39,11 @@ const days = computed(() => {
   const dayPlans = plan.value.dayPlans || []
   let base = null
   try {
-    if (plan.value.travelDate) base = new Date(plan.value.travelDate)
+    if (plan.value.travelDate) {
+      base = new Date(plan.value.travelDate)
+      // BUGID 修复：new Date(非法串) 返回 Invalid Date 且 try/catch 捕不到，需显式 isNaN 判定
+      if (isNaN(base.getTime())) base = null
+    }
   } catch (e) { base = null }
   return dayPlans.map((dp, i) => {
     const date = computeDate(i, base)
@@ -45,7 +53,10 @@ const days = computed(() => {
 
 const totalCost = computed(() => {
   const bd = plan.value?.budgetDetail
-  return bd?.total || bd?.accommodation ? (bd.total || 0) : null
+  // BUGID 修复：原表达式优先级错误（?: 低于 ||，实际按 (bd?.total || bd?.accommodation) ? ... 解析），显式计算
+  const total = bd?.total || 0
+  const has = total > 0 || (bd?.accommodation || 0) > 0
+  return has ? total : null
 })
 
 const stripTags = (name) => (name || '').replace(/【[^】]*】/g, '').trim()

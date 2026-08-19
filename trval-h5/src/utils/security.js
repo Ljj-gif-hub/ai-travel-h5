@@ -88,11 +88,13 @@ export function getProxyImageUrl(url) {
     return '/images/default-placeholder.png'
   }
 
-  if (url.startsWith('/')) {
+  // BUGID L-COMP-3 修复：/api/proxy/image 判断需在 / 判断之前——
+  // 否则该路径也会命中 url.startsWith('/')，下面分支永远不可达（死分支）
+  if (url.startsWith('/api/proxy/image')) {
     return url
   }
 
-  if (url.startsWith('/api/proxy/image')) {
+  if (url.startsWith('/')) {
     return url
   }
 

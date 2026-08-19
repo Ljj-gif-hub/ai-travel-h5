@@ -9,6 +9,7 @@ import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -45,10 +46,14 @@ public class CityService {
 
         // 1) 尝试 Flickr 公开 Feed（免费，无需 Key）
         try {
-            String flickrUrl = "https://api.flickr.com/services/feeds/photos_public.gne"
-                + "?tags=" + cityName + ",travel,landmark"
-                + "&format=json&nojsoncallback=1&per_page=1";
-            Map<String, Object> resp = restTemplate.getForObject(flickrUrl, Map.class);
+            // RestTemplate 双重编码坑修复：必须传 URI 对象（cityName 为中文，String 传法会二次编码 %→%25）
+            java.net.URI flickrUri = UriComponentsBuilder.fromHttpUrl("https://api.flickr.com/services/feeds/photos_public.gne")
+                .queryParam("tags", cityName + ",travel,landmark")
+                .queryParam("format", "json")
+                .queryParam("nojsoncallback", 1)
+                .queryParam("per_page", 1)
+                .build().encode().toUri();
+            Map<String, Object> resp = restTemplate.getForObject(flickrUri, Map.class);
             if (resp != null && resp.containsKey("items")) {
                 List<Map<String, Object>> items = (List<Map<String, Object>>) resp.get("items");
                 if (items != null && !items.isEmpty()) {
@@ -67,8 +72,8 @@ public class CityService {
             log.debug("Flickr获取失败，降级Picsum: {}", cityName);
         }
 
-        // 2) 降级 Picsum
-        String fallback = "https://picsum.photos/seed/" + cityName + "/400/300";
+        // 2) 无真实照片：返回空串，由前端走本地静态图兜底（不再用 picsum 随机图）
+        String fallback = "";
         imageCache.put(cityName, fallback);
         return fallback;
     }
@@ -94,6 +99,48 @@ public class CityService {
         List<String> all = new ArrayList<>(HOT_DOMESTIC);
         all.addAll(HOT_OVERSEAS);
         return all;
+    }
+
+    /** 【ABUSE-1】全部已知城市名白名单（境内+境外），与城市列表数据同源，一次性构建后不可变 */
+    private volatile Set<String> knownCities;
+
+    private Set<String> getAllCityNames() {
+        Set<String> result = knownCities;
+        if (result == null) {
+            synchronized (this) {
+                result = knownCities;
+                if (result == null) {
+                    Set<String> all = new HashSet<>(HOT_DOMESTIC);
+                    all.addAll(HOT_OVERSEAS);
+                    for (ProvinceGroup pg : buildAllProvinces()) {
+                        all.add(pg.getLabel());
+                        for (CityItem item : pg.getItems()) {
+                            all.add(item.getName());
+                            for (CityCard card : item.getCities()) all.add(card.getName());
+                        }
+                    }
+                    for (CityItem item : buildHkMacauTW().getItems()) {
+                        all.add(item.getName());
+                        for (CityCard card : item.getCities()) all.add(card.getName());
+                    }
+                    for (ContinentGroup continent : buildContinents()) {
+                        for (CountryGroup country : continent.getCountries()) {
+                            all.add(country.getName());
+                            for (CityCard card : country.getCities()) all.add(card.getName());
+                        }
+                    }
+                    result = Collections.unmodifiableSet(all);
+                    knownCities = result;
+                }
+            }
+        }
+        return knownCities;
+    }
+
+    /** 【ABUSE-1】入参白名单校验：name 是否真实城市名。未知名称不得触发外部调用/落库。 */
+    public boolean isKnownCity(String name) {
+        if (name == null || name.trim().isEmpty()) return false;
+        return getAllCityNames().contains(name.trim());
     }
 
     /** 获取境内城市数据 */
@@ -157,11 +204,13 @@ public class CityService {
     /** 高德逆地理编码：https://restapi.amap.com/v3/geocode/regeo */
     @SuppressWarnings("unchecked")
     private LocationResult reverseGeocodeAmap(double lat, double lng, String key) {
-        String url = String.format(
-            "https://restapi.amap.com/v3/geocode/regeo?key=%s&location=%f,%f&output=JSON",
-            key, lng, lat
-        );
-        Map<String, Object> resp = restTemplate.getForObject(url, Map.class);
+        // RestTemplate 双重编码坑修复：必须传 URI 对象（location 含逗号，String 传法可能被误编码）
+        java.net.URI uri = UriComponentsBuilder.fromHttpUrl("https://restapi.amap.com/v3/geocode/regeo")
+            .queryParam("key", key)
+            .queryParam("location", String.format("%f,%f", lng, lat))
+            .queryParam("output", "JSON")
+            .build().encode().toUri();
+        Map<String, Object> resp = restTemplate.getForObject(uri, Map.class);
         if (resp == null || !"1".equals(String.valueOf(resp.getOrDefault("status", "")))) {
             return null;
         }
@@ -203,11 +252,14 @@ public class CityService {
     /** 百度逆地理编码：https://api.map.baidu.com/reverse_geocoding/v3/ */
     @SuppressWarnings("unchecked")
     private LocationResult reverseGeocodeBaidu(double lat, double lng, String ak) {
-        String url = String.format(
-            "https://api.map.baidu.com/reverse_geocoding/v3/?ak=%s&output=json&coordtype=wgs84ll&location=%f,%f",
-            ak, lat, lng
-        );
-        Map<String, Object> resp = restTemplate.getForObject(url, Map.class);
+        // RestTemplate 双重编码坑修复：必须传 URI 对象
+        java.net.URI uri = UriComponentsBuilder.fromHttpUrl("https://api.map.baidu.com/reverse_geocoding/v3/")
+            .queryParam("ak", ak)
+            .queryParam("output", "json")
+            .queryParam("coordtype", "wgs84ll")
+            .queryParam("location", String.format("%f,%f", lat, lng))
+            .build().encode().toUri();
+        Map<String, Object> resp = restTemplate.getForObject(uri, Map.class);
         if (resp != null && (int) resp.getOrDefault("status", -1) == 0) {
             Map<String, Object> result = (Map<String, Object>) resp.get("result");
             if (result != null) {

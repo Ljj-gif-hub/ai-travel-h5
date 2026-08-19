@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -59,12 +60,26 @@ public class TravelSseService {
     /** 待处理的生成请求：taskId → 请求（带时间戳），SSE连接后才开始生成 */
     private final ConcurrentHashMap<String, PendingEntry> pendingRequests = new ConcurrentHashMap<>();
 
+    /** 【L-CTRL-6】任务归属：taskId → 归属条目（userId + 创建时间）。
+     *  stop/progress 端点据此校验操作者必须是任务创建者，防跨用户停他人任务/接管事件流。
+     *  不随生成完成立即删除，而是与 pendingRequests 一样由定时任务按 TTL 清理——
+     *  避免 taskId 被复用（/planner/progress → /planner/stream-detail）时误删归属导致本人 stop 失效。 */
+    private final ConcurrentHashMap<String, TaskOwnerEntry> taskOwners = new ConcurrentHashMap<>();
+
     /** 待处理请求条目 — 记录创建时间，供定时清理过期条目（防内存泄漏） */
     public static class PendingEntry {
         private final TripPlannerRequest req;
         final long createdAt = System.currentTimeMillis();
         PendingEntry(TripPlannerRequest req) { this.req = req; }
         public TripPlannerRequest getReq() { return req; }
+    }
+
+    /** 任务归属条目 — 记录创建时间，供定时清理过期归属（防 map 无限增长） */
+    public static class TaskOwnerEntry {
+        private final Long userId;
+        final long createdAt = System.currentTimeMillis();
+        TaskOwnerEntry(Long userId) { this.userId = userId; }
+        public Long getUserId() { return userId; }
     }
 
     public TravelSseService(AIService aiService, MeterRegistry meterRegistry) {
@@ -83,7 +98,7 @@ public class TravelSseService {
         sseExecutor.shutdown();
     }
 
-    /** 定期清理超过 10 分钟未被 SSE 消费的待处理请求 */
+    /** 定期清理超过 10 分钟未被 SSE 消费的待处理请求 + 超过 15 分钟未用的任务归属 */
     @Scheduled(fixedDelay = 60_000)
     public void purgeStalePendingRequests() {
         long now = System.currentTimeMillis();
@@ -97,6 +112,19 @@ public class TravelSseService {
         }
         if (removed > 0) {
             log.info("清理过期待处理请求 {} 条", removed);
+        }
+
+        // L-CTRL-6：同步清理过期任务归属（TTL 15 分钟），防 map 无限增长
+        int ownerRemoved = 0;
+        for (var it = taskOwners.entrySet().iterator(); it.hasNext(); ) {
+            var e = it.next();
+            if (now - e.getValue().createdAt > 15 * 60_000L) {
+                it.remove();
+                ownerRemoved++;
+            }
+        }
+        if (ownerRemoved > 0) {
+            log.info("清理过期任务归属 {} 条", ownerRemoved);
         }
     }
 
@@ -122,6 +150,45 @@ public class TravelSseService {
 
     public void removePending(String taskId) {
         pendingRequests.remove(taskId);
+    }
+
+    // ==================== 任务归属（L-CTRL-6 越权防护） ====================
+
+    /**
+     * 【L-CTRL-6】登记任务归属。
+     *  - taskId 为空 → 生成新 taskId 并登记
+     *  - taskId 已存在且属于同一用户（如 /planner/progress → /planner/stream-detail 复用）→ 沿用原 taskId
+     *  - taskId 已被他人占用 → 换新 taskId 再登记（不覆盖他人归属，防占坑越权）
+     *
+     * @return 最终生效的 taskId（调用方用返回值登记/停止，不能用入参）
+     */
+    public String registerTaskOwner(String desiredTaskId, Long userId) {
+        if (userId == null) return desiredTaskId;
+        if (desiredTaskId == null || desiredTaskId.isEmpty()) {
+            return registerNewTaskOwner(userId);
+        }
+        TaskOwnerEntry existing = taskOwners.putIfAbsent(desiredTaskId, new TaskOwnerEntry(userId));
+        if (existing != null && !existing.getUserId().equals(userId)) {
+            log.warn("taskId 已被他人占用，换新: {} -> {}", desiredTaskId, userId);
+            return registerNewTaskOwner(userId);
+        }
+        return desiredTaskId;
+    }
+
+    /** 【L-CTRL-6】生成全新 taskId 并登记归属（碰撞则重试，保证不覆盖已有归属） */
+    public String registerNewTaskOwner(Long userId) {
+        String taskId;
+        do {
+            taskId = UUID.randomUUID().toString().substring(0, 8);
+        } while (taskOwners.putIfAbsent(taskId, new TaskOwnerEntry(userId)) != null);
+        return taskId;
+    }
+
+    /** 【L-CTRL-6】校验当前用户是否为该任务的创建者（不存在/非本人 → false） */
+    public boolean isTaskOwner(String taskId, Long userId) {
+        if (taskId == null || userId == null) return false;
+        TaskOwnerEntry entry = taskOwners.get(taskId);
+        return entry != null && entry.getUserId().equals(userId);
     }
 
     /** 停止任务：从注册表取出并关闭 emitter */
@@ -182,7 +249,7 @@ public class TravelSseService {
 
     /** /planner/stream：订阅 AI 流并转发到 SSE */
     public void subscribePlannerTrip(SseEmitter emitter, TripPlannerRequest req) {
-        aiService.streamPlannerTrip(req)
+        reactor.core.Disposable disposable = aiService.streamPlannerTrip(req)
             .subscribe(
                 chunk -> {
                     if ("[DONE]".equals(chunk)) {
@@ -201,6 +268,20 @@ public class TravelSseService {
                 },
                 () -> safeComplete(emitter)
             );
+
+        // SSE-1 修复：客户端断开/超时/出错时 dispose 上游，停止从 DeepSeek 继续拉取（防白烧 token + 僵尸流）
+        emitter.onCompletion(() -> {
+            log.info("SSE正常关闭: dest={}", req.getDestination());
+            if (!disposable.isDisposed()) disposable.dispose();
+        });
+        emitter.onTimeout(() -> {
+            log.warn("SSE超时: dest={}", req.getDestination());
+            if (!disposable.isDisposed()) disposable.dispose();
+        });
+        emitter.onError(e -> {
+            log.error("SSE异常: dest={}, err={}", req.getDestination(), e.getMessage());
+            if (!disposable.isDisposed()) disposable.dispose();
+        });
     }
 
     /** /planner/progress：多阶段 SSE 进度 — 7步串行推送 + 初始握手 */
@@ -309,7 +390,11 @@ public class TravelSseService {
                 log.error("生成异常:{}", taskId, e);
                 SseEmitter em = emitterRegistry.get(taskId);
                 if (em != null) { safeSendJson(em, Map.of("eventType", "stream-error", "message", e.getMessage())); try { em.complete(); } catch (Exception ex) {} }
-            } finally { emitterRegistry.remove(taskId); }
+            } finally {
+                emitterRegistry.remove(taskId);
+                // AI-1 修复：清理超时/错误回调 cancelTask 残留的取消标志，防泄漏
+                aiService.removeTask(taskId);
+            }
         });
     }
 

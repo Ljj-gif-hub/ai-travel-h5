@@ -12,7 +12,9 @@ spring:
     url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:travel_plans}?currentSchema=public}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    # L-CFG-1 修复：默认密码不再写死为 "postgres"（提交到仓库的默认弱口令）。
+    # 改为留空 fail-closed：不显式注入 DB_PASSWORD 时连接即失败，避免默认口令被直接使用。
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
       minimum-idle: ${DB_MIN_IDLE:2}

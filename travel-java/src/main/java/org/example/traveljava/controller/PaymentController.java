@@ -4,6 +4,7 @@ import org.example.traveljava.config.PaymentConfig;
 import org.example.traveljava.service.PaymentService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +49,7 @@ public class PaymentController {
             if (orderIdObj == null) {
                 return Result.fail("缺少订单ID");
             }
-            Long orderId = ((Number) orderIdObj).longValue();
+            Long orderId = NumberUtil.toLong(orderIdObj, 0L);
             Map<String, Object> data = paymentService.createPayment(userId, orderId);
             return Result.ok(data);
         } catch (IllegalArgumentException e) {

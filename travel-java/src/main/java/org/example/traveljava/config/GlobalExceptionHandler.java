@@ -112,8 +112,28 @@ public class GlobalExceptionHandler {
                 .body(Result.fail(msg));
     }
 
+    /**
+     * CTRL-2 修复：JSON 传字符串数字时 ((Number) x).intValue() 抛 ClassCastException，
+     * 统一转 400 友好提示而非 500。
+     */
+    @ExceptionHandler(ClassCastException.class)
+    public ResponseEntity<Result<Object>> handleClassCastException(ClassCastException e, HttpServletRequest request) {
+        log.warn("参数类型不匹配: uri={}, error={}", request.getRequestURI(), e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.fail("参数类型不正确，请检查请求参数"));
+    }
+
+    /** 参数格式错误 → 400 */
+    @ExceptionHandler({IllegalArgumentException.class})
+    public ResponseEntity<Result<Object>> handleIllegalArgument(IllegalArgumentException e) {
+        String msg = e.getMessage() != null ? e.getMessage() : "参数不合法";
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.fail(msg));
+    }
+
     /** 客户端连接中断（视频/文件下载时浏览器取消等）→ 不写响应，只记录 */
-    @ExceptionHandler({ClientAbortException.class, IOException.class})
+    // EXH-1 修复：只捕 ClientAbortException，不再笼统吞 IOException（真实 IO 故障应走通用异常处理）
+    @ExceptionHandler({ClientAbortException.class})
     public void handleClientAbort(Exception e, HttpServletRequest request, HttpServletResponse response) {
         if (response.isCommitted()) {
             // 响应已提交，无法修改，仅记录
@@ -136,13 +156,6 @@ public class GlobalExceptionHandler {
         log.error("系统异常: uri={}, error={}", request.getRequestURI(), e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Result.fail("系统繁忙，请稍后重试"));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Result<Object>> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.warn("参数错误: {}", e.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Result.fail(e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

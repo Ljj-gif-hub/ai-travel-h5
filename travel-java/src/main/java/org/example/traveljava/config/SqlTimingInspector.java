@@ -12,6 +12,11 @@ import org.slf4j.LoggerFactory;
  *   spring.jpa.properties.hibernate.session_factory.statement_inspector: org.example.traveljava.config.SqlTimingInspector
  *
  * 说明：该类由 Hibernate 直接实例化（非 Spring Bean），必须有默认构造器。
+ *
+ * L-SQL-1 修复：Hibernate 6.4 的 StatementInspector 只在执行前回调（无 after-execution 钩子），
+ * 原实现把「上一条间隔」的耗时打印在「下一条 SQL」上（张冠李戴）。
+ * 现改为：本次 inspect 时结算上一条语句，SQL 与耗时同属一条语句，归属正确；
+ * 上一条 Entry 被本条覆盖，ThreadLocal 不累积。
  */
 public class SqlTimingInspector implements StatementInspector {
 
@@ -22,8 +27,17 @@ public class SqlTimingInspector implements StatementInspector {
     /** 日志中 SQL 摘要最大长度 */
     private static final int SUMMARY_LEN = 300;
 
-    /** 每条语句执行的起始时间（线程内串行执行） */
-    private final ThreadLocal<Long> startTime = new ThreadLocal<>();
+    /** 最近一条语句的起点时间 + SQL 文本（线程内串行执行） */
+    private static final class LastStmt {
+        final long start;
+        final String sql;
+        LastStmt(long start, String sql) {
+            this.start = start;
+            this.sql = sql;
+        }
+    }
+
+    private final ThreadLocal<LastStmt> lastStmt = new ThreadLocal<>();
 
     @Override
     public String inspect(String sql) {
@@ -31,21 +45,23 @@ public class SqlTimingInspector implements StatementInspector {
             return null;
         }
         long now = System.currentTimeMillis();
-        Long start = startTime.get();
-        if (start == null) {
-            // 本线程第一条语句：只记录起点
-            startTime.set(now);
-            return sql;
-        }
-        long elapsed = now - start;
-        startTime.set(now);
-        if (elapsed > SLOW_THRESHOLD_MS) {
-            String summary = sql.replaceAll("\\s+", " ");
-            if (summary.length() > SUMMARY_LEN) {
-                summary = summary.substring(0, SUMMARY_LEN) + "...";
+        LastStmt prev = lastStmt.get();
+        // 自替换：上一条 Entry 被本条覆盖，ThreadLocal 不累积、无线程内泄漏
+        lastStmt.set(new LastStmt(now, sql));
+        if (prev != null) {
+            long elapsed = now - prev.start;
+            if (elapsed > SLOW_THRESHOLD_MS) {
+                log.warn("慢查询 SQL: 耗时={}ms, SQL={}", elapsed, summarize(prev.sql));
             }
-            log.warn("慢查询 SQL: 耗时={}ms, SQL={}", elapsed, summary);
         }
         return sql;
+    }
+
+    private static String summarize(String sql) {
+        String summary = sql.replaceAll("\\s+", " ");
+        if (summary.length() > SUMMARY_LEN) {
+            summary = summary.substring(0, SUMMARY_LEN) + "...";
+        }
+        return summary;
     }
 }

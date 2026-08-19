@@ -71,7 +71,12 @@ def _decode_jwt_user_id(token: str) -> Optional[str]:
         return None
     try:
         import jwt as pyjwt
-        kwargs: dict = {"algorithms": ["HS256", "HS384", "HS512"]}
+        # L-PY-3 修复：强制要求 exp 声明，缺失 exp 的 token 一律拒绝（否则无 exp 即永不过期）。
+        # travel-java 签发端恒定带 exp（JwtUtil.createToken 每次设置 expiration），强制校验安全兼容。
+        kwargs: dict = {
+            "algorithms": ["HS256", "HS384", "HS512"],
+            "options": {"require": ["exp"]},
+        }
         # audience/issuer 白名单：仅当配置了对应环境变量时才校验（向后兼容存量签发方）
         audience = os.getenv("AGENT_JWT_AUDIENCE", "").strip()
         issuer = os.getenv("AGENT_JWT_ISSUER", "").strip()
@@ -115,14 +120,21 @@ async def agent_auth_middleware(request: Request, call_next):
     # 通道 1：共享密钥（网关透传；HMAC 签名通过才绑定用户身份）
     key = _agent_key()
     provided = request.headers.get("X-Agent-Key", "")
-    if key and provided and hmac.compare_digest(key, provided):
-        request.state.auth_method = "key"
-        sig_user_id = request.headers.get(_USER_ID_HEADER, "")
-        sig = request.headers.get(_USER_SIG_HEADER, "")
-        if _verify_user_sig(key, sig_user_id, sig):
-            request.state.verified_user_id = sig_user_id
-        else:
-            logger.warning("[auth] 共享密钥通道缺少有效用户签名，user_id 不绑定（来源 %s）",
+    # PY-4 修复：非 ASCII 的 X-Agent-Key 传给 compare_digest 会抛 TypeError → 500
+    # 先编码为字节比较，编码失败则直接不匹配
+    if key and provided:
+        try:
+            if hmac.compare_digest(key.encode("utf-8"), provided.encode("utf-8")):
+                request.state.auth_method = "key"
+                sig_user_id = request.headers.get(_USER_ID_HEADER, "")
+                sig = request.headers.get(_USER_SIG_HEADER, "")
+                if _verify_user_sig(key, sig_user_id, sig):
+                    request.state.verified_user_id = sig_user_id
+                else:
+                    logger.warning("[auth] 共享密钥通道缺少有效用户签名，user_id 不绑定（来源 %s）",
+                                   request.client.host if request.client else "?")
+        except (UnicodeEncodeError, TypeError):
+            logger.warning("[auth] X-Agent-Key 编码异常，拒绝认证（来源 %s）",
                            request.client.host if request.client else "?")
         return await call_next(request)
 

@@ -80,6 +80,8 @@ const search = async () => {
 
 /* ==================== 下单 ==================== */
 const showBook = ref(false)
+// BUGID DBLCLICK-1 修复：提交锁，防止弱网双击重复创建订单
+const submitting = ref(false)
 const chosen = ref(null)
 
 const openBook = (f) => {
@@ -90,8 +92,10 @@ const openBook = (f) => {
 const totalPrice = computed(() => (chosen.value ? chosen.value.price * passengers.value : 0))
 
 const confirmBook = async () => {
+  if (submitting.value) return // BUGID DBLCLICK-1：提交中防重入
   if (!getToken()) { showToast(t('common.notLoggedIn')); router.push('/login'); return }
   const f = chosen.value
+  submitting.value = true
   try {
     const res = await flightApi.bookFlight({
       flightNo: f.flightNo,
@@ -111,6 +115,8 @@ const confirmBook = async () => {
     }
   } catch (e) {
     showToast(t('booking.orderFailRetry'))
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -210,7 +216,7 @@ onMounted(search)
         </div>
         <div class="book-actions">
           <van-button round plain @click="showBook = false">{{ t('common.cancel') }}</van-button>
-          <van-button round type="primary" @click="confirmBook">{{ t('booking.goPay') }}</van-button>
+          <van-button round type="primary" :loading="submitting" :disabled="submitting" @click="confirmBook">{{ t('booking.goPay') }}</van-button>
         </div>
       </div>
     </van-popup>

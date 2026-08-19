@@ -88,7 +88,8 @@ public class NoteCollectionService {
     /** 添加笔记（去重；封面为空时取第一篇笔记封面） */
     @Transactional
     public Map<String, Object> addNote(Long userId, Long collectionId, Long noteId) {
-        NoteCollection collection = getOwned(userId, collectionId);
+        // COLL-1 修复：用悲观锁序列化并发添加，防止 noteIds 读-改-写丢失更新
+        NoteCollection collection = getOwnedForUpdate(userId, collectionId);
         if (noteId == null) {
             throw new IllegalArgumentException("笔记 id 不能为空");
         }
@@ -118,7 +119,8 @@ public class NoteCollectionService {
     /** 移除笔记（去重后保存） */
     @Transactional
     public Map<String, Object> removeNote(Long userId, Long collectionId, Long noteId) {
-        NoteCollection collection = getOwned(userId, collectionId);
+        // COLL-1 修复：用悲观锁序列化并发移除
+        NoteCollection collection = getOwnedForUpdate(userId, collectionId);
         if (noteId == null) {
             throw new IllegalArgumentException("笔记 id 不能为空");
         }
@@ -198,6 +200,16 @@ public class NoteCollectionService {
     /** 获取本人收藏夹（校验归属） */
     private NoteCollection getOwned(Long userId, Long id) {
         NoteCollection collection = collectionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("收藏夹不存在"));
+        if (userId == null || !userId.equals(collection.getUserId())) {
+            throw new IllegalArgumentException("无权操作该收藏夹");
+        }
+        return collection;
+    }
+
+    /** COLL-1 修复：悲观锁版本的 getOwned，用于 addNote/removeNote 防并发丢失更新 */
+    private NoteCollection getOwnedForUpdate(Long userId, Long id) {
+        NoteCollection collection = collectionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("收藏夹不存在"));
         if (userId == null || !userId.equals(collection.getUserId())) {
             throw new IllegalArgumentException("无权操作该收藏夹");

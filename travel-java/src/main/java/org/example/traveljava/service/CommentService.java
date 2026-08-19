@@ -1,14 +1,12 @@
 package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Comment;
-import org.example.traveljava.entity.CommentLike;
 import org.example.traveljava.repository.CommentLikeRepository;
 import org.example.traveljava.repository.CommentRepository;
 import org.example.traveljava.repository.NoteRepository;
 import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,7 +57,8 @@ public class CommentService {
 
     /** 获取点赞最多的那条回复（抖音风格：默认只展示一条热评回复） */
     public Optional<Comment> getTopReply(Long parentId) {
-        List<Comment> replies = commentRepository.findByParentIdOrderByLikesDescCreatedAtAsc(parentId);
+        // COMMENT-1 修复：用 hidden=false 过滤，避免被举报隐藏的回复从热评预览泄露
+        List<Comment> replies = commentRepository.findByParentIdAndHiddenFalseOrderByLikesDescCreatedAtAsc(parentId);
         return replies.isEmpty() ? Optional.empty() : Optional.of(replies.get(0));
     }
 
@@ -85,7 +84,8 @@ public class CommentService {
             return Collections.emptyMap();
         }
         Map<Long, Comment> top = new HashMap<>();
-        for (Comment reply : commentRepository.findByParentIdInOrderByLikesDescCreatedAtAsc(parentIds)) {
+        // COMMENT-1 修复：用 HiddenFalse 版本过滤被举报隐藏的回复
+        for (Comment reply : commentRepository.findByParentIdInAndHiddenFalseOrderByLikesDescCreatedAtAsc(parentIds)) {
             top.putIfAbsent(reply.getParentId(), reply); // 按点赞降序，首个即热评
         }
         return top;
@@ -163,12 +163,22 @@ public class CommentService {
         }
 
         Long noteId = comment.getNoteId();
+
+        // L-COMMENT-1 修复：删除顶级评论时级联删除其全部回复并清理点赞，
+        // 否则回复变成孤儿、评论计数（countByNoteId 含回复）与实际不符
+        int deletedCount = 1;
+        if (comment.getParentId() == null) {
+            long repliesDeleted = commentRepository.deleteByParentId(commentId);
+            commentLikeRepository.deleteByCommentId(commentId); // 回复点赞
+            deletedCount += (int) repliesDeleted;
+        }
+        commentLikeRepository.deleteByCommentId(commentId); // 本条评论点赞
         commentRepository.delete(comment);
 
-        // 【并发安全】同步更新游记评论数（包含回复）：原子 -1（comments>=0 条件下不会减成负数）
-        noteRepository.adjustComments(noteId, -1);
+        // 【并发安全】同步更新游记评论数（含回复）：原子 -deletedCount（comments>=0 条件下不会减成负数）
+        noteRepository.adjustComments(noteId, -deletedCount);
 
-        log.info("删除评论：commentId={}, userId={}", commentId, userId);
+        log.info("删除评论：commentId={}, userId={}, 级联清理回复 {} 条", commentId, userId, deletedCount - 1);
     }
 
     /** 点赞评论或回复（幂等：同一用户对同一评论只能点赞一次） */
@@ -180,14 +190,12 @@ public class CommentService {
         if (commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
             return comment; // 已点过，幂等返回
         }
-        try {
-            commentLikeRepository.save(new CommentLike(commentId, userId));
+        // LIKE-1 修复：原子 INSERT IGNORE 按受影响行数判断，冲突不再走 save()+catch
+        //（IDENTITY 下冲突会标记 rollback-only，catch 后提交仍抛 UnexpectedRollbackException）
+        if (commentLikeRepository.insertIfAbsent(commentId, userId) > 0) {
             commentRepository.incrementLikes(commentId);
             // 同步一级缓存，避免 bulk 更新后 findById 返回旧点赞数
             comment.setLikes(comment.getLikes() + 1);
-        } catch (DataIntegrityViolationException e) {
-            // 并发重复点赞，唯一约束兜底，视为已点赞
-            log.debug("评论点赞并发冲突：commentId={}, userId={}", commentId, userId);
         }
         return comment;
     }

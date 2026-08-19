@@ -106,13 +106,15 @@ const submitFeedback = async () => {
       <van-cell-group inset class="form-group">
         <van-cell :title="t('feedback.type')">
           <template #right-icon>
+            <!-- BUGID FEAT-1 修复：Vant4 Radio 绑定值用 name 属性 + 默认插槽作文案，:value/:label 在 Vant4 无效 -->
             <van-radio-group v-model="feedbackForm.type" direction="horizontal">
               <van-radio
                 v-for="item in feedbackTypes"
                 :key="item.value"
-                :value="item.value"
-                :label="item.label"
-              />
+                :name="item.value"
+              >
+                {{ item.label }}
+              </van-radio>
             </van-radio-group>
           </template>
         </van-cell>

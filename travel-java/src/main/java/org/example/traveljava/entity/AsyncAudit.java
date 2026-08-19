@@ -12,6 +12,9 @@ import java.time.LocalDateTime;
 @Table(name = "async_audit", indexes = {
         @Index(name = "idx_async_audit_type", columnList = "event_type"),
         @Index(name = "idx_async_audit_created", columnList = "created_at")
+}, uniqueConstraints = {
+        // MQ-1 修复：event_id 唯一约束兜底幂等——并发 redelivery 重复插行时由 DB 拒绝（配合消费者 catch）
+        @UniqueConstraint(name = "uk_async_audit_event_id", columnNames = "event_id")
 })
 public class AsyncAudit {
 
@@ -31,6 +34,14 @@ public class AsyncAudit {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    /** L-ENT-1 修复：created_at 列 NOT NULL，漏调 setCreatedAt 即插库失败——统一 @PrePersist 兜底（与全项目其他实体一致） */
+    @PrePersist
+    protected void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

@@ -42,6 +42,9 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 
     void deleteByNoteId(Long noteId);
 
+    /** L-COMMENT-1 修复：删除顶级评论时级联删除其全部回复，返回删除条数 */
+    long deleteByParentId(Long parentId);
+
     /** 原子自增点赞数，配合 comment_likes 去重表使用 */
     @Modifying
     @Query("update Comment c set c.likes = c.likes + 1 where c.id = :id")
@@ -53,4 +56,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 
     /** 批量获取多条评论的回复，按点赞降序（用于取每条的热评回复），一次 IN 避免 N+1 */
     List<Comment> findByParentIdInOrderByLikesDescCreatedAtAsc(List<Long> parentIds);
+
+    /** COMMENT-1 修复：批量获取多条评论的回复（过滤被举报隐藏的），按点赞降序 */
+    List<Comment> findByParentIdInAndHiddenFalseOrderByLikesDescCreatedAtAsc(List<Long> parentIds);
 }

@@ -11,7 +11,6 @@ import org.example.traveljava.repository.UserRepository;
 import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -177,12 +176,11 @@ public class PostService {
             postLikeRepository.deleteByPostIdAndUserId(postId, userId);
             postRepository.adjustLikes(postId, -1);
         } else {
-            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞（不重复计数）
-            try {
-                postLikeRepository.save(new PostLike(postId, userId));
+            // LIKE-1 修复：原子 INSERT IGNORE 按受影响行数判断，冲突不再走 save()+catch
+            //（IDENTITY 下冲突会标记 rollback-only，catch 后提交仍抛 UnexpectedRollbackException）
+            int inserted = postLikeRepository.insertIfAbsent(postId, userId);
+            if (inserted > 0) {
                 postRepository.adjustLikes(postId, 1);
-            } catch (DataIntegrityViolationException e) {
-                log.debug("动态点赞并发冲突：postId={}, userId={}", postId, userId);
             }
         }
 

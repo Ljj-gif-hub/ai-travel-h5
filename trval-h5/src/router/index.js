@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { getToken, removeToken, isTokenExpired } from '../utils/auth'
+import { getToken, removeToken, isTokenExpired, getRefreshToken, removeRefreshToken } from '../utils/auth'
 
 /**
  * 4-Tab 底部导航架构路由
@@ -294,9 +294,19 @@ const whiteList = [
 router.beforeEach((to, from, next) => {
   const token = getToken()
 
-  // Token 已过期（JWT exp 校验）→ 清登录态并回登录页（后端 401 的客户端前置兜底）
+  // Token 已过期（JWT exp 校验）
   if (token && isTokenExpired(token) && to.path !== '/login') {
+    // AUTH-1 修复：access token 过期时优先尝试用 refresh token 续期，而非直接踢回登录页
+    const refreshToken = getRefreshToken()
+    if (refreshToken) {
+      // 有 refresh token：不清登录态，放行导航，由 axios 401 拦截器单飞刷新
+      // （refresh token 7 天有效期内可实现免登录；刷新失败时 axios 层会清登录态并跳转登录）
+      next()
+      return
+    }
+    // 无 refresh token：清 access + refresh token，回登录页
     removeToken()
+    removeRefreshToken()
     localStorage.setItem('redirectUrl', to.fullPath)
     next({ path: '/login' })
     return
@@ -326,6 +336,34 @@ router.beforeEach((to, from, next) => {
  * - 空闲回调执行（requestIdleCallback，降级 setTimeout），不与首屏渲染抢带宽；
  *   预取失败 try/catch 静默忽略（离线/慢网不影响当前页）。
  */
+/* ==================== 旧 chunk 加载失败自愈 ====================
+ * 部署新版本后，浏览器缓存的旧 index.html（启发式缓存/SW 预缓存）会引用
+ * 已被新构建删除的旧 hash chunk，异步路由组件加载 404 导致 router.push 静默失败
+ * （用户表现：点击"出发地"等跳转入口没反应）。
+ * 兜底：捕获 chunk 加载错误后清空 SW/Caches，带版本号强刷拿最新 index.html。
+ * sessionStorage 30 秒防循环（新版本仍失败时不再无限刷新）。
+ */
+router.onError((error) => {
+  const msg = String(error?.message || '')
+  const isChunkError = /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|Loading CSS chunk|error loading dynamically imported module/i.test(msg)
+  if (!isChunkError) return
+  const RELOAD_FLAG = 'chunk_reload_ts'
+  const last = Number(sessionStorage.getItem(RELOAD_FLAG) || 0)
+  if (Date.now() - last < 30000) return
+  try { sessionStorage.setItem(RELOAD_FLAG, String(Date.now())) } catch {}
+  try {
+    if ('caches' in window) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {})
+    }
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {})
+    }
+  } catch {}
+  const url = new URL(location.href)
+  url.searchParams.set('_v', String(Date.now()))
+  location.replace(url.href)
+})
+
 const preloaded = new Set()
 function preloadRoutePath(path) {
   if (preloaded.has(path)) return

@@ -23,6 +23,7 @@ const noteForm = reactive({
 });
 
 const isLoading = ref(false);
+const isFormLoading = ref(false);  // BUGID L-WRITE-1 修复：编辑详情加载中标志，加载期间禁用表单交互
 const isEdit = ref(false);
 const isCoverUploading = ref(false);
 const isContentImageUploading = ref(false);
@@ -178,6 +179,8 @@ const loadNote = async () => {
   const id = route.query.id;
   if (id) {
     isEdit.value = true;
+    // BUGID L-WRITE-1 修复：加载期间禁用表单交互，避免响应晚到覆盖用户已输入内容
+    isFormLoading.value = true;
     try {
       const response = await noteApi.getNoteDetail(id);
       if (response.code === 0) {
@@ -193,6 +196,8 @@ const loadNote = async () => {
       }
     } catch (error) {
       console.log('获取游记详情失败:', error);
+    } finally {
+      isFormLoading.value = false;
     }
   }
 };
@@ -284,6 +289,7 @@ onMounted(() => {
           :label="t('note.titleLabel')"
           :placeholder="t('note.titlePlaceholder')"
           maxlength="50"
+          :disabled="isFormLoading"
         />
 
         <van-field
@@ -293,6 +299,7 @@ onMounted(() => {
           type="textarea"
           :rows="10"
           maxlength="2000"
+          :disabled="isFormLoading"
         />
         <!-- 正文图片/视频预览 + 上传按钮 -->
         <div class="content-media-section">
@@ -372,6 +379,7 @@ onMounted(() => {
           block
           class="submit-btn"
           :loading="isLoading"
+          :disabled="isFormLoading"
           @click="saveNote"
         >
           {{ isEdit ? t('note.update') : t('note.publish') }}

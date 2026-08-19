@@ -15,11 +15,6 @@ server:
 spring:
   application:
     name: travel-java
-  http:
-    encoding:
-      charset: UTF-8
-      enabled: true
-      force: true
   servlet:
     multipart:
       # 单文件 50MB / 整请求 100MB（此前 1GB/2GB 可被超大上传打爆内存）

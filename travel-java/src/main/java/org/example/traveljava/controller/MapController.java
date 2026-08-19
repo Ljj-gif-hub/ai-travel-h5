@@ -8,6 +8,8 @@ import org.example.traveljava.dto.POIDetailDTO;
 import org.example.traveljava.dto.POISuggestionDTO;
 import org.example.traveljava.service.MapService;
 import org.example.traveljava.util.CoordinateUtil;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/map")
@@ -218,24 +220,24 @@ public class MapController {
 
     /* ==================== 轮播景点图片（供首页线路规划卡片使用） ==================== */
 
-    /** 16 个中国热门景点固定图（seed 策略：同景点永远同一张） */
+    /** 16 个中国热门城市实景图（前端本地静态资源，与城市一一对应；替代原 picsum 随机图，修复图片与地点不符） */
     private static final List<String> SCENIC_PHOTOS = List.of(
-        "https://picsum.photos/seed/gugong/800/400",
-        "https://picsum.photos/seed/changchen/800/400",
-        "https://picsum.photos/seed/xihu/800/400",
-        "https://picsum.photos/seed/huangshan/800/400",
-        "https://picsum.photos/seed/jiuzhaigou/800/400",
-        "https://picsum.photos/seed/zhangjiajie/800/400",
-        "https://picsum.photos/seed/lijiang/800/400",
-        "https://picsum.photos/seed/bingmayong/800/400",
-        "https://picsum.photos/seed/zhuozheng/800/400",
-        "https://picsum.photos/seed/budalagong/800/400",
-        "https://picsum.photos/seed/yalongwan/800/400",
-        "https://picsum.photos/seed/gulangyu/800/400",
-        "https://picsum.photos/seed/xiongmao/800/400",
-        "https://picsum.photos/seed/laoshan/800/400",
-        "https://picsum.photos/seed/erhai/800/400",
-        "https://picsum.photos/seed/guilin/800/400"
+        "/images/landmarks/1a57149358c0.jpg",  // 桂林
+        "/images/landmarks/1260698db1f0.jpg",  // 张家界
+        "/images/landmarks/1986d7d41d8a.jpg",  // 黄山
+        "/images/landmarks/7bb4299d34ed.jpg",  // 丽江
+        "/images/landmarks/d93467c50a4c.jpg",  // 大理
+        "/images/landmarks/fcf3af2237af.jpg",  // 三亚
+        "/images/landmarks/14bf5c897776.jpg",  // 成都
+        "/images/landmarks/69d6beffab08.jpg",  // 杭州
+        "/images/landmarks/79b21044d044.jpg",  // 西安
+        "/images/landmarks/692e92669c0c.jpg",  // 北京
+        "/images/landmarks/e94e8bd35fc8.jpg",  // 上海
+        "/images/landmarks/78b0d703c7cf.jpg",  // 重庆
+        "/images/landmarks/7a399889b9a4.jpg",  // 深圳
+        "/images/landmarks/ad827c5906e6.jpg",  // 南京
+        "/images/landmarks/7e040aa9cb2e.jpg",  // 广州
+        "/images/landmarks/995882b99661.jpg"   // 苏州
     );
 
     @GetMapping("/scenic-photos")
@@ -292,16 +294,23 @@ public class MapController {
 
     /* ==================== 地标种子数据（常用旅游城市） ==================== */
 
-    /** 城市地标预设数据缓存 */
-    private final ConcurrentHashMap<String, List<MapMarkerDTO>> landmarkCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, List<MapMarkerDTO>> metroCache = new ConcurrentHashMap<>();
+    /** 城市地标预设数据缓存 — L-CTRL-4 修复：原无界 ConcurrentHashMap 的 key（city）攻击者可控，
+     *  随机城市会无限累积条目。改为 Caffeine 有界缓存（500 条 / 30 分钟）。 */
+    private final Cache<String, List<MapMarkerDTO>> landmarkCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
+    private final Cache<String, List<MapMarkerDTO>> metroCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
 
     private List<MapMarkerDTO> getLandmarkData(String city) {
-        return landmarkCache.computeIfAbsent(city, k -> normalizeMarkers(buildLandmarks(city)));
+        return landmarkCache.get(city, k -> normalizeMarkers(buildLandmarks(city)));
     }
 
     private List<MapMarkerDTO> getMetroData(String city) {
-        return metroCache.computeIfAbsent(city, k -> normalizeMarkers(buildMetroStations(city)));
+        return metroCache.get(city, k -> normalizeMarkers(buildMetroStations(city)));
     }
 
     /**

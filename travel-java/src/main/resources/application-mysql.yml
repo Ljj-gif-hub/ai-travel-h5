@@ -9,7 +9,9 @@
 # ================================================================
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:travel_plans}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
+    # L-CFG-2 修复：useSSL=false → sslMode=PREFERRED（Connector/J 8 现代属性）。
+    # 服务器支持 SSL 时强制走加密连接；不支持时回退明文，避免误连新环境直接挂掉。
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:travel_plans}?sslMode=PREFERRED&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}

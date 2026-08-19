@@ -1,13 +1,11 @@
 package org.example.traveljava.service;
 
 import org.example.traveljava.entity.Note;
-import org.example.traveljava.entity.NoteLike;
 import org.example.traveljava.repository.NoteLikeRepository;
 import org.example.traveljava.repository.NoteRepository;
 import org.example.traveljava.util.TextCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -180,16 +178,15 @@ public class NoteService {
             noteLikeRepository.deleteByNoteIdAndUserId(noteId, userId);
             noteRepository.adjustLikes(noteId, -1);
         } else {
-            // 点赞：并发双击时唯一约束兜底，冲突视为已点赞（不重复计数）
-            try {
-                noteLikeRepository.save(new NoteLike(noteId, userId));
+            // LIKE-1 修复：原子 INSERT IGNORE 按受影响行数判断，冲突不再走 save()+catch
+            //（IDENTITY 下冲突会标记 rollback-only，catch 后提交仍抛 UnexpectedRollbackException）
+            int inserted = noteLikeRepository.insertIfAbsent(noteId, userId);
+            if (inserted > 0) {
                 noteRepository.adjustLikes(noteId, 1);
                 // 【新功能】笔记被赞 +1（仅新点赞生效一次，自己赞自己不发放）
                 if (note.getUserId() != null && !note.getUserId().equals(userId)) {
                     userService.addPoints(note.getUserId(), 1);
                 }
-            } catch (DataIntegrityViolationException e) {
-                log.debug("游记点赞并发冲突：noteId={}, userId={}", noteId, userId);
             }
         }
 

@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Map;
 
@@ -30,21 +31,24 @@ public class RefundService {
     private final RefundProvider refundProvider;
     private final CouponService couponService;
     private final AuditService auditService;
+    private final TransactionTemplate transactionTemplate;
 
     public RefundService(RefundRepository refundRepository, OrderRepository orderRepository,
                          RefundProvider refundProvider, CouponService couponService,
-                         AuditService auditService) {
+                         AuditService auditService, TransactionTemplate transactionTemplate) {
         this.refundRepository = refundRepository;
         this.orderRepository = orderRepository;
         this.refundProvider = refundProvider;
         this.couponService = couponService;
         this.auditService = auditService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /** 用户申请退款：仅已支付订单可退 */
     @Transactional
     public Refund requestRefund(Long userId, Long orderId, String reason) {
-        Order order = orderRepository.findById(orderId)
+        // 悲观锁锁定订单行，序列化同一订单的并发退款申请（REFUND-2① 修复）
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("订单不存在"));
         if (!order.getUserId().equals(userId)) {
             throw new IllegalArgumentException("无权操作该订单");
@@ -52,8 +56,9 @@ public class RefundService {
         if (!"paid".equals(order.getStatus())) {
             throw new IllegalArgumentException("仅已支付订单可申请退款");
         }
-        // 去重：同一订单仅允许一笔待处理退款
-        if (refundRepository.existsByOrderIdAndStatus(orderId, Refund.STATUS_PENDING)) {
+        // 去重：同一订单仅允许一笔待处理/处理中退款（REFUND-2① 修复：悲观锁 + 状态集合检查）
+        if (refundRepository.existsByOrderIdAndStatusIn(orderId,
+                java.util.List.of(Refund.STATUS_PENDING, Refund.STATUS_PROCESSING))) {
             throw new IllegalArgumentException("该订单已有退款申请处理中，请勿重复提交");
         }
 
@@ -82,50 +87,95 @@ public class RefundService {
 
     /**
      * 管理员审核退款：approve（通过，执行渠道退款并取消订单）/ reject（驳回）。
+     * 【并发安全】REFUND-1 修复：用原子 CAS（pending→processing）替代「读-判-写」，
+     * 两个管理员并发批准同一退款单时只有一个线程返回 1，另一个返回 0（幂等忽略），杜绝渠道双倍退款。
+     * 【REFUND-2② 修复】打款前校验该订单不存在已退款记录，防止顺序批准两笔退款单也双倍退款。
+     * 【REFUND-3 修复】CAS 提交（事务1）→ 渠道调用（无事务）→ 落库 refunded（事务2），
+     * 渠道成功后 DB 失败不会回滚 processing 状态，重试时 CAS 失败不会重复调渠道。
      */
-    @Transactional
     public Refund handle(Long adminId, Long refundId, String action) {
         Refund refund = refundRepository.findById(refundId)
                 .orElseThrow(() -> new IllegalArgumentException("退款单不存在"));
-        if (!Refund.STATUS_PENDING.equals(refund.getStatus())) {
-            throw new IllegalArgumentException("该退款单已处理");
-        }
 
         boolean approve = "approve".equalsIgnoreCase(action);
-        refund.setHandledBy(adminId);
-        refund.setHandledAt(java.time.LocalDateTime.now());
 
         if (approve) {
-            // 1. 调用退款渠道（Mock 模拟 300ms）
+            // === 事务1：原子 CAS pending→processing 并提交（REFUND-3 修复） ===
+            int claimed = transactionTemplate.execute(status -> {
+                int c = refundRepository.markProcessingIfPending(refundId, adminId, java.time.LocalDateTime.now());
+                if (c == 0) {
+                    status.setRollbackOnly();
+                }
+                return c;
+            });
+            if (claimed == 0) {
+                throw new IllegalArgumentException("该退款单已处理或状态已变更");
+            }
+
+            // 刷新实体
+            refund = refundRepository.findById(refundId).orElseThrow();
+
+            // 打款前校验该订单不存在已退款记录（REFUND-2② 修复）
+            if (refundRepository.existsByOrderIdAndStatus(refund.getOrderId(), Refund.STATUS_REFUNDED)) {
+                transactionTemplate.executeWithoutResult(status -> {
+                    Refund r = refundRepository.findById(refundId).orElseThrow();
+                    r.setStatus(Refund.STATUS_REJECTED);
+                    refundRepository.save(r);
+                });
+                log.warn("订单已存在已退款记录，拒绝重复退款: refundId={}, orderId={}", refundId, refund.getOrderId());
+                throw new IllegalStateException("该订单已退款，不可重复退款");
+            }
+
+            // === 渠道调用（无事务，REFUND-3 修复：渠道成功后 DB 失败不会回滚 processing） ===
             String refundNo;
             try {
                 refundNo = refundProvider.refund(refund.getOrderId(), String.valueOf(refund.getOrderId()),
                         refund.getAmount(), refund.getReason());
             } catch (Exception e) {
+                // 渠道失败：回滚到 pending 允许重试
+                transactionTemplate.executeWithoutResult(status -> {
+                    Refund r = refundRepository.findById(refundId).orElseThrow();
+                    r.setStatus(Refund.STATUS_PENDING);
+                    refundRepository.save(r);
+                });
                 log.error("退款渠道调用失败: refundId={}", refundId, e);
                 throw new IllegalStateException("退款渠道调用失败，请稍后重试");
             }
-            refund.setRefundNo(refundNo);
-            refund.setStatus(Refund.STATUS_REFUNDED);
 
-            // 2. 原子取消订单（仅当仍为 paid；并发下已被取消/完成则不重复处理）
-            Order order = orderRepository.findById(refund.getOrderId()).orElse(null);
-            if (order != null && "paid".equals(order.getStatus())) {
-                int updated = orderRepository.cancelIfPaid(order.getId());
-                if (updated == 1 && order.getCouponId() != null) {
-                    couponService.releaseByOrder(order.getId());
+            // === 事务2：落库 refunded + 取消订单 + 审计（REFUND-3 修复） ===
+            final String finalRefundNo = refundNo;
+            transactionTemplate.executeWithoutResult(status -> {
+                Refund r = refundRepository.findById(refundId).orElseThrow();
+                r.setRefundNo(finalRefundNo);
+                r.setStatus(Refund.STATUS_REFUNDED);
+                refundRepository.save(r);
+
+                // 原子取消订单（仅当仍为 paid）
+                Order order = orderRepository.findById(r.getOrderId()).orElse(null);
+                if (order != null && "paid".equals(order.getStatus())) {
+                    int updated = orderRepository.cancelIfPaid(order.getId());
+                    if (updated == 1 && order.getCouponId() != null) {
+                        couponService.releaseByOrder(order.getId());
+                    }
                 }
-            }
-            auditService.record(AuditService.REFUND_APPROVED, Map.of(
-                    "refundId", refundId,
-                    "orderId", refund.getOrderId(),
-                    "amount", refund.getAmount(),
-                    "refundNo", refundNo,
-                    "adminId", adminId
-            ));
+                auditService.record(AuditService.REFUND_APPROVED, Map.of(
+                        "refundId", refundId,
+                        "orderId", r.getOrderId(),
+                        "amount", r.getAmount(),
+                        "refundNo", finalRefundNo,
+                        "adminId", adminId
+                ));
+            });
             log.info("退款审核通过: refundId={}, refundNo={}, adminId={}", refundId, refundNo, adminId);
+            return refundRepository.findById(refundId).orElseThrow();
         } else {
+            if (!Refund.STATUS_PENDING.equals(refund.getStatus())) {
+                throw new IllegalArgumentException("该退款单已处理");
+            }
+            refund.setHandledBy(adminId);
+            refund.setHandledAt(java.time.LocalDateTime.now());
             refund.setStatus(Refund.STATUS_REJECTED);
+            Refund saved = refundRepository.save(refund);
             auditService.record(AuditService.REFUND_REJECTED, Map.of(
                     "refundId", refundId,
                     "orderId", refund.getOrderId(),
@@ -133,8 +183,7 @@ public class RefundService {
                     "adminId", adminId
             ));
             log.info("退款审核驳回: refundId={}, adminId={}", refundId, adminId);
+            return saved;
         }
-
-        return refundRepository.save(refund);
     }
 }

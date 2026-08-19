@@ -91,29 +91,32 @@ public class TravelAIController {
                         vo.getBudget().longValue(),
                         vo.getDays()
                 )
-                .map(chunk -> "data: " + chunk + "\n\n")
+                // L-CTRL-3 修复：data: 前缀交给 produces=text/event-stream 的 SSE 编码器统一补，
+                // 此处再手拼 data: 会输出双重前缀 data:data:（同 AgentProxyController 已修的坑）
+                .filter(chunk -> chunk != null && !chunk.trim().isEmpty())
                 .onErrorResume(e -> {
                     log.error("流式生成旅行规划失败", e);
-                    return Flux.just("data: 错误：生成失败，请稍后重试\n\n");
+                    return Flux.just("错误：生成失败，请稍后重试");
                 });
     }
 
     @PostMapping("/chat")
     @RateLimit(max = 20, duration = 60, key = "travel_chat")
     public Result<String> chat(@RequestHeader("Authorization") String authHeader, @RequestBody List<ChatMessage> messages) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
-        log.info("聊天请求：消息数={}", messages.size());
-
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        // CTRL-1 修复：null 检查前不能调 messages.size()，body 为 null 即 NPE 500
         if (messages == null || messages.isEmpty()) {
             return Result.fail("消息列表不能为空");
         }
+        log.info("聊天请求：消息数={}", messages.size());
 
         if (messages.size() > 50) {
             return Result.fail("消息数量不能超过50条");
         }
 
         try {
-            String response = aiService.chat(messages);
+            // L-AI-2：chat 缓存键带 userId，防止跨用户共享缓存回复
+            String response = aiService.chat(userId, messages);
             return Result.ok(response);
         } catch (Exception e) {
             log.error("聊天请求失败", e);
@@ -125,11 +128,11 @@ public class TravelAIController {
     @RateLimit(max = 10, duration = 60, key = "travel_chat_stream")
     public Flux<String> streamChat(@RequestHeader("Authorization") String authHeader, @RequestBody List<ChatMessage> messages) {
         AuthUtils.requireUserId(authHeader, jwtUtil);
-        log.info("流式聊天请求：消息数={}", messages.size());
-
+        // CTRL-1 修复：null 检查前不能调 messages.size()
         if (messages == null || messages.isEmpty()) {
             return Flux.just("data: 错误：消息列表不能为空\n\n");
         }
+        log.info("流式聊天请求：消息数={}", messages.size());
 
         return aiService.streamChat(messages);
     }
@@ -137,7 +140,7 @@ public class TravelAIController {
     @PostMapping("/recommend")
     @RateLimit(max = 10, duration = 60, key = "travel_recommend")
     public Result<String> recommend(@RequestHeader("Authorization") String authHeader, @Valid @RequestBody TravelRecommendVO vo) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         log.info("推荐请求：目的地={}, 预算={}, 天数={}, 消息={}",
                 vo.getDestination(), vo.getBudget(), vo.getDays(), vo.getMessage());
         try {
@@ -163,7 +166,8 @@ public class TravelAIController {
                         .build());
             }
 
-            String response = aiService.chat(messages);
+            // L-AI-2：chat 缓存键带 userId
+            String response = aiService.chat(userId, messages);
             return Result.ok(response);
         } catch (Exception e) {
             log.error("推荐请求失败", e);

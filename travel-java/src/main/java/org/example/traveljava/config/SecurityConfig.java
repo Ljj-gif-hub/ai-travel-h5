@@ -20,8 +20,19 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(rateLimitInterceptor).addPathPatterns("/api/**");
-        // 【新功能】AI 用量配额：仅拦截 agent / travel AI / stream 相关路径
+        // 【新功能】AI 用量配额：拦截全部烧钱的 AI 路径（agent / travel AI / plan / chat / planner / trip-ai）
+        // QUOTA-1 修复：注册路径必须与 AiQuotaInterceptor 内判断的前缀一致，否则新路径不进拦截器（假修复）
         registry.addInterceptor(aiQuotaInterceptor)
-                .addPathPatterns("/api/agent/**", "/api/travel/ai/**", "/api/travel/stream/**");
+                .addPathPatterns(
+                        "/api/agent/**",
+                        "/api/travel/ai/**",
+                        "/api/travel/stream/**",
+                        "/api/travel/plan",
+                        "/api/travel/plan/stream",
+                        "/api/travel/plan/structured",
+                        "/api/travel/chat",
+                        "/api/travel/planner/**",
+                        "/api/travel/trip/**",
+                        "/api/trip/ai/**");
     }
 }

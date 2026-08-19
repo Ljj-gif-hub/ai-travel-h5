@@ -25,7 +25,7 @@ public class MockRefundProvider implements RefundProvider {
             throw new IllegalStateException("退款处理被中断");
         }
         String refundNo = "MOCKRF" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
-        log.info("Mock 退款成功: orderId={}, orderNo={}, amount={}分, refundNo={}", orderId, orderNo, amount, refundNo);
+        log.info("Mock 退款成功: orderId={}, orderNo={}, amount={}元, refundNo={}", orderId, orderNo, amount, refundNo);
         return refundNo;
     }
 }

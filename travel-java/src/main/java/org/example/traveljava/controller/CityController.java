@@ -34,6 +34,9 @@ import java.util.*;
 public class CityController {
 
     private static final Logger log = LoggerFactory.getLogger(CityController.class);
+
+    /** 【图片纠错】图片兜底：前端本地占位图（相对路径，由前端 nginx 静态资源服务），替代 picsum 随机图 */
+    private static final String LOCAL_PLACEHOLDER_IMAGE = "/images/city-placeholder.svg";
     private final CityService cityService;
     private final CityImageRepository cityImageRepository;
     private final CityMaterialService cityMaterialService;
@@ -151,31 +154,52 @@ public class CityController {
      * 5. 城市图片代理接口
      * GET /api/city/image?name=深圳
      * 优先数据库缓存 → 高德 POI 实景照片 → Picsum 兜底
+     * 【ABUSE-1 修复】加 @RateLimit 限流，防止缓存 miss 时循环随机 name 刷爆高德配额 + DB 膨胀
      */
     @GetMapping("/image")
+    @RateLimit(max = 30, duration = 60, key = "city_image")
     public ResponseEntity<Void> getCityImage(@RequestParam String name) {
-        String url;
-        // 1) 查数据库缓存
-        Optional<CityImage> dbImage = cityImageRepository.findByCityName(name);
-        if (dbImage.isPresent() && dbImage.get().getImageUrl() != null && !dbImage.get().getImageUrl().isEmpty()) {
-            url = dbImage.get().getImageUrl();
-        } else {
+        // ABUSE-1 修复：① 长度上限防超长串；② 真实城市白名单校验——未知城市直接走 picsum 兜底，
+        // 不触发高德外呼、不落库。仅已知城市可进缓存/外呼路径，杜绝随机串刷高德配额 + DB 膨胀。
+        String cityName = name == null ? "" : name.trim();
+        boolean known = cityService.isKnownCity(cityName);
+        if (cityName.isEmpty() || cityName.length() > 20 || !known) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.LOCATION, LOCAL_PLACEHOLDER_IMAGE);
+            return ResponseEntity.status(HttpStatus.FOUND).headers(headers).build();
+        }
+        String url = null;
+        // 1) 查数据库缓存（历史 picsum 残留视为未命中，重新走高德）
+        Optional<CityImage> dbImage = cityImageRepository.findByCityName(cityName);
+        if (dbImage.isPresent()) {
+            String cached = dbImage.get().getImageUrl();
+            if (cached != null && !cached.isEmpty() && !cached.contains("picsum.photos")) {
+                url = cached;
+            }
+        }
+        if (url == null) {
             // 2) 尝试高德 POI 搜索获取实景照片
             String amapPhoto = null;
             if (amapService != null) {
                 try {
-                    amapPhoto = amapService.fetchCityPhoto(name);
+                    amapPhoto = amapService.fetchCityPhoto(cityName);
                 } catch (Exception e) {
-                    log.debug("高德图片搜索失败: {} — {}", name, e.getMessage());
+                    log.debug("高德图片搜索失败: {} — {}", cityName, e.getMessage());
                 }
             }
             if (amapPhoto != null && !amapPhoto.isEmpty()) {
-                // 缓存到数据库，下次直接用
-                cityImageRepository.save(new CityImage(name, amapPhoto, "amap"));
+                // 缓存到数据库，下次直接用（顺带覆盖旧的 picsum 残留）
+                if (dbImage.isPresent()) {
+                    dbImage.get().setImageUrl(amapPhoto);
+                    dbImage.get().setSource("amap");
+                    cityImageRepository.save(dbImage.get());
+                } else {
+                    cityImageRepository.save(new CityImage(cityName, amapPhoto, "amap"));
+                }
                 url = amapPhoto;
             } else {
-                // 3) 兜底 Picsum
-                url = "https://picsum.photos/seed/" + name + "/400/300";
+                // 3) 兜底：前端本地占位图（不再使用 picsum 随机图）
+                url = LOCAL_PLACEHOLDER_IMAGE;
             }
         }
         HttpHeaders headers = new HttpHeaders();
@@ -232,8 +256,9 @@ public class CityController {
     @RateLimit(max = 10, duration = 60, key = "city_admin")
     public Result<Map<String, Object>> refreshAllCityImages(@RequestHeader("Authorization") String authHeader) {
         AuthUtils.requireAdmin(authHeader, jwtUtil);
-        int fetched = cityMaterialService.refreshAllPhotos();
-        return Result.ok(Map.of("fetched", fetched, "message", "已从高德重新爬取 " + fetched + " 张城市照片"));
+        // CITYMAT-1 修复②：改异步执行，请求线程立即返回（原同步串行 HTTP 可耗时数分钟必超时）
+        cityMaterialService.refreshAllPhotosAsync();
+        return Result.ok(Map.of("message", "已开始后台异步刷新城市图片，完成后可通过 /api/city/images/map 查看结果"));
     }
 
     /** 清空城市素材 */

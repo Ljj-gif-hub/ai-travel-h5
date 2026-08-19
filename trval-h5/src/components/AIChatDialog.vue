@@ -332,6 +332,16 @@ const sendMessage = async () => {
   const chatHistory = messages.value
     .filter((m) => m.type === 'user' || (m.type === 'ai' && m.content && m.content.length > 0))
     .map((m) => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }))
+  // BUGID 修复：此前构造的上下文 prompt 从未传给后端（死代码），这里把它注入为当前这条
+  // user 消息的 content，让 AI 真正收到目的地/预算/天数上下文；与 sendQuickWithContext 共用同一套逻辑
+  if (prompt !== text) {
+    const lastUserMsg = [...chatHistory].reverse().find(m => m.role === 'user')
+    if (lastUserMsg) {
+      lastUserMsg.content = prompt
+    } else {
+      chatHistory.push({ role: 'user', content: prompt })
+    }
+  }
 
   try {
     await streamChatWithReconnect(chatHistory, aiMsgIndex)

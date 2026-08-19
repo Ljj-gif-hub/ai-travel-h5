@@ -5,6 +5,7 @@ import org.example.traveljava.entity.Report;
 import org.example.traveljava.service.ReportService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,7 @@ public class ReportController {
         Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         try {
             String targetType = body.get("targetType") != null ? String.valueOf(body.get("targetType")) : null;
-            Long targetId = body.get("targetId") != null ? ((Number) body.get("targetId")).longValue() : null;
+            Long targetId = body.get("targetId") != null ? NumberUtil.toLong(body.get("targetId"), 0L) : null;
             String reason = body.get("reason") != null ? String.valueOf(body.get("reason")) : null;
             return Result.ok(reportService.report(userId, targetType, targetId, reason));
         } catch (IllegalArgumentException e) {

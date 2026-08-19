@@ -105,6 +105,9 @@ services:
       DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travel_root_2026}
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
+      # 【RATE-1 修复】信任 nginx 注入的 X-Real-IP（仅公网走 nginx:80 时安全；3200 端口只绑 127.0.0.1，
+      # 无直连入口，X-Real-IP 不会被伪造）。不设此项则全站合并为 nginx 容器 IP 一个限流桶，高峰期假性 429。
+      RATE_LIMIT_TRUST_PROXY: "true"
       MQ_ENABLED: ${MQ_ENABLED:-true}
       MQ_LISTENER_AUTO_STARTUP: "true"
       # Agent 微服务地址 + 共享密钥（与 agent-service 一致）

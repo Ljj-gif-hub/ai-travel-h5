@@ -10,6 +10,9 @@ import { showToast } from 'vant'
 import { agentPlanStream } from '../api/agent'
 import { planApi } from '../api/index.js'
 import { getToken } from '../utils/auth'
+// MAPFAIL-1 修复：AMap 不可用时回退 Leaflet（本地打包 + OSM 瓦片，离线由 SW 缓存）
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 defineOptions({ name: 'AgentMapView' })
 const router = useRouter()
@@ -249,12 +252,16 @@ let mapLoaded = false
 
 async function initMap() {
   if (window.AMap) { mapLoaded = true; await initAmapMap(); return }
+  // MAPFAIL-1 修复：优先 AMap，SDK 加载后仍不可用则回退 Leaflet，两者都不可用才 toast 失败
   await new Promise(r => {
     const s = document.createElement('script'); s.src = '/api/map/script'
-    s.onload = () => { let n = 0; const c = setInterval(() => { if (window.AMap) { clearInterval(c); r() } else if (n++ > 20) { clearInterval(c); r() } }, 200) }
-    s.onerror = () => r(); document.head.appendChild(s)
+    s.onload = () => { let n = 0; const c = setInterval(() => { if (window.AMap) { clearInterval(c); r(true) } else if (n++ > 20) { clearInterval(c); r(false) } }, 200) }
+    s.onerror = () => r(false); document.head.appendChild(s)
   })
-  if (window.AMap) { mapLoaded = true; await initAmapMap() }
+  if (window.AMap) { mapLoaded = true; await initAmapMap(); return }
+  const Lf = await loadLeaflet()
+  if (Lf) { mapLoaded = true; await initLeafletMap(Lf) }
+  else showToast(t('map.mapLoadFailed'))
 }
 
 async function initAmapMap() {
@@ -278,6 +285,44 @@ async function initAmapMap() {
     zIndex: 100,
   })
   mapInstance.add(marker)
+}
+
+/** MAPFAIL-1 修复：加载 Leaflet（AMap 不可用时的兜底，本地打包 + OSM 瓦片，离线由 SW 缓存） */
+let leafletLoaded = false
+const loadLeaflet = () => {
+  return new Promise((resolve) => {
+    if (L) { leafletLoaded = true; resolve(L); return }
+    if (window.L) { leafletLoaded = true; resolve(window.L); return }
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => { leafletLoaded = true; resolve(window.L) }
+    script.onerror = () => resolve(null)
+    document.head.appendChild(script)
+  })
+}
+
+/** MAPFAIL-1 修复：Leaflet 兜底地图（瓦片 + 城市标签；标记/缩放等 AMap 专属逻辑在 window.AMap 缺失时自动降级为 no-op） */
+async function initLeafletMap(Lf) {
+  const center = await getCenter(destCity.value)
+  if (mapInstance) {
+    try { if (typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch (e) {}
+    try { if (typeof mapInstance.remove === 'function') mapInstance.remove() } catch (e) {}
+    mapInstance = null
+  }
+  const el = document.getElementById('agent-bmap'); if (!el) return
+  mapInstance = Lf.map('agent-bmap', {
+    center: [center.lat, center.lng], zoom: 13,
+    zoomControl: true, attributionControl: false,
+  })
+  Lf.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapInstance)
+  // 城市标签（复用全局 .city-marker 样式；destCity 来自 route.query，转义防 XSS）
+  const icon = Lf.divIcon({
+    className: 'leaflet-city-marker',
+    html: `<div class="city-marker">${escapeHtml(destCity.value)}</div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  })
+  Lf.marker([center.lat, center.lng], { icon, interactive: false, zIndexOffset: 1000 }).addTo(mapInstance)
 }
 
 /** 地理编码：把景点名解析为真实坐标（带 city 参数提高准确度；兜底用城市中心附近小偏移） */
@@ -326,6 +371,8 @@ async function addMarkers(names) {
   // 同一地点去重：相邻的推荐合并为一个定位图标，避免地图上出现重复定位针
   const groups = groupBySamePlace(markers)
   groups.forEach(group => {
+    // MAPRACE-1 修复：await geocodeName 后地图实例可能已随切换目的地被销毁/重建，add 前再次校验
+    if (!mapInstance || !window.AMap) return
     // 标准定位针图标（teardrop pin）+ 干净文字气泡
     const el = document.createElement('div')
     el.className = 'spot-marker'
@@ -497,6 +544,11 @@ function submitAdjust() {
 }
 
 async function startGeneration(adjustment = '') {
+  // SSERACE-1 修复：新起 SSE 前先中止旧流（agentPlanStream 返回中止函数），避免旧流回调污染新方案（submitAdjust 复用此入口一并覆盖）
+  if (streamAbort) {
+    try { if (typeof streamAbort === 'function') streamAbort(); else if (streamAbort.abort) streamAbort.abort() } catch (e) {}
+    streamAbort = null
+  }
   // 重新生成前清空旧标记与旧方案
   if (mapInstance && window.AMap) {
     markerInstances.forEach(mk => { try { mapInstance.remove(mk) } catch {} })
@@ -659,7 +711,9 @@ onMounted(() => {
 /** 销毁地图实例释放内存：AMap 不销毁会保留 WebGL 上下文/瓦片缓存/事件监听，
  *  每次进入地图页都泄漏几十 MB，逛几页后标签页被系统杀掉显示 out of memory */
 function destroyMap() {
+  // MAPFAIL-1 修复：Leaflet 兜底实例只有 remove() 无 destroy()，双判断销毁防泄漏
   try { if (mapInstance && typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch {}
+  try { if (mapInstance && typeof mapInstance.remove === 'function') mapInstance.remove() } catch {}
   mapInstance = null
   markerInstances.forEach(mk => { try { if (mk && mk.setMap) mk.setMap(null) } catch {} })
   markerInstances = []
@@ -854,7 +908,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                   <div class="hotel-desc" v-if="h.highlights">{{h.highlights}}</div>
                   <div class="hotel-price-row">
                     <span class="hotel-price">¥{{h.pricePerNight?.toLocaleString()}}</span><span class="hotel-unit">/{{ t('common.night') }}</span>
-                    <span class="hotel-total">{{ t('map.totalNights', { n: tripDays }) }} ¥{{(h.pricePerNight*tripDays)?.toLocaleString()}}</span>
+                    <span class="hotel-total">{{ t('map.totalNights', { n: tripDays }) }} ¥{{Number(h.pricePerNight||0)>0 ? (h.pricePerNight*tripDays).toLocaleString() : '--'}}</span>
                   </div>
                 </div>
               </div>

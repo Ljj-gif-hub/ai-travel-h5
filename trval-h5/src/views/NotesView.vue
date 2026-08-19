@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { showToast, showLoadingToast, closeToast } from 'vant';
+import { showToast, showLoadingToast, closeToast, showConfirmDialog } from 'vant';
 import { getToken } from '../utils/auth';
 import { noteApi } from '../api';
 import { useRequest } from '../composables/useRequest';
@@ -42,7 +42,20 @@ const {
 
 const notes = computed(() => notesData.value ?? []);
 
+const deleting = ref(false)  // BUGID FEAT-3 修复：删除防重锁，请求未完成前忽略重复点击
+
 const handleDelete = async (id) => {
+  // BUGID FEAT-3 修复：删除前弹确认框，用户取消则中止
+  try {
+    await showConfirmDialog({
+      title: t('common.tip'),
+      message: `${t('common.delete')} ${t('note.myNotes')}？`,
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+    });
+  } catch (e) { return }
+  if (deleting.value) return
+  deleting.value = true
   try {
     const response = await noteApi.deleteNote(id);
     if (response.code === 0) {
@@ -53,6 +66,8 @@ const handleDelete = async (id) => {
     }
   } catch (error) {
     showToast(t('note.deleteFailed'));
+  } finally {
+    deleting.value = false
   }
 };
 

@@ -146,8 +146,23 @@ public class HotelController {
                 return Result.fail("缺少酒店ID");
             }
             Long hotelId = ((Number) hotelIdObj).longValue();
-            LocalDate checkIn = LocalDate.parse((String) body.get("checkIn"));
-            LocalDate checkOut = LocalDate.parse((String) body.get("checkOut"));
+            // CTRL-3 修复：LocalDate.parse 前校验 null/类型/格式/历史日期
+            Object checkInObj = body.get("checkIn");
+            Object checkOutObj = body.get("checkOut");
+            if (!(checkInObj instanceof String) || !(checkOutObj instanceof String)) {
+                return Result.fail("入住/离店日期格式不正确");
+            }
+            LocalDate checkIn;
+            LocalDate checkOut;
+            try {
+                checkIn = LocalDate.parse((String) checkInObj);
+                checkOut = LocalDate.parse((String) checkOutObj);
+            } catch (Exception e) {
+                return Result.fail("入住/离店日期格式不正确，请使用 yyyy-MM-dd 格式");
+            }
+            if (checkIn.isBefore(LocalDate.now()) || !checkOut.isAfter(checkIn)) {
+                return Result.fail("日期不合法：入住日期不能早于今天，离店日期必须晚于入住日期");
+            }
             int rooms = body.get("rooms") == null ? 1 : ((Number) body.get("rooms")).intValue();
 
             Map<String, Object> quote = hotelService.bookHotel(hotelId, checkIn, checkOut, rooms);

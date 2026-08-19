@@ -548,6 +548,10 @@ const budgetData = ref(null)     // 预算数据
 const tipList = ref([])          // 温馨提示列表
 const isDetailDone = ref(false)  // 全部推送完成
 const detailAbort = ref(null)
+// BUGID 修复：行程请求的 AbortController 提升为组件级变量，退出页面时可在 onUnmounted 中断，避免后台继续写已卸载组件
+let planAbortController = null
+// BUGID 修复：流式详情重连定时器句柄，卸载时取消
+let streamReconnectTimer = null
 
 const connectStreamDetail = () => {
   if (!streamMode.value) { return }
@@ -955,9 +959,10 @@ const fetchTravelPlan = async () => {
     loadingType: 'spinner',
   })
 
-  const abortController = new AbortController()
+  // BUGID 修复：改用组件级 planAbortController，卸载时可中断后台行程请求
+  planAbortController = new AbortController()
   const timeoutId = setTimeout(() => {
-    abortController.abort()
+    planAbortController.abort()
   }, 180000)
 
   try {
@@ -966,7 +971,7 @@ const fetchTravelPlan = async () => {
       budget: parseInt(budget.value) || 1000,
       days: parseInt(days.value) || 3,
       people: parseInt(people.value) || 2
-    }, { signal: abortController.signal, timeout: 180000 })
+    }, { signal: planAbortController.signal, timeout: 180000 })
 
     clearTimeout(timeoutId)
 
@@ -1032,7 +1037,8 @@ const copyPlan = async () => {
   if (!structuredPlan.value) return
   
   let text = `【${t('planning.tripPlanTitle', { dest: destination.value, days: days.value })}】\n\n`
-  structuredPlan.value.dayPlans.forEach(day => {
+  // BUGID 修复：dayPlans 可能缺失，判空再遍历，避免 undefined.forEach 报错
+  structuredPlan.value?.dayPlans?.forEach(day => {
     text += `--- ${day.dayTitle} ---\n`
     day.timeSlots.forEach(slot => {
       text += `\n${slot.timeOfDay} ${slot.time}\n`
@@ -1195,7 +1201,14 @@ const sendChatMessage = async () => {
       role: m.type === 'user' ? 'user' : 'assistant',
       content: m.content,
     }))
-  chatHistory.push({ role: 'user', content: prompt })
+  // BUGID 修复：chatHistory 已含刚 push 的原始用户消息，直接用上下文版 prompt 替换最后一条 user 消息的 content，
+  // 避免产生两条连续 user 消息
+  const lastUserMsg = [...chatHistory].reverse().find(m => m.role === 'user')
+  if (lastUserMsg) {
+    lastUserMsg.content = prompt
+  } else {
+    chatHistory.push({ role: 'user', content: prompt })
+  }
 
   try {
     // 取消上一次未完成的对话流（如连续快速提问）
@@ -1312,7 +1325,8 @@ onMounted(() => {
   budgetData.value = null
   tipList.value = []
   if (streamMode.value) {
-    setTimeout(() => { connectStreamDetail() }, 200)
+    // BUGID 修复：存定时器句柄，卸载时取消，避免卸载后回调操作已卸载组件
+    streamReconnectTimer = setTimeout(() => { connectStreamDetail() }, 200)
   }
   const savedPlanId = route.query.savedPlanId
   if (savedPlanId) {
@@ -1324,6 +1338,12 @@ onMounted(() => {
 onUnmounted(() => {
   stopStreamDetail()
   if (chatAbortController) { chatAbortController.abort(); chatAbortController = null }
+  // BUGID 修复：中断后台行程请求，避免请求完成后继续写已卸载组件
+  if (planAbortController) { planAbortController.abort(); planAbortController = null }
+  // BUGID 修复：取消流式详情重连定时器
+  if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null }
+  // BUGID 修复：清理全部图片防抖定时器，避免卸载后回调操作已卸载组件
+  Object.keys(debounceMap).forEach(k => { clearTimeout(debounceMap[k]); delete debounceMap[k] })
 })
 </script>
 

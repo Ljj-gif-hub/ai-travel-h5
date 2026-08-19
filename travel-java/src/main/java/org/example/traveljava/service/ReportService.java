@@ -75,7 +75,8 @@ public class ReportService {
         reportRepository.save(report);
 
         // 累计举报 ≥5 → 自动隐藏
-        int total = reportRepository.countByTargetTypeAndTargetId(targetType, targetId);
+        // REPORT-1 修复：计数排除已驳回(ignored)举报，防止管理员驳回决定被一条新举报推翻
+        int total = reportRepository.countByTargetTypeAndTargetIdAndStatusNot(targetType, targetId, "ignored");
         boolean autoHidden = false;
         if (total >= AUTO_HIDE_THRESHOLD) {
             autoHidden = hideTarget(targetType, targetId);

@@ -254,6 +254,10 @@ public class OrderService {
             throw new IllegalArgumentException("无效的订单状态");
         }
         String current = order.getStatus();
+        // ORDER-1 修复：已支付订单不可直接取消（paid→cancelled），必须走退款流程避免资金死锁
+        if ("paid".equals(current) && "cancelled".equals(status)) {
+            throw new IllegalArgumentException("已支付订单请通过退款流程取消，不可直接取消");
+        }
         if (!STATUS_TRANSITIONS.getOrDefault(current, Set.of()).contains(status)) {
             throw new IllegalArgumentException("订单状态不能从 " + current + " 变更为 " + status);
         }
@@ -268,6 +272,10 @@ public class OrderService {
         return saved;
     }
 
+    /**
+     * 取消订单（ORDER-1 修复：已支付订单不可直接取消，必须走退款流程）。
+     * pending 订单可直接取消；paid 订单需先通过 RefundService 申请退款。
+     */
     @Transactional
     public void cancelOrder(Long userId, Long orderId) {
         Order order = orderRepository.findById(orderId)
@@ -278,7 +286,11 @@ public class OrderService {
         }
 
         String current = order.getStatus();
-        if (!("pending".equals(current) || "paid".equals(current))) {
+        if ("paid".equals(current)) {
+            // ORDER-1 修复：已支付订单不可直接取消，引导走退款流程，避免「取消后无法退款」的资金死锁
+            throw new IllegalArgumentException("已支付订单请通过申请退款取消，不可直接取消");
+        }
+        if (!"pending".equals(current)) {
             throw new IllegalArgumentException("当前订单状态不可取消");
         }
 

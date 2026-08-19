@@ -217,6 +217,8 @@ const loadComments = async () => {
 };
 
 const handleLike = async () => {
+  // BUGID L-NOTE-3 修复：骨架加载期间 note 未就绪时忽略点赞，避免 likeNote(undefined)
+  if (!note.value?.id) return
   if (!getToken()) { showToast(t('common.notLoggedIn')); return }
   const prevLiked = note.value.isLiked;
   note.value.isLiked = !note.value.isLiked;
@@ -277,8 +279,20 @@ const handleDeleteComment = async (comment) => {
   try {
     const res = await commentApi.deleteComment(comment.id);
     if (res.code === 0) {
-      comments.value = comments.value.filter(c => c.id !== comment.id);
-      note.value.comments = Math.max(0, (note.value.comments || 1) - 1);
+      // BUGID L-NOTE-2 修复：删除顶级评论时递归移除其全部子回复（任意深度），避免孤儿数据，并同步计数
+      const idsToRemove = new Set([comment.id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const c of comments.value) {
+          if (c.parentId && idsToRemove.has(c.parentId) && !idsToRemove.has(c.id)) {
+            idsToRemove.add(c.id);
+            grew = true;
+          }
+        }
+      }
+      comments.value = comments.value.filter(c => !idsToRemove.has(c.id));
+      note.value.comments = Math.max(0, (note.value.comments || 0) - idsToRemove.size);
       showToast(t('note.deleted'));
     } else { showToast(res.message || t('note.deleteFailed')) }
   } catch (e) { showToast(t('note.deleteFailed')) }
@@ -389,7 +403,8 @@ onMounted(() => {
     </template>
 
     <!-- 底部操作栏 -->
-    <div class="bottom-bar">
+    <!-- BUGID L-NOTE-3 修复：骨架加载期间隐藏底栏，避免对未就绪的 note 触发点赞等操作 -->
+    <div v-if="!isLoading" class="bottom-bar">
       <button type="button" class="comment-oval-btn" @click="openDrawer()">{{ t('note.writeComment') }}</button>
       <div class="bottom-actions">
         <div class="action-item" :class="{ liked: note.isLiked }" @click="handleLike">
@@ -462,7 +477,8 @@ onMounted(() => {
       <div class="share-sheet">
         <div class="share-sheet-title">{{ t('note.shareTo') }}</div>
         <div class="share-grid">
-          <div v-for="opt in shareOptions" :key="opt.name" class="share-option" @click="handleShare(opt)">
+          <!-- BUGID L-NOTE-1 修复：shareOptions 无 name 字段，key 改用 opt.key，避免全部 undefined 导致渲染告警/错乱 -->
+          <div v-for="opt in shareOptions" :key="opt.key" class="share-option" @click="handleShare(opt)">
             <div class="share-icon-circle" :style="{ background: opt.color }"><van-icon :name="opt.icon" size="22" color="#fff" /></div>
             <span class="share-label">{{ opt.label }}</span>
           </div>

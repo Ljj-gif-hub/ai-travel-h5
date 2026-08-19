@@ -16,6 +16,11 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     /** 某目标累计被举报次数（≥5 自动隐藏） */
     int countByTargetTypeAndTargetId(String targetType, Long targetId);
 
+    /**
+     * REPORT-1 修复：某目标累计被举报次数（排除已驳回 ignored），防止驳回决定被新举报推翻。
+     */
+    int countByTargetTypeAndTargetIdAndStatusNot(String targetType, Long targetId, String status);
+
     /** 管理端：按状态过滤 + 分页 */
     Page<Report> findByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 

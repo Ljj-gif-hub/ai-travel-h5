@@ -55,11 +55,13 @@ const currentPercent = ref(props.midHeight)
 const isDragging = ref(false)
 const contentScrollTop = ref(0)
 
-const SNAP_POINTS = { min: props.minHeight, mid: props.midHeight, max: props.maxHeight }
+// BUGID L-COMP-1 修复：SNAP_POINTS 改为 computed，props.min/mid/maxHeight 变化时自动重算，
+// 不再一次性快照导致父级改高度后吸附点失效
+const SNAP_POINTS = computed(() => ({ min: props.minHeight, mid: props.midHeight, max: props.maxHeight }))
 
 function nearestSnap(pct) {
   let best = 'mid', bestDist = Infinity
-  for (const [k, v] of Object.entries(SNAP_POINTS)) {
+  for (const [k, v] of Object.entries(SNAP_POINTS.value)) {
     const d = Math.abs(pct - v)
     if (d < bestDist) { bestDist = d; best = k }
   }
@@ -72,7 +74,7 @@ const sheetStyle = computed(() => ({
 }))
 
 function snapTo(state) {
-  const target = SNAP_POINTS[state]
+  const target = SNAP_POINTS.value[state]
   if (target === undefined) return
   isDragging.value = false
   currentPercent.value = target
@@ -190,7 +192,7 @@ function onScroll() {
 
 /* ==================== 外部同步 ==================== */
 watch(() => props.modelValue, (val) => {
-  const target = SNAP_POINTS[val]
+  const target = SNAP_POINTS.value[val]
   if (target !== undefined && Math.abs(currentPercent.value - target) > 1) {
     isDragging.value = false
     currentPercent.value = target
@@ -198,7 +200,7 @@ watch(() => props.modelValue, (val) => {
 })
 
 onMounted(() => {
-  const target = SNAP_POINTS[props.modelValue]
+  const target = SNAP_POINTS.value[props.modelValue]
   if (target !== undefined) currentPercent.value = target
 
   // 手动绑定 touch 事件（需要 passive:false 才能在 drag 时 preventDefault）

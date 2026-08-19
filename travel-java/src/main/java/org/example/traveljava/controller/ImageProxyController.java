@@ -19,11 +19,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -85,6 +87,9 @@ public class ImageProxyController {
             }
 
             // 防 DNS 重绑定 SSRF：白名单域名解析出的 IP 必须全部为公网地址
+            // （L-CTRL-5：校验后 execute 会再次解析域名，理论存在 TOCTOU 窗口；
+            //  因白名单全为 HTTPS 域名，无法以 IP 直连（会破坏 TLS 证书校验），此处保留该残余风险，
+            //  依赖「白名单域名均为知名公网 CDN/地图服务、域名不受攻击者控制」来降低实际暴露面）
             if (resolvesToInternalAddress(domain)) {
                 log.warn("图片代理域名解析到内网/保留地址，拒绝: domain={}", domain);
                 response.sendError(HttpServletResponse.SC_FORBIDDEN, "不允许的图片来源");
@@ -186,22 +191,49 @@ public class ImageProxyController {
                 return true;
             }
             for (InetAddress a : addrs) {
-                if (a.isAnyLocalAddress() || a.isLoopbackAddress()
-                        || a.isLinkLocalAddress() || a.isSiteLocalAddress()) {
+                if (isInternalOrReserved(a)) {
                     return true;
-                }
-                if (a instanceof Inet6Address) {
-                    byte[] b = a.getAddress();
-                    // IPv6 唯一本地地址 fc00::/7
-                    if ((b[0] & 0xfe) == 0xfc) {
-                        return true;
-                    }
                 }
             }
             return false;
         } catch (UnknownHostException e) {
             return true;
         }
+    }
+
+    /**
+     * 【L-CTRL-5 修复】判断 IP 是否属于内网/保留/不应访问的段。
+     * 在 Java 内置 isAnyLocal/isLoopback/isLinkLocal/isSiteLocal 基础上，
+     * 补齐被漏掉的段：CGNAT 100.64.0.0/10、基准测试 198.18.0.0/15、组播 224.0.0.0/4、
+     * 保留 240.0.0.0/4、文档示例段等。只要有一个地址命中即拒绝。
+     */
+    private boolean isInternalOrReserved(InetAddress a) {
+        if (a.isAnyLocalAddress() || a.isLoopbackAddress()
+                || a.isLinkLocalAddress() || a.isSiteLocalAddress()) {
+            return true;
+        }
+        if (a instanceof Inet4Address) {
+            int ip = ByteBuffer.wrap(a.getAddress()).getInt();
+            // 100.64.0.0/10 CGNAT（运营商级 NAT 段）
+            if ((ip & 0xffc00000) == 0x64400000) return true;
+            // 198.18.0.0/15 基准测试保留段
+            if ((ip & 0xffff0000) == 0xc6120000) return true;
+            // 192.0.0.0/24 IETF 协议保留
+            if ((ip & 0xffffff00) == 0xc0000000) return true;
+            // 192.0.2.0/24、198.51.100.0/24、203.0.113.0/24 文档示例段
+            if ((ip & 0xffffff00) == 0xc0000200) return true;
+            if ((ip & 0xffffff00) == 0xc6336400) return true;
+            if ((ip & 0xffffff00) == 0xcb007100) return true;
+            // 224.0.0.0/4 组播
+            if ((ip & 0xf0000000) == 0xe0000000) return true;
+            // 240.0.0.0/4 保留（含 255.255.255.255 广播）
+            if ((ip & 0xf0000000) == 0xf0000000) return true;
+        } else if (a instanceof Inet6Address) {
+            byte[] b = a.getAddress();
+            // fc00::/7 唯一本地地址（isSiteLocalAddress 对 IPv6 覆盖的是 fec0::/10 弃用段，fc00 需手动）
+            if ((b[0] & 0xfe) == 0xfc) return true;
+        }
+        return false;
     }
 
     private void validateUrl(String url) {

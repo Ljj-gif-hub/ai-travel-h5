@@ -71,25 +71,44 @@ public class WeatherService {
         return buildWeatherMap(root, city);
     }
 
-    /** 调用高德 weatherInfo（extensions=all 返回实时+预报） */
+    /**
+     * 调用高德 weatherInfo。
+     * WEATHER-1 修复：extensions=base 返回 lives（实时天气），extensions=all 返回 forecasts（预报）。
+     * 原代码请求 all 却解析 lives → 实时天气永远缺失。现按需请求：先 base 取实时，再 all 取预报。
+     */
     private JsonNode callWeather(String cityOrAdcode, String key) {
         try {
-            URI uri = UriComponentsBuilder.fromHttpUrl(WEATHER_URL)
+            // 先请求 base 获取实时天气（lives）
+            URI baseUri = UriComponentsBuilder.fromHttpUrl(WEATHER_URL)
+                    .queryParam("city", cityOrAdcode)
+                    .queryParam("key", key)
+                    .queryParam("extensions", "base")
+                    .build().encode().toUri();
+            String baseResp = restTemplate.getForObject(baseUri, String.class);
+            JsonNode baseRoot = (baseResp != null && !baseResp.isEmpty()) ? objectMapper.readTree(baseResp) : null;
+
+            // 再请求 all 获取预报（forecasts）
+            URI allUri = UriComponentsBuilder.fromHttpUrl(WEATHER_URL)
                     .queryParam("city", cityOrAdcode)
                     .queryParam("key", key)
                     .queryParam("extensions", "all")
                     .build().encode().toUri();
-            String resp = restTemplate.getForObject(uri, String.class);
-            if (resp == null || resp.isEmpty()) {
-                log.warn("天气接口返回空: {}", cityOrAdcode);
+            String allResp = restTemplate.getForObject(allUri, String.class);
+            JsonNode allRoot = (allResp != null && !allResp.isEmpty()) ? objectMapper.readTree(allResp) : null;
+
+            // 合并：lives 取自 base，forecasts 取自 all
+            com.fasterxml.jackson.databind.node.ObjectNode merged = objectMapper.createObjectNode();
+            if (baseRoot != null && "1".equals(baseRoot.path("status").asText())) {
+                merged.set("lives", baseRoot.path("lives"));
+            }
+            if (allRoot != null && "1".equals(allRoot.path("status").asText())) {
+                merged.set("forecasts", allRoot.path("forecasts"));
+            }
+            if (merged.size() == 0) {
+                log.warn("天气接口返回错误: city={}", cityOrAdcode);
                 return null;
             }
-            JsonNode root = objectMapper.readTree(resp);
-            if (root == null || !"1".equals(root.path("status").asText())) {
-                log.warn("天气接口返回错误: city={}, info={}", cityOrAdcode, root != null ? root.path("info").asText() : "null");
-                return null;
-            }
-            return root;
+            return merged;
         } catch (Exception e) {
             log.warn("天气接口调用异常: city={}, error={}", cityOrAdcode, e.getMessage());
             return null;

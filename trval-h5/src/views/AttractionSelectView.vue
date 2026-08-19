@@ -43,7 +43,9 @@ const clearHistory = () => { historyCities.value = []; localStorage.removeItem('
 const selectCity = (city) => {
   saveHistory(city)
   sessionStorage.setItem('selected_destination_spot', city)
-  router.back()
+  // BUGID FEAT-8 修复：无历史可回退时兜底跳首页，避免 router.back() 无效果
+  if (window.history.length > 1) router.back()
+  else router.replace('/')
 }
 
 // ====== 搜索 ======

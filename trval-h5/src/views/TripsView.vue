@@ -118,11 +118,21 @@ const loadAmapForNearby = () => new Promise((resolve) => {
 })
 
 const openNearbyMap = async () => { showNearbyMap.value = true; await nextTick(); await locateAndLoadNearby() }
-const closeNearbyMap = () => { showNearbyMap.value = false; if (nearbyMapInstance.value) { try { nearbyMapInstance.value.destroy() } catch (e) {}; nearbyMapInstance.value = null } }
+const closeNearbyMap = () => {
+  showNearbyMap.value = false
+  // MAPLEAK-2 修复：Leaflet 实例只有 remove() 无 destroy()，双判断销毁防泄漏
+  if (nearbyMapInstance.value) {
+    try { if (typeof nearbyMapInstance.value.destroy === 'function') nearbyMapInstance.value.destroy() } catch (e) {}
+    try { if (typeof nearbyMapInstance.value.remove === 'function') nearbyMapInstance.value.remove() } catch (e) {}
+    nearbyMapInstance.value = null
+  }
+}
 const goMap = () => { openNearbyMap() }
 
 const initNearbyMap = async () => {
   const container = document.getElementById('nearby-map-container'); if (!container) return
+  // L-TRIPS-2 修复：非安全上下文 geolocation 缺失时 userLocation 为 null，先判空避免下游读 .lng/.lat 崩溃
+  if (!userLocation.value) { showToast(t('trips.geolocationUnsupported')); return }
   const loaded = await loadAmapForNearby()
   if (loaded && window.AMap) {
     nearbyMapProvider.value = 'amap'
@@ -157,7 +167,18 @@ const locateAndLoadNearby = async () => { await locateUser(); await loadNearbyAt
 const changeRadius = async (radius) => {
   nearbyRadius.value = radius; await loadNearbyAttractions()
   if (nearbyMapInstance.value) {
-    if (nearbyMapProvider.value === 'amap') { nearbyMapInstance.value.clearMap(); new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), zIndex: 100 }).addTo(nearbyMapInstance.value) }
+    // MAPLEAK-4 修复：leaflet 分支同样清空旧 radius 的标记，避免新旧标记叠加
+    if (nearbyMapProvider.value === 'amap') {
+      nearbyMapInstance.value.clearMap()
+      new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), zIndex: 100 }).addTo(nearbyMapInstance.value)
+    } else if (nearbyMapProvider.value === 'leaflet') {
+      // 移除旧 CircleMarker（含用户定位点），保留瓦片层
+      nearbyMapInstance.value.eachLayer((layer) => {
+        if (layer instanceof window.L.CircleMarker) { try { nearbyMapInstance.value.removeLayer(layer) } catch (e) {} }
+      })
+      // 重加用户定位点
+      window.L.circleMarker([userLocation.value.lat, userLocation.value.lng], { radius: 8, fillColor: '#3B82F6', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(nearbyMapInstance.value).bindTooltip(t('trips.myLocation'), { permanent: true, direction: 'right' })
+    }
     addNearbyMarkers(nearbyMapInstance.value)
   }
 }
@@ -308,12 +329,48 @@ const useTemplate = async (tmpl) => {
   finally { instantiatingId.value = null }
 }
 
-onMounted(() => { loadCityImageMap(); loadTemplates(); if (getToken()) { loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages() } })
-onActivated(() => { loadCityImageMap(); loadTemplates(); if (getToken()) { loadTrips(); loadCityGuides(); startCarousel() } })
-onDeactivated(() => { isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel(); if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null } })
+// L-TRIPS-1 修复：onMounted 只做首次加载；onActivated 只做 keep-alive 恢复（首次激活紧随 onMounted，用 dataLoaded 守卫避免双发 loadTrips 等请求）
+let dataLoaded = false
+
+onMounted(() => {
+  loadCityImageMap(); loadTemplates()
+  if (getToken()) {
+    loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages()
+    dataLoaded = true
+  }
+})
+
+onActivated(() => {
+  loadCityImageMap(); loadTemplates()
+  if (!getToken()) return
+  if (!dataLoaded) {
+    // 首次未加载（含游客先开页→别处登录→返回）→ 补全首次加载，保证轮播图/迷你地图可用
+    loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages()
+    dataLoaded = true
+  } else if (carouselImages.value.length === 0) {
+    // 数据已加载但轮播图缺失（首屏请求失败）→ 补加载，避免 startCarousel 对空数组取模
+    loadCarouselImages()
+  } else {
+    startCarousel()
+  }
+})
+
+onDeactivated(() => {
+  isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel()
+  // MAPLEAK-3 修复：销毁迷你地图时清实例并复位 miniMapReady，否则 keep-alive 切回后重建逻辑失效（白屏）
+  if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null }
+  miniMapReady.value = false
+  dataLoaded = false // L-TRIPS-1 修复：离开后复位，返回时重新加载
+})
+
 onUnmounted(() => {
   stopCarousel()
-  if (nearbyMapInstance.value) { try { nearbyMapInstance.value.destroy() } catch (e) {}; nearbyMapInstance.value = null }
+  // MAPLEAK-2 修复：Leaflet 实例无 destroy()，双判断销毁防泄漏
+  if (nearbyMapInstance.value) {
+    try { if (typeof nearbyMapInstance.value.destroy === 'function') nearbyMapInstance.value.destroy() } catch (e) {}
+    try { if (typeof nearbyMapInstance.value.remove === 'function') nearbyMapInstance.value.remove() } catch (e) {}
+    nearbyMapInstance.value = null
+  }
   if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null }
 })
 </script>
@@ -338,6 +395,40 @@ onUnmounted(() => {
 
     <div class="trips-scroll">
       <div class="trips-inner">
+        <div v-if="hasTrips" class="trips-list-section">
+          <div class="page-content">
+            <div v-if="isLoading" class="skeleton-list"><div v-for="i in 2" :key="i" class="trip-card-skeleton"><div class="sk-row sk-row-title" /><div class="sk-row sk-row-info" /><div class="sk-row sk-row-attract" /></div></div>
+            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">{{ t('trips.loadFailed') }}</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">{{ t('common.tryAgain') }}</van-button></div>
+            <template v-else>
+              <div class="guide-zone">
+                <div class="guide-line" />
+              <div class="section-block">
+                <div class="section-head"><span class="section-head-title">📋 {{ t('trips.tripPlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: tripPlans.length }) }}</span></div>
+                <div v-if="tripPlans.length === 0" class="empty-hint-row">{{ t('trips.noAiPlans') }}<span class="link" @click="goToAgentPlanner">{{ t('trips.goCreate') }}</span></div>
+                <div v-for="trip in tripPlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
+                  <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
+                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
+                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
+                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
+                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
+                </div>
+              </div>
+              <div class="section-block">
+                <div class="section-head"><span class="section-head-title">🏠 {{ t('trips.homePlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: homePlans.length }) }}</span></div>
+                <div v-if="homePlans.length === 0" class="empty-hint-row">{{ t('trips.noHomePlans') }}</div>
+                <div v-for="trip in homePlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
+                  <div class="trip-card-top"><div class="trip-s-badge trip-s-badge--home"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span></div>
+                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
+                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
+                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
+                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
+                </div>
+              </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <div v-if="!hasTrips" class="guide-zone">
           <div class="guide-line" />
           <div class="hero-plan-card entrance-item entrance-d1">
@@ -443,39 +534,6 @@ onUnmounted(() => {
           </template>
         </div>
 
-        <div v-if="hasTrips" class="trips-list-section">
-          <div class="page-content">
-            <div v-if="isLoading" class="skeleton-list"><div v-for="i in 2" :key="i" class="trip-card-skeleton"><div class="sk-row sk-row-title" /><div class="sk-row sk-row-info" /><div class="sk-row sk-row-attract" /></div></div>
-            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">{{ t('trips.loadFailed') }}</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">{{ t('common.tryAgain') }}</van-button></div>
-            <template v-else>
-              <div class="guide-zone">
-                <div class="guide-line" />
-              <div class="section-block">
-                <div class="section-head"><span class="section-head-title">📋 {{ t('trips.tripPlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: tripPlans.length }) }}</span></div>
-                <div v-if="tripPlans.length === 0" class="empty-hint-row">{{ t('trips.noAiPlans') }}<span class="link" @click="goToAgentPlanner">{{ t('trips.goCreate') }}</span></div>
-                <div v-for="trip in tripPlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
-                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
-                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
-                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
-                </div>
-              </div>
-              <div class="section-block">
-                <div class="section-head"><span class="section-head-title">🏠 {{ t('trips.homePlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: homePlans.length }) }}</span></div>
-                <div v-if="homePlans.length === 0" class="empty-hint-row">{{ t('trips.noHomePlans') }}</div>
-                <div v-for="trip in homePlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge trip-s-badge--home"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span></div>
-                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
-                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
-                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
-                </div>
-              </div>
-              </div>
-            </template>
-          </div>
-        </div>
         <div style="height:80px" />
       </div>
     </div>

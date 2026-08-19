@@ -57,8 +57,15 @@ export function setLanguage(lang) {
   const target = lang === 'en-US' ? 'en-US' : 'zh-CN'
   if (target === 'en-US') {
     loadEnMessages().then((enUS) => {
-      if (enUS) i18n.global.setLocaleMessage('en-US', enUS)
-      applyLang('en-US')
+      if (enUS) {
+        i18n.global.setLocaleMessage('en-US', enUS)
+        applyLang('en-US')
+      } else {
+        // BUGID L-COMP-2 修复：英文语言包加载失败时不再强行切英文，
+        // 降级回中文并提示（避免 locale 切到 en-US 但 messages 缺失导致文案全空）
+        applyLang('zh-CN')
+        console.warn('[i18n] 英文语言包不可用，已降级为中文')
+      }
     })
   } else {
     applyLang('zh-CN')

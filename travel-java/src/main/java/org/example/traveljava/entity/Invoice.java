@@ -42,7 +42,7 @@ public class Invoice {
     @Column(length = 20)
     private String type = "personal";
 
-    /** 开票金额（分，取自订单实付金额） */
+    /** 开票金额（元，取自订单实付金额） */
     @Column(nullable = false)
     private Long amount;
 

@@ -19,4 +19,7 @@ public interface TripShareRepository extends JpaRepository<TripShare, Long> {
 
     /** 清理过期分享 */
     void deleteByExpireAtBefore(LocalDateTime now);
+
+    /** L-SHARE-1 修复：删除行程计划时级联清理其全部 24h 分享，防孤儿分享链接 */
+    void deleteByPlanId(Long planId);
 }

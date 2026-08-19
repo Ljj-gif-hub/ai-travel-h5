@@ -35,6 +35,9 @@ public class RefreshTokenService {
 
     private static final Logger log = LoggerFactory.getLogger(RefreshTokenService.class);
     private static final String KEY_PREFIX = "refresh:";
+    /** 【L-TOKEN-1】每用户刷新令牌版本号 key：refresh:ver:<userId> → 自增整数。
+     *  每次 revokeAll 递增一次，此前进发的令牌因携带旧版本号而在刷新时被判失效。 */
+    private static final String VERSION_PREFIX = "refresh:ver:";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /** 刷新令牌有效期，默认 7 天（毫秒） */
@@ -51,14 +54,28 @@ public class RefreshTokenService {
         this.jwtUtil = jwtUtil;
     }
 
-    /** 签发新刷新令牌并入库（登录时调用；Redis 故障时向上抛，由调用方降级） */
+    /** 签发新刷新令牌并入库（登录时调用；Redis 故障时向上抛，由调用方降级）。
+     *  存储值带版本号（userId:version），revokeAll 递增版本后旧令牌全部失效。 */
     public String issue(Long userId) {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         String token = HexFormat.of().formatHex(bytes); // 64 位 hex，SecureRandom 强随机
-        redisTemplate.opsForValue().set(KEY_PREFIX + hash(token), String.valueOf(userId),
+        long version = currentVersion(userId);
+        redisTemplate.opsForValue().set(KEY_PREFIX + hash(token), userId + ":" + version,
                 Duration.ofMillis(refreshExpiration));
         return token;
+    }
+
+    /** 【L-TOKEN-1】读取当前用户刷新令牌版本号（无记录/不可解析 → 0，兼容旧格式令牌） */
+    private long currentVersion(Long userId) {
+        if (userId == null) return 0L;
+        try {
+            String v = redisTemplate.opsForValue().get(VERSION_PREFIX + userId);
+            return v == null ? 0L : Long.parseLong(v.trim());
+        } catch (Exception e) {
+            // Redis 不可用或值异常：按 0 处理，不改变调用方的 fail-closed 语义
+            return 0L;
+        }
     }
 
     /**
@@ -75,11 +92,32 @@ public class RefreshTokenService {
             // 旋转：GETDEL 原子「取并删」（Redis 6.2+，服务器为 redis:7-alpine）。
             // 并发重放同一旧令牌时只有一个请求能取到值，另一个读 null 即失败——
             // 杜绝「GET 与 DELETE 之间被竞态穿插」导致两份新令牌同时生效。
-            String userIdStr = redisTemplate.opsForValue().getAndDelete(key);
-            if (userIdStr == null) {
+            String stored = redisTemplate.opsForValue().getAndDelete(key);
+            if (stored == null) {
                 throw new IllegalArgumentException("刷新令牌无效或已过期");
             }
-            Long userId = Long.valueOf(userIdStr);
+
+            // L-TOKEN-1：解析存储值。新格式 "userId:version"；兼容旧格式裸 "userId"（视为 version 0）
+            Long userId;
+            long tokenVersion;
+            try {
+                int sep = stored.indexOf(':');
+                if (sep >= 0) {
+                    userId = Long.valueOf(stored.substring(0, sep));
+                    tokenVersion = Long.parseLong(stored.substring(sep + 1));
+                } else {
+                    userId = Long.valueOf(stored);
+                    tokenVersion = 0L;
+                }
+            } catch (NumberFormatException e) {
+                log.warn("刷新令牌存储值异常: {}", stored);
+                throw new IllegalArgumentException("刷新令牌无效或已过期");
+            }
+
+            // L-TOKEN-1：revokeAll 递增版本号后，旧令牌携带旧版本即全局失效（被盗令牌无法再刷新）
+            if (tokenVersion != currentVersion(userId)) {
+                throw new IllegalArgumentException("刷新令牌已失效，请重新登录");
+            }
 
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new IllegalArgumentException("账号不存在，请重新登录"));
@@ -95,6 +133,18 @@ public class RefreshTokenService {
         } catch (Exception e) {
             log.error("刷新令牌服务异常（Redis 不可用？）", e);
             throw new IllegalArgumentException("刷新服务暂不可用，请稍后重试");
+        }
+    }
+
+    /** 【L-TOKEN-1】全局吊销该用户所有刷新令牌：递增版本号，此前签发的令牌全部失效。
+     *  Redis 故障不阻断调用方（记日志）；下次刷新时由 refresh() 的 fail-closed 兜底拒绝。 */
+    public void revokeAll(Long userId) {
+        if (userId == null) return;
+        try {
+            redisTemplate.opsForValue().increment(VERSION_PREFIX + userId);
+            log.info("已全局吊销用户刷新令牌: userId={}", userId);
+        } catch (Exception e) {
+            log.warn("全局吊销刷新令牌失败: userId={}, err={}", userId, e.getMessage());
         }
     }
 

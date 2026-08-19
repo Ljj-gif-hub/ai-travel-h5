@@ -26,8 +26,11 @@ import { getAllSessions, deleteSession, switchToSession } from '../utils/chatSes
 import { useTheme } from '../utils/theme'
 import { useI18n } from 'vue-i18n'
 import { setLanguage } from '../i18n'
+// BUGID ACCT-1 修复：引入行程共享状态 store，登出时清空跨账号残留行程数据
+import { useTripStore } from '../stores/trip'
 
 const router = useRouter()
+const tripStore = useTripStore()
 
 /* ==================== 深色模式（B4） ==================== */
 const { themeMode, setTheme } = useTheme()
@@ -340,6 +343,10 @@ const handleLogout = async () => {
       removeToken()
       // 【多账号隔离】退出仅清空会话缓存，保留账号持久化数据
       clearAccountSession()
+      // BUGID ACCT-1 修复：登出时清空行程 store 的跨账号残留数据（planData/酒店/地图点等）
+      tripStore.resetState()
+      // BUGID ACCT-2 修复：登出时一并清除全局 localStorage.userInfo，防止切换账号残留上一账号信息
+      localStorage.removeItem('userInfo')
       isLoggedIn.value = false; resetUserInfo(); closeToast()
       showToast({ message: t('profile.loggedOut'), position: 'middle' })
       clearTimeout(logoutTimer)

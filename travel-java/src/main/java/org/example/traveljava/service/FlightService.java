@@ -64,7 +64,16 @@ public class FlightService {
                 .orElseThrow(() -> new IllegalArgumentException("航班不存在或已下架，请重新选择"));
         long unitPrice = offer.price();
 
-        int passengers = params.get("passengers") == null ? 1 : Math.max(1, ((Number) params.get("passengers")).intValue());
+        // FLIGHT-1 修复：passengers 传字符串 "2" 时 ((Number) x).intValue() 抛 CCE 500，应转 400
+        int passengers = 1;
+        Object paxObj = params.get("passengers");
+        if (paxObj != null) {
+            try {
+                passengers = Math.max(1, ((Number) paxObj).intValue());
+            } catch (ClassCastException e) {
+                throw new IllegalArgumentException("乘客数量参数类型不正确");
+            }
+        }
 
         Map<String, Object> orderParams = new java.util.HashMap<>();
         orderParams.put("type", "flight");

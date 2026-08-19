@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onActivated, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showImagePreview } from 'vant'
 import { getToken } from '../utils/auth'
@@ -162,6 +162,8 @@ const firstPageRequest = useRequest(
   { manual: true }
 )
 
+/* BUGID PAGE-2 修复：加载序号守卫，防止触底滚动与首屏/切Tab加载并发重复拉页（同 HomeView PAGE-1 模式） */
+let loadSeq = 0
 const loadNotes = async (reset = false) => {
   if (reset) {
     page.value = 1
@@ -170,11 +172,13 @@ const loadNotes = async (reset = false) => {
   }
 
   if (!hasMore.value && !reset) return
+  const seq = ++loadSeq
 
   try {
     loadingMore.value = !reset
     // 服务端分页加载所有用户的游记；首屏（reset）走 useRequest，分页直连
     const res = reset ? await firstPageRequest.run() : await noteApi.getAllNotes(page.value)
+    if (seq !== loadSeq) return  // 已有更新的加载请求，丢弃本次结果
 
     if (res && res.code === 0 && res.data) {
       const list = Array.isArray(res.data) ? res.data : (res.data.list || [])
@@ -208,12 +212,14 @@ const loadNotes = async (reset = false) => {
       hasMore.value = false
     }
   } catch (e) {
+    if (seq !== loadSeq) return
     console.warn('加载社区笔记失败，使用本地种子数据:', e.message)
     if (reset) {
       notes.value = filterNotesByTab([...seedNotes])
     }
     hasMore.value = false
   } finally {
+    if (seq !== loadSeq) return
     isLoading.value = false
     loadingMore.value = false
   }
@@ -329,7 +335,10 @@ const isVideoUrl = (url) => url && /\.(mp4|webm|mov)(\?|$)/i.test(url)
 const previewImages = (images, startIdx) => {
   const imageList = images.filter(u => !isVideoUrl(u))
   if (!imageList.length) return
-  showImagePreview(imageList, Math.min(startIdx, imageList.length - 1))
+  // BUGID L-VIDEO-1 修复：过滤掉视频后，原索引需减去其之前的视频数，否则预览起始位置错位
+  const removedBefore = images.slice(0, startIdx).filter(u => isVideoUrl(u)).length
+  const imageIdx = Math.max(0, startIdx - removedBefore)
+  showImagePreview(imageList, Math.min(imageIdx, imageList.length - 1))
 }
 
 const playingVideos = reactive({})
@@ -483,7 +492,8 @@ const handleScroll = () => {
   const scrollTop = window.scrollY || document.documentElement.scrollTop || 0
   const scrollHeight = document.documentElement.scrollHeight
   const clientHeight = window.innerHeight
-  if (scrollHeight - scrollTop - clientHeight < 120 && hasMore.value && !loadingMore.value) {
+  // BUGID PAGE-2 修复：首屏加载中或翻页中不触发，避免并发重复拉页
+  if (scrollHeight - scrollTop - clientHeight < 120 && hasMore.value && !loadingMore.value && !isLoading.value) {
     loadNotes()
   }
 }
@@ -543,6 +553,8 @@ onActivated(async () => {
 
 onDeactivated(() => {
   window.removeEventListener('scroll', handleScroll)
+  // BUGID FEAT-10 修复：页面切走时暂停页面内所有 video，避免声音/播放残留
+  document.querySelectorAll('video').forEach(v => { try { v.pause() } catch (e) {} })
 })
 
 onBeforeUnmount(() => {
@@ -743,7 +755,8 @@ onBeforeUnmount(() => {
                 style="display:none"
                 @change="(e) => { handleCommentUpload(note.id, e); e.target.value = '' }"
               />
-              <div class="upload-btn-mini" @click.stop="(e) => { const inp = e.target.parentElement.querySelector('input[type=file]'); if(inp) inp.click() }">
+              <!-- BUGID FEAT-6 修复：用 closest 找到所在输入行，再查 file input，兼容 e.target 为图标元素时 parentElement 找不到兄弟节点 -->
+              <div class="upload-btn-mini" @click.stop="(e) => { const inp = e.target.closest('.comment-input-row')?.querySelector('input[type=file]'); if(inp) inp.click() }">
                 <van-icon name="photograph" size="16" color="#A78BFA" />
               </div>
               <van-field

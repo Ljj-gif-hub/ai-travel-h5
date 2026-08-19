@@ -195,18 +195,24 @@ public class CostCalculationService {
         // 根据偏好微调
         if (preferences != null && !preferences.isEmpty()) {
             String lowerPref = preferences.toLowerCase();
-            // 豪华偏好上调20%
+            // 豪华偏好上调20%（COST-1 修复：仅调酒店费，totalCost 按差值重算，避免重复乘系数）
             if (lowerPref.contains("豪华") || lowerPref.contains("奢华") || lowerPref.contains("高端")) {
                 BigDecimal factor = new BigDecimal("1.20");
-                breakdown.setHotelCost(breakdown.getHotelCost().multiply(factor));
-                breakdown.setTotalCost(breakdown.getTotalCost().multiply(factor));
+                BigDecimal oldHotel = breakdown.getHotelCost();
+                BigDecimal newHotel = oldHotel.multiply(factor).setScale(2, java.math.RoundingMode.HALF_UP);
+                breakdown.setHotelCost(newHotel);
+                breakdown.setTotalCost(breakdown.getTotalCost().subtract(oldHotel).add(newHotel)
+                        .setScale(2, java.math.RoundingMode.HALF_UP));
                 breakdown.setDetailNote(breakdown.getDetailNote() + "（已根据豪华偏好上调）");
             }
             // 经济偏好下调20%
             if (lowerPref.contains("经济") || lowerPref.contains("穷游") || lowerPref.contains("背包")) {
                 BigDecimal factor = new BigDecimal("0.80");
-                breakdown.setHotelCost(breakdown.getHotelCost().multiply(factor));
-                breakdown.setTotalCost(breakdown.getTotalCost().multiply(factor));
+                BigDecimal oldHotel = breakdown.getHotelCost();
+                BigDecimal newHotel = oldHotel.multiply(factor).setScale(2, java.math.RoundingMode.HALF_UP);
+                breakdown.setHotelCost(newHotel);
+                breakdown.setTotalCost(breakdown.getTotalCost().subtract(oldHotel).add(newHotel)
+                        .setScale(2, java.math.RoundingMode.HALF_UP));
                 breakdown.setDetailNote(breakdown.getDetailNote() + "（已根据经济偏好下调）");
             }
         }

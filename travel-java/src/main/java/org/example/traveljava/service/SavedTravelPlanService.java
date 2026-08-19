@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.traveljava.dto.SavedPlanRequest;
 import org.example.traveljava.entity.SavedTravelPlan;
 import org.example.traveljava.repository.SavedTravelPlanRepository;
+import org.example.traveljava.repository.ShareRecordRepository;
+import org.example.traveljava.repository.TripShareRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,10 +25,16 @@ public class SavedTravelPlanService {
 
     private final SavedTravelPlanRepository repository;
     private final ObjectMapper objectMapper;
+    private final ShareRecordRepository shareRecordRepository;
+    private final TripShareRepository tripShareRepository;
 
-    public SavedTravelPlanService(SavedTravelPlanRepository repository, ObjectMapper objectMapper) {
+    public SavedTravelPlanService(SavedTravelPlanRepository repository, ObjectMapper objectMapper,
+                                  ShareRecordRepository shareRecordRepository,
+                                  TripShareRepository tripShareRepository) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+        this.shareRecordRepository = shareRecordRepository;
+        this.tripShareRepository = tripShareRepository;
     }
 
     public SavedTravelPlan savePlan(Long userId, SavedPlanRequest request) {
@@ -65,7 +73,7 @@ public class SavedTravelPlanService {
             throw new IllegalArgumentException("请先登录");
         }
         SavedTravelPlan plan = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("规划不存在，id=" + id));
+                .orElseThrow(() -> new RuntimeException("规划不存在")); // L-SHARE-1 修复：不暴露内部主键 id（防 id 枚举探活）
 
         if (!userId.equals(plan.getUserId())) {
             throw new RuntimeException("无权访问该规划");
@@ -80,7 +88,7 @@ public class SavedTravelPlanService {
      */
     public Map<String, Object> getPlanPublic(Long id) {
         SavedTravelPlan plan = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("规划不存在，id=" + id));
+                .orElseThrow(() -> new RuntimeException("规划不存在")); // L-SHARE-1 修复：公开链接不泄露内部主键 id
         return toResponseMap(plan);
     }
 
@@ -89,6 +97,9 @@ public class SavedTravelPlanService {
             throw new IllegalArgumentException("请先登录");
         }
         SavedTravelPlan plan = getPlanById(userId, id);
+        // L-SHARE-1 修复：级联清理该行程的全部分享记录（永久短码 + 24h 分享），防删除后孤儿分享链接继续可访问
+        shareRecordRepository.deleteByPlanId(id);
+        tripShareRepository.deleteByPlanId(id);
         repository.deleteById(id);
         log.info("删除旅行规划：id={}, userId={}", id, userId);
     }
@@ -250,8 +261,10 @@ public class SavedTravelPlanService {
         List<String> lines = new ArrayList<>();
         while (line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 75) {
             int cut = 75;
+            // ICS-1 修复：按字符截时 cut 不能超过字符串长度（40 个汉字 = 120 字节但只有 40 字符，substring(0,75) 会越界）
+            cut = Math.min(cut, line.length());
             // 按字符回退到安全边界，避免切断多字节字符
-            while (cut > 0 && line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 0
+            while (cut > 0
                     && line.substring(0, cut).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 74) {
                 cut--;
             }

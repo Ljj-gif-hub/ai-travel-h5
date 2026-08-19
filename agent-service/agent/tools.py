@@ -297,19 +297,32 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
             "bicycling": "https://restapi.amap.com/v4/direction/bicycling",
         }
 
+        route_params = {
+            "key": amap_key,
+            "origin": origin_coord,
+            "destination": dest_coord,
+            "extensions": "base",
+        }
+        # PY-1 修复：公交模式(transit)必须传 city 参数，否则高德返回 status=0 查询失败
+        if amap_mode == "transit":
+            route_params["city"] = city or "北京"
+
         route_resp = _HTTP_CLIENT.get(
             url_map.get(amap_mode, url_map["driving"]),
-            params={
-                "key": amap_key,
-                "origin": origin_coord,
-                "destination": dest_coord,
-                "extensions": "base",
-            },
+            params=route_params,
         )
         route_resp.raise_for_status()
         route_data = route_resp.json()
 
-        if route_data.get("status") == "1":
+        # PY-2 修复：骑行用 v4 接口，响应结构为 {errcode, data.paths}，与 v3 的 {status, route.paths} 不同
+        if amap_mode == "bicycling":
+            if route_data.get("errcode") == 0 and route_data.get("data", {}).get("paths"):
+                path = route_data["data"]["paths"][0]
+                distance = int(path.get("distance", 0))
+                duration = int(path.get("duration", 0))
+            else:
+                distance, duration = 0, 0
+        elif route_data.get("status") == "1":
             route = route_data.get("route", {})
             if amap_mode == "driving" and route.get("paths"):
                 path = route["paths"][0]
@@ -379,6 +392,20 @@ def _estimate_commute(origin: str, destination: str, mode: str, city: str) -> st
 
 # ==================== 工具 4：预算核算 ====================
 
+def _to_money(value, default: int = 0) -> int:
+    """LLM 回传的金额可能是字符串/浮点/None，统一归一化为非负整数（L-PY-2）。
+
+    此前 budget_total/people/分项直接用原始值参与四则运算，
+    LLM 回传 `"5000"` 字符串时 `"5000" * people` 与 int 比较会抛 TypeError。
+    """
+    if value is None or str(value).strip() == "":
+        return int(default)
+    try:
+        return max(int(float(str(value).strip())), 0)
+    except (ValueError, TypeError):
+        return int(default)
+
+
 @tool
 def calculate_budget(items_json: str) -> str:
     """
@@ -411,9 +438,10 @@ def calculate_budget(items_json: str) -> str:
             "error": "无法解析费用数据，请确保输入是合法 JSON",
         }, ensure_ascii=False)
 
-    budget_total = data.get("budget_total", 5000)
-    people = data.get("people", 1)
-    items = data.get("items", {})
+    # L-PY-2 修复：所有数值字段统一 _to_money 归一化，防字符串/None/浮点导致 TypeError
+    budget_total = _to_money(data.get("budget_total"), 5000)
+    people = max(_to_money(data.get("people"), 1), 1)  # 人数至少 1，防总预算归零/除零
+    items = data.get("items", {}) or {}
     # days 可能来自 LLM 输出（0 或字符串），做安全归一化，避免除零/类型错误
     try:
         days = max(int(float(str(data.get("days", 1)).strip())), 1)
@@ -421,12 +449,12 @@ def calculate_budget(items_json: str) -> str:
         days = 1
 
     # 计算各项
-    transport = items.get("transport", 0)
-    accommodation = items.get("accommodation", 0)
-    food = items.get("food", 0)
-    tickets = items.get("tickets", 0)
-    shopping = items.get("shopping", 0)
-    city_transport = items.get("city_transport", 0)
+    transport = _to_money(items.get("transport"))
+    accommodation = _to_money(items.get("accommodation"))
+    food = _to_money(items.get("food"))
+    tickets = _to_money(items.get("tickets"))
+    shopping = _to_money(items.get("shopping"))
+    city_transport = _to_money(items.get("city_transport"))
 
     actual_total = transport + accommodation + food + tickets + shopping + city_transport
 

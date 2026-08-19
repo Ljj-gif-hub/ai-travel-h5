@@ -30,22 +30,28 @@ const favorites = ref([])
 const isLoading = ref(false)
 const loadError = ref(false)
 
+// BUGID TAB-1 修复：请求序号计数器，快速切 Tab 时丢弃过期响应
+let loadSeq = 0
+
 const loadFavorites = async (type = '') => {
+  const seq = ++loadSeq
   isLoading.value = true
   loadError.value = false
   try {
     const response = await favoriteApi.getFavorites(type)
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     if (response.code === 0) {
       favorites.value = response.data || []
     } else {
       favorites.value = []
     }
   } catch (error) {
+    if (seq !== loadSeq) return // BUGID TAB-1：旧请求晚回，丢弃
     console.log('获取收藏列表失败:', error)
     favorites.value = []
     if (error?.response?.status === 502) loadError.value = true
   } finally {
-    isLoading.value = false
+    if (seq === loadSeq) isLoading.value = false
   }
 }
 
@@ -74,7 +80,8 @@ const handleItemClick = (item) => {
 const handleGoExplore = () => { router.push('/') }
 
 /* ==================== 图片兜底 ==================== */
-const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
+// BUGID FEAT-9 修复：移除第三方 AI 生图接口（trae-api-cn.mchost.guru），
+// 直连外部接口会把标题拼进 prompt 外发（隐私泄露），且跨域/防盗链不稳定
 const staticImageMap = ref({})
 
 const loadStaticImageMap = async () => {
@@ -88,7 +95,8 @@ const getCoverUrl = (item) => {
   if (item.cover && !item.cover.includes('placeholder')) return item.cover
   const keyword = item.name || item.title || '旅行风景'
   if (staticImageMap.value[keyword]) return staticImageMap.value[keyword]
-  return `${IMAGE_API}?prompt=${encodeURIComponent(keyword + ' 旅游 高清')}&image_size=landscape_4_3`
+  // BUGID FEAT-9 修复：兜底改为项目本地占位图，不再外发生成请求
+  return '/images/default-placeholder.png'
 }
 
 onMounted(() => {

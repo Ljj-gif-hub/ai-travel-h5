@@ -5,6 +5,7 @@ import org.example.traveljava.entity.NoteCollection;
 import org.example.traveljava.service.NoteCollectionService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +106,7 @@ public class NoteCollectionController {
                                                @RequestBody Map<String, Object> body) {
         Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         try {
-            Long noteId = body.get("noteId") != null ? ((Number) body.get("noteId")).longValue() : null;
+            Long noteId = body.get("noteId") != null ? NumberUtil.toLong(body.get("noteId"), 0L) : null;
             return Result.ok(collectionService.addNote(userId, id, noteId));
         } catch (IllegalArgumentException e) {
             return Result.fail(e.getMessage());

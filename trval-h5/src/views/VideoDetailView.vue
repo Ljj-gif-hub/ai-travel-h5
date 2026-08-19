@@ -35,6 +35,10 @@ const videoProgress = ref(0);       // 0~100
 const isFullscreen = ref(false);
 const showControls = ref(true);
 let hideControlsTimer = null;
+// BUGID 修复：当前登录用户 id（从 JWT payload 解析），用于评论/回复删除权限判定
+const currentUserId = ref(null);
+// BUGID 修复：评论请求序号守卫，切换视频后旧请求结果直接丢弃
+let commentsReqSeq = 0;
 
 const onVideoTimeUpdate = () => {
   if (!videoRef.value) return
@@ -46,8 +50,8 @@ const onVideoTimeUpdate = () => {
 const onVideoLoadedMetadata = () => {
   if (videoRef.value) {
     videoDuration.value = videoRef.value.duration || 0
-    videoRef.value.play()
-    isPlaying.value = true
+    // BUGID 修复：play() 可能被浏览器自动播放策略拒绝，失败时保持 isPlaying=false
+    videoRef.value.play().then(() => { isPlaying.value = true }).catch(() => { isPlaying.value = false })
   }
 };
 
@@ -84,7 +88,8 @@ const toggleFullscreen = async () => {
     isFullscreen.value = true
     if (videoRef.value) {
       videoRef.value.style.objectFit = 'contain'
-      videoRef.value.play()
+      // BUGID 修复：play() 可能被拒绝，加 catch 静默兜底
+      videoRef.value.play().catch(() => {})
     }
   }
 };
@@ -234,10 +239,26 @@ const updateState = () => {
   commentCount.value = n.comments || n.commentCount || 0;
 };
 
+// BUGID 修复：从 JWT payload 解析当前用户 id（与 NoteDetailView 一致）
+const parseUserId = () => {
+  try {
+    const token = getToken();
+    if (!token) return null;
+    const payload = token.split('.')[1];
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded));
+    return decoded.userId || null;
+  } catch { return null }
+};
+
 const loadComments = async () => {
   const id = current.value?.id; if (!id) return;
+  // BUGID 修复：自增序号守卫，切换视频后旧请求返回时直接丢弃，避免旧请求覆盖新视频评论
+  const reqSeq = ++commentsReqSeq;
   try {
     const res = await commentApi.getComments(id);
+    if (reqSeq !== commentsReqSeq) return;
     if (res.code === 0) {
       const list = Array.isArray(res.data) ? res.data : [];
       comments.value = list;
@@ -260,6 +281,8 @@ const goToVideo = async (idx) => {
   if (idx < 0 || idx >= notes.value.length || isTransitioning.value) return;
   isTransitioning.value = true;
   currentIdx.value = idx;
+  // BUGID 修复：切换视频前递增序号，立即使仍在途的旧评论请求失效
+  commentsReqSeq++;
   comments.value = [];
   // 清理回复状态
   Object.keys(expandedReplies).forEach(k => delete expandedReplies[k]);
@@ -269,7 +292,11 @@ const goToVideo = async (idx) => {
   commentInput.value = '';
   updateState();
   await nextTick();
-  if (videoRef.value) { videoRef.value.load(); videoRef.value.play(); isPlaying.value = true; }
+  if (videoRef.value) {
+    videoRef.value.load();
+    // BUGID 修复：play() 可能被浏览器拦截，仅在成功后置 isPlaying，失败时保持暂停态
+    videoRef.value.play().then(() => { isPlaying.value = true }).catch(() => { isPlaying.value = false });
+  }
   loadComments();
   setTimeout(() => { isTransitioning.value = false; }, 400);
 };
@@ -312,7 +339,11 @@ const onVideoTouchEnd = () => {
         videoDragY.value = 0;
         videoSnapping.value = false;
         nextTick(() => {
-          if (videoRef.value) { videoRef.value.load(); videoRef.value.play(); isPlaying.value = true; }
+          if (videoRef.value) {
+            videoRef.value.load();
+            // BUGID 修复：play() 可能被拦截，成功才置 isPlaying
+            videoRef.value.play().then(() => { isPlaying.value = true }).catch(() => { isPlaying.value = false });
+          }
         });
         loadComments();
       }, 220);
@@ -354,8 +385,12 @@ const handleLike = async () => {
 
 const togglePlay = () => {
   if (!videoRef.value) return;
-  isPlaying.value ? videoRef.value.pause() : videoRef.value.play();
-  isPlaying.value = !isPlaying.value;
+  if (isPlaying.value) {
+    videoRef.value.pause();
+  } else {
+    // BUGID 修复：play() 可能被浏览器拦截，失败时保持暂停态不置 true
+    videoRef.value.play().then(() => { isPlaying.value = true }).catch(() => { isPlaying.value = false });
+  }
 };
 
 // 点击视频区：抽屉打开时关闭抽屉，否则暂停/播放
@@ -527,7 +562,11 @@ const stripHtml = (html) => {
   return html.replace(/<img[^>]*>/gi,'[图片]').replace(/<video[^>]*\/?>/gi,'').replace(/<[^>]+>/g,'').trim();
 };
 
-onMounted(() => { loadVideos().then(() => loadComments()); });
+onMounted(() => {
+  // BUGID 修复：解析当前登录用户 id，用于评论/回复删除权限校验
+  currentUserId.value = parseUserId();
+  loadVideos().then(() => loadComments());
+});
 onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
 </script>
 
@@ -541,7 +580,7 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
         <div class="video-track" :class="{ snapping: videoSnapping, dragging: isVideoDragging }" :style="{ transform: `translateY(${videoDragY}px)` }">
           <Transition :name="'video-slide-' + slideDirection" mode="out-in">
             <video
-              v-if="videoUrl" :key="currentIdx" ref="videoRef" :src="videoUrl" class="full-video" loop playsinline
+              v-if="videoUrl" :key="currentIdx" ref="videoRef" :src="videoUrl" class="full-video" loop playsinline muted
               webkit-playsinline autoplay
               @loadedmetadata="onVideoLoadedMetadata"
               @timeupdate="onVideoTimeUpdate"
@@ -661,7 +700,8 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
                         <div class="reply-actions">
                           <span class="cmt-action" @click.stop="handleLikeComment(r)"><van-icon name="good-job-o" size="12" /> {{ r.likes || '' }}</span>
                           <span class="cmt-action" @click.stop="startReply(r)">{{ t('community.reply') }}</span>
-                          <van-icon v-if="getToken()" name="delete-o" size="12" color="#ccc" @click.stop="handleDeleteComment(r)"/>
+                          <!-- BUGID 修复：仅评论归属者本人可删除（防止他人删除） -->
+                          <van-icon v-if="getToken() && currentUserId === r.userId" name="delete-o" size="12" color="#ccc" @click.stop="handleDeleteComment(r)"/>
                         </div>
                       </div>
                     </div>
@@ -681,7 +721,8 @@ onUnmounted(() => { if (videoRef.value) videoRef.value.pause(); });
               <div v-else class="reply-zone"></div>
             </div>
             <!-- 删除按钮 -->
-            <van-icon v-if="getToken()" name="delete-o" size="14" color="#ccc" class="cmt-del" @click.stop="handleDeleteComment(c)"/>
+            <!-- BUGID 修复：仅评论归属者本人可删除（防止他人删除） -->
+            <van-icon v-if="getToken() && currentUserId === c.userId" name="delete-o" size="14" color="#ccc" class="cmt-del" @click.stop="handleDeleteComment(c)"/>
           </div>
         </div>
         <!-- 底部全局输入栏 -->

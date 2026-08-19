@@ -29,9 +29,11 @@ CREATE TABLE IF NOT EXISTS trip_shares (
     expire_at   DATETIME        NOT NULL,
     created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_trip_shares_token (token),
-    KEY idx_trip_shares_token (token),
+    -- L-ENT-2 修复：uk_trip_shares_token 已覆盖 token 列的查询需求，原 KEY idx_trip_shares_token (token) 纯冗余已移除。
     KEY idx_trip_shares_plan (plan_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 注：已在 prod 执行过旧版 V3 的环境，冗余索引需手动清理（可选，无功能影响）：
+--   DROP INDEX idx_trip_shares_token ON trip_shares;
 
 -- ----------------------------
 -- 2. 行程模板表
@@ -129,16 +131,30 @@ CREATE TABLE IF NOT EXISTS note_collections (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
--- 7. 追加 hidden 列（举报隐藏）
--- ⚠️ 若 prod 库已存在该列（曾手工加过），请跳过对应语句。
+-- 7/8. 追加 hidden/points 列（举报隐藏 + 积分等级）
+-- 【SQL-1 真幂等】MySQL 不支持 ADD COLUMN IF NOT EXISTS，改用存储过程 +
+-- information_schema 守卫：列已存在则跳过，重跑任意多次、中途失败后重跑都安全，
+-- 不再需要人工核对列是否已存在。脚本执行后守卫过程会被 DROP 清理，不留残留。
 -- ----------------------------
-ALTER TABLE notes    ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0;
-ALTER TABLE posts    ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0;
-ALTER TABLE comments ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0;
+DROP PROCEDURE IF EXISTS sp_add_col_if_missing;
+DELIMITER $$
+CREATE PROCEDURE sp_add_col_if_missing(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_ddl VARCHAR(512))
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = p_table AND column_name = p_column
+    ) THEN
+        SET @ddl = p_ddl;
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END$$
+DELIMITER ;
 
--- ----------------------------
--- 8. users 追加 points 列（积分等级）
--- ⚠️ 若 prod 库 users 已存在 points 列，请跳过该语句。
---    （实体 User.points 长期存在，prod 首次上线前的库可能已有此列）
--- ----------------------------
-ALTER TABLE users ADD COLUMN points INT NOT NULL DEFAULT 0;
+CALL sp_add_col_if_missing('notes', 'hidden', 'ALTER TABLE notes ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col_if_missing('posts', 'hidden', 'ALTER TABLE posts ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col_if_missing('comments', 'hidden', 'ALTER TABLE comments ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col_if_missing('users', 'points', 'ALTER TABLE users ADD COLUMN points INT NOT NULL DEFAULT 0');
+
+DROP PROCEDURE IF EXISTS sp_add_col_if_missing;

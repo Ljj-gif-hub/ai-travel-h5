@@ -297,8 +297,10 @@ async def submit_feedback(req: FeedbackRequest, request: Request):
     # 净化（S3 同策略）：剥离控制字符 + 长度截断，防存储型注入
     comment = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(req.comment or ""))[:500]
     destination = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(req.destination or "")).strip()[:50]
+    # PY-5 修复：用 asyncio.to_thread 将同步写盘移出事件循环，不阻塞进行中的 SSE 规划流
     from agent.memory import memory_store
-    memory_store.add_feedback(user_id, {
+    import asyncio
+    await asyncio.to_thread(memory_store.add_feedback, user_id, {
         "rating": req.rating,
         "comment": comment,
         "destination": destination,
@@ -427,6 +429,16 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
     async def event_generator():
         stream_start = time.monotonic()
         record = _current_request.get()
+        # PY-3 修复：后台心跳任务，每 15s 发送 ping 事件防止 nginx proxy_read_timeout(60s) 断流
+        import asyncio as _aio
+        ping_queue: _aio.Queue = _aio.Queue()
+
+        async def _heartbeat():
+            while True:
+                await _aio.sleep(15)
+                await ping_queue.put(": heartbeat\n\n")
+
+        heartbeat_task = _aio.create_task(_heartbeat())
         try:
             # 立即发送连接确认，确保浏览器收到流式响应头
             yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
@@ -450,6 +462,9 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
             count = 0
             final_result = None
             async for event in planner.run():
+                # 先排空心跳（防止 nginx 超时断流）
+                while not ping_queue.empty():
+                    yield await ping_queue.get()
                 count += 1
                 # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
                 if count % 2 == 0 and await request.is_disconnected():
@@ -467,6 +482,7 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
             err = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {err}\n\n"
         finally:
+            heartbeat_task.cancel()
             # 用量收尾：用真实流时长刷新请求记录（幂等）
             if record is not None:
                 usage_tracker.finish_request(record, time.monotonic() - stream_start)
@@ -522,6 +538,16 @@ async def generate_plan_stream_raw(request: Request):
     async def raw_generator():
         stream_start = time.monotonic()
         record = _current_request.get()
+        # PY-3 修复：后台心跳任务，每 15s 发送 ping 事件防止 nginx proxy_read_timeout(60s) 断流
+        import asyncio as _aio
+        ping_queue: _aio.Queue = _aio.Queue()
+
+        async def _heartbeat():
+            while True:
+                await _aio.sleep(15)
+                await ping_queue.put(": heartbeat\n\n")
+
+        heartbeat_task = _aio.create_task(_heartbeat())
         try:
             yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
             # 缓存命中：跳过 LLM 直接产出 complete 事件（附 cached: true 标记）
@@ -540,6 +566,9 @@ async def generate_plan_stream_raw(request: Request):
             count = 0
             final_result = None
             async for event in planner.run():
+                # 先排空心跳（防止 nginx 超时断流）
+                while not ping_queue.empty():
+                    yield await ping_queue.get()
                 count += 1
                 # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
                 if count % 2 == 0 and await request.is_disconnected():
@@ -558,6 +587,7 @@ async def generate_plan_stream_raw(request: Request):
             error_json = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {error_json}\n\n"
         finally:
+            heartbeat_task.cancel()
             # 用量收尾：用真实流时长刷新请求记录（幂等）
             if record is not None:
                 usage_tracker.finish_request(record, time.monotonic() - stream_start)

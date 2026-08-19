@@ -51,7 +51,8 @@ public class CityDTO {
         public CityCard() {}
         public CityCard(String name) {
             this.name = name;
-            this.image = "https://source.unsplash.com/160x100/?" + name + ",travel,city";
+            // 【图片纠错】不再生成 picsum 随机图（与城市无关），返回空串由前端本地兜底
+            this.image = "";
         }
         public CityCard(String name, String image) {
             this.name = name; this.image = image;
@@ -135,7 +136,8 @@ public class CityDTO {
         public SearchResult() {}
         public SearchResult(String type, String name, String parent) {
             this.type = type; this.name = name; this.parent = parent;
-            this.image = "https://source.unsplash.com/160x100/?" + name + ",travel,city";
+            // 【图片纠错】不再生成 picsum 随机图（与城市无关），返回空串由前端本地兜底
+            this.image = "";
         }
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }

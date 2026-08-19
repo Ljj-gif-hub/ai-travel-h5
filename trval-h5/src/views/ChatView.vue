@@ -280,7 +280,13 @@ const streamChatWithReconnect = async (chatHistory, aiMsgIndex) => {
           try {
             const dataLines = trimmedEvt.split('\n')
             let content = dataLines.map(line => { const t = line.trim(); if (t.startsWith('data: ')) return t.slice(6); if (t.startsWith('data:')) return t.slice(5); return '' }).join('\n')
-            if (content && content !== '[DONE]') { if (isThinking.value) isThinking.value = false; messages.value[aiMsgIndex].content += content; scrollToBottom() }
+            if (content && content !== '[DONE]') {
+              if (isThinking.value) isThinking.value = false
+              // BUGID 修复：清空重发后 aiMsgIndex 可能失效，先判存在再追加，避免往 undefined 上 append
+              const aiMsg = messages.value[aiMsgIndex]
+              if (aiMsg) aiMsg.content += content
+              scrollToBottom()
+            }
           } catch (e) { /* SSE skip */ }
         }
       }
@@ -333,7 +339,11 @@ const sendMessage = async () => {
     if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
     isSending.value = false; isThinking.value = false; showQuickBar.value = true; saveMessagesToStorage()
   } catch (e) {
-    if (e?.name === 'AbortError') return // SSE被主动中断，不提示错误
+    if (e?.name === 'AbortError') { // SSE被主动中断，不提示错误
+      // BUGID 修复：中断前复位 streaming，避免离开后 AI 气泡永久流式
+      if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
+      return
+    }
     if (messages.value[aiMsgIndex]) messages.value[aiMsgIndex].isStreaming = false
     isSending.value = false; isThinking.value = false; isReconnecting.value = false; showQuickBar.value = true; showToast(t('chat.requestFailed'))
   }
@@ -377,6 +387,8 @@ onDeactivated(() => {
   isSending.value = false
   isThinking.value = false
   isReconnecting.value = false
+  // BUGID 修复：切走中断 SSE 后复位所有 streaming 标记，避免 AI 气泡永久流式
+  messages.value.forEach(m => { if (m.isStreaming) m.isStreaming = false })
 })
 
 /* 【性能优化】Tab切回：恢复页面高度计算、滚动到底部 */

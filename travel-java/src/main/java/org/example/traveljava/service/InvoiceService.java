@@ -6,6 +6,7 @@ import org.example.traveljava.repository.InvoiceRepository;
 import org.example.traveljava.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +48,7 @@ public class InvoiceService {
         if (!"paid".equals(status) && !"completed".equals(status)) {
             throw new IllegalArgumentException("订单支付完成后才能开具发票");
         }
-        // 一单一票
+        // 一单一票（前置检查，并发下由 DB 唯一约束兜底）
         if (invoiceRepository.existsByOrderId(orderId)) {
             throw new IllegalArgumentException("该订单已开具发票");
         }
@@ -61,18 +62,31 @@ public class InvoiceService {
             throw new IllegalArgumentException("企业发票需填写税号");
         }
 
-        Invoice invoice = new Invoice();
-        invoice.setOrderId(orderId);
-        invoice.setUserId(userId);
-        invoice.setTitle(invoiceTitle);
-        invoice.setTaxNo(taxNo != null && !taxNo.isBlank() ? taxNo.trim() : null);
-        invoice.setType(invoiceType);
-        invoice.setAmount(order.getPrice());
-        invoice.setInvoiceNo(generateInvoiceNo());
-        Invoice saved = invoiceRepository.save(invoice);
-        log.info("发票开具成功: invoiceNo={}, orderId={}, userId={}, amount={}",
-                saved.getInvoiceNo(), orderId, userId, saved.getAmount());
-        return saved;
+        // INVOICE-1 修复：catch DataIntegrityViolationException 重试发票号 / 转友好提示
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Invoice invoice = new Invoice();
+            invoice.setOrderId(orderId);
+            invoice.setUserId(userId);
+            invoice.setTitle(invoiceTitle);
+            invoice.setTaxNo(taxNo != null && !taxNo.isBlank() ? taxNo.trim() : null);
+            invoice.setType(invoiceType);
+            invoice.setAmount(order.getPrice());
+            invoice.setInvoiceNo(generateInvoiceNo());
+            try {
+                Invoice saved = invoiceRepository.save(invoice);
+                log.info("发票开具成功: invoiceNo={}, orderId={}, userId={}, amount={}",
+                        saved.getInvoiceNo(), orderId, userId, saved.getAmount());
+                return saved;
+            } catch (DataIntegrityViolationException e) {
+                // 并发下可能命中唯一约束：判断是 order_id 重复还是 invoice_no 重复
+                if (invoiceRepository.existsByOrderId(orderId)) {
+                    throw new IllegalArgumentException("该订单已开具发票");
+                }
+                // invoice_no 重复 → 重试生成新号
+                log.warn("发票号冲突，重试: attempt={}", attempt + 1);
+            }
+        }
+        throw new IllegalStateException("发票号生成失败，请稍后重试");
     }
 
     /** 我的发票列表 */

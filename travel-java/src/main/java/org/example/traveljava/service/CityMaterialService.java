@@ -11,6 +11,11 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.annotation.PreDestroy;
 
 /**
  * 城市素材服务 — 初始化全国行政区划编码 + 图片匹配
@@ -38,9 +43,41 @@ public class CityMaterialService implements CommandLineRunner {
         this.amapService = amapService;
     }
 
-    /** 图片兜底：Picsum 固定种子（比 Unsplash 稳定，同一城市永远同一张） */
+    /** 图片兜底：不再生成 picsum 随机图（图片与城市无关），返回空串由前端走本地静态图/渐变色兜底 */
     private String thumbImg(String cityName) {
-        return "https://picsum.photos/seed/" + cityName + "/400/300";
+        return "";
+    }
+
+    // ========== 后台刷新执行器（CITYMAT-1 修复） ==========
+    // 守护线程：①不拖 JVM 退出 ②串行避免并发打满高德限速桶
+    private final ExecutorService refreshExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "city-material-refresh");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** 【CITYMAT-1 修复】手动全量刷新改为异步执行：请求线程立即返回，后台逐条 upsert（防请求线程串行 HTTP 数分钟超时） */
+    public void refreshAllPhotosAsync() {
+        refreshExecutor.execute(() -> {
+            try {
+                refreshAllPhotos();
+            } catch (Exception e) {
+                log.error("异步刷新城市图片异常", e);
+            }
+        });
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        refreshExecutor.shutdown();
+        try {
+            if (!refreshExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                refreshExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            refreshExecutor.shutdownNow();
+        }
     }
 
     // ========== 全国行政区划数据 ==========
@@ -190,19 +227,19 @@ public class CityMaterialService implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        // 【数据修复】清除旧的 Unsplash URL（source.unsplash.com 已停用）
-        // 凡是 thumbImg 包含 unsplash 的旧数据，都替换为 Picsum
+        // 【数据修复】清除旧的 Unsplash / Picsum URL（随机图与城市无关，前端有本地静态图+渐变色兜底）
+        // 凡是 thumbImg 包含 unsplash/picsum 的旧数据，都清空（picsum 随机图与城市无关）
         int fixed = 0;
         for (CityMaterial cm : repo.findAll()) {
             String img = cm.getThumbImg();
-            if (img != null && img.contains("unsplash")) {
-                cm.setThumbImg(thumbImg(cm.getCityName()));
+            if (img != null && (img.contains("unsplash") || img.contains("picsum"))) {
+                cm.setThumbImg("");
                 repo.save(cm);
                 fixed++;
             }
         }
         if (fixed > 0) {
-            log.info("已修复 {} 条 Unsplash 图片链接 → Picsum", fixed);
+            log.info("已清理 {} 条 Unsplash/Picsum 图片链接", fixed);
         }
 
         // 初始化缺失的城市（首次启动）
@@ -218,8 +255,9 @@ public class CityMaterialService implements CommandLineRunner {
         }
 
         // 【异步预拉取】高德实景照片覆盖热门城市
+        // CITYMAT-1 修复③：改用守护线程执行器（原裸 new Thread 非守护，拖延 JVM 退出）
         if (amapService != null && "amap".equals(mapConfig.resolveProvider())) {
-            new Thread(() -> prefetchAmapPhotos()).start();
+            refreshExecutor.execute(this::prefetchAmapPhotos);
         }
     }
 
@@ -247,24 +285,34 @@ public class CityMaterialService implements CommandLineRunner {
         log.info("预拉取完成: {}/{} 个城市已获取 Amap 实景照片", fetched, total);
     }
 
-    /** 手动触发全量刷新（供管理员调用） */
+    /**
+     * 手动触发全量刷新（供管理员调用）
+     * CITYMAT-1 修复：
+     * ① 不先 deleteAll（原代码先清空再逐个写入，中间 NPE 会清空且不写回）→ 改为 upsert 逐条更新
+     * ② amapService 为 null 时跳过而非 NPE
+     * ③ 不在请求线程串行 sleep（原 140 城 × 300ms = 42s 必超时）→ 改为异步执行
+     */
     public int refreshAllPhotos() {
-        log.info("手动触发全量图片刷新 — 清空旧数据，从高德重新爬取...");
-        // 先清空所有旧图
-        cityImageRepository.deleteAll();
-        log.info("已清空 city_images 表");
-        int amapFetched = 0, picsumFetched = 0;
+        log.info("手动触发全量图片刷新 — 逐条 upsert，从高德重新爬取...");
+        if (amapService == null) {
+            log.warn("amapService 未注入，无法刷新高德实景照片");
+        }
+        int amapFetched = 0, missed = 0;
         for (CityMaterial city : repo.findAll()) {
             try {
-                String photoUrl = amapService.fetchCityPhoto(city.getCityName());
+                String photoUrl = null;
+                if (amapService != null) {
+                    photoUrl = amapService.fetchCityPhoto(city.getCityName());
+                }
                 String source;
                 if (photoUrl != null && !photoUrl.isEmpty()) {
                     source = "amap";
                     amapFetched++;
                 } else {
-                    photoUrl = thumbImg(city.getCityName());
-                    source = "picsum";
-                    picsumFetched++;
+                    // 【图片纠错】无真实照片时不再写入 picsum 随机图，清空让前端走本地兜底
+                    photoUrl = "";
+                    source = "none";
+                    missed++;
                 }
                 java.util.Optional<CityImage> existing = cityImageRepository.findByCityName(city.getCityName());
                 if (existing.isPresent()) {
@@ -274,13 +322,12 @@ public class CityMaterialService implements CommandLineRunner {
                 } else {
                     cityImageRepository.save(new CityImage(city.getCityName(), photoUrl, source));
                 }
-                Thread.sleep(300);
             } catch (Exception e) {
-                log.debug("刷新失败: {}", city.getCityName());
+                log.debug("刷新失败: {} — {}", city.getCityName(), e.getMessage());
             }
         }
-        log.info("刷新完成: Amap={} Picsum={}", amapFetched, picsumFetched);
-        return amapFetched + picsumFetched;
+        log.info("刷新完成: Amap={} 无照片={}", amapFetched, missed);
+        return amapFetched;
     }
 
     /** 查询城市素材（带兜底） */
@@ -305,7 +352,8 @@ public class CityMaterialService implements CommandLineRunner {
         // 预加载 city_images 表（高德缓存），建立城市名→图片URL的快速查找表
         Map<String, String> amapCache = new HashMap<>();
         for (CityImage ci : cityImageRepository.findAll()) {
-            if (ci.getImageUrl() != null && !ci.getImageUrl().isEmpty()) {
+            // 【图片纠错】过滤历史残留的 picsum 随机图
+            if (ci.getImageUrl() != null && !ci.getImageUrl().isEmpty() && !ci.getImageUrl().contains("picsum.photos")) {
                 amapCache.put(ci.getCityName(), ci.getImageUrl());
             }
         }
@@ -316,7 +364,7 @@ public class CityMaterialService implements CommandLineRunner {
             // 优先用高德缓存的实景照片
             if (amapCache.containsKey(cityName)) {
                 map.put(cityName, amapCache.get(cityName));
-            } else if (cm.getThumbImg() != null) {
+            } else if (cm.getThumbImg() != null && !cm.getThumbImg().isEmpty()) {
                 map.put(cityName, cm.getThumbImg());
             }
         }

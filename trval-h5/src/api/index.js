@@ -67,8 +67,11 @@ function refreshAuthToken() {
 async function fetchOnce(url, options) {
   const token = getToken();
 
+  // BUGID FEAT-13 修复：FormData（上传）不预置 Content-Type，由浏览器自动带 multipart boundary，
+  // 否则 multipart 表单因缺 boundary 解析失败
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...options.headers,
   };
 
@@ -136,6 +139,15 @@ async function fetchOnce(url, options) {
   // HTTP 500+ → 服务器错误
   if (response.status >= 500) {
     const err = new Error('服务器繁忙，请稍后重试');
+    err.status = response.status;
+    err.response = { status: response.status };
+    throw err;
+  }
+
+  // BUGID FEAT-13 修复：413 请求体超限（上传超大文件），服务器常返回 HTML 错误页，
+  // 不能按 JSON 解析（否则 response.json() 抛 Unexpected token），这里给出可读错误
+  if (response.status === 413) {
+    const err = new Error('文件过大，上传失败');
     err.status = response.status;
     err.response = { status: response.status };
     throw err;
@@ -337,18 +349,14 @@ export const commentApi = {
 };
 
 export const uploadApi = {
+  // BUGID FEAT-13 修复：改用统一 request 封装——自动注入 Token、401 单飞刷新重放、
+  // HTTP 错误映射（含 413 可读错误），不再裸 fetch 绕过（裸 fetch 不查 response.ok、
+  // 无刷新重放、413 HTML 页 response.json() 会抛 Unexpected token）
   uploadFile: async (file) => {
-    const token = getToken();
     const formData = new FormData();
     formData.append('file', file);
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch(`${BASE_URL}/upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-    return response.json();
+    const res = await request('/upload', { method: 'POST', body: formData });
+    return res ?? { code: -1, message: '上传失败' };
   },
 };
 

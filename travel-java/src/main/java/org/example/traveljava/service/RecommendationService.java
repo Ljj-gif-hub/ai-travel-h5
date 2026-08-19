@@ -356,7 +356,8 @@ public class RecommendationService {
     private static final class CandidatePool {
         final Map<String, Candidate> byKey;
         final List<Candidate> items;
-        final Map<Long, Set<String>> userKeysCache = new HashMap<>();
+        // REC-1 修复：被 Caffeine 缓存后所有请求线程共享，改用 ConcurrentHashMap 防并发写 HashMap
+        final Map<Long, Set<String>> userKeysCache = new java.util.concurrent.ConcurrentHashMap<>();
 
         CandidatePool(Map<String, Candidate> byKey) {
             this.byKey = byKey;

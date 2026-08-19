@@ -1,5 +1,7 @@
 package org.example.traveljava.util;
 
+import java.util.Set;
+
 /**
  * 坐标系转换工具类
  *
@@ -110,6 +112,8 @@ public final class CoordinateUtil {
 
     // ==================== 便捷方法 ====================
 
+    private static final Set<String> SUPPORTED_COORDS = Set.of("wgs84", "gcj02", "bd09");
+
     /**
      * 将坐标转换为目标坐标系
      * @param lat 源纬度
@@ -117,15 +121,28 @@ public final class CoordinateUtil {
      * @param from 源坐标系 ("wgs84" / "gcj02" / "bd09")
      * @param to   目标坐标系 ("wgs84" / "gcj02" / "bd09")
      * @return [targetLat, targetLng]
+     * @throws IllegalArgumentException 参数为空 / 坐标系不支持 / 经纬度越界时抛出（不再静默当作 gcj02）
      */
     public static double[] convert(double lat, double lng, String from, String to) {
-        if (from.equals(to)) {
+        if (from == null || to == null || from.trim().isEmpty() || to.trim().isEmpty()) {
+            throw new IllegalArgumentException("坐标系参数不能为空");
+        }
+        String f = from.trim().toLowerCase();
+        String t = to.trim().toLowerCase();
+        if (!SUPPORTED_COORDS.contains(f) || !SUPPORTED_COORDS.contains(t)) {
+            throw new IllegalArgumentException("不支持的坐标系: " + from + " → " + to);
+        }
+        if (Double.isNaN(lat) || Double.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new IllegalArgumentException("经纬度超出合法范围: lat=" + lat + ", lng=" + lng);
+        }
+
+        if (f.equals(t)) {
             return new double[]{lat, lng};
         }
 
         // 统一先转到 GCJ-02
         double gcjLat, gcjLng;
-        switch (from) {
+        switch (f) {
             case "wgs84":
                 double[] gcj = wgs84ToGcj02(lat, lng);
                 gcjLat = gcj[0]; gcjLng = gcj[1];
@@ -139,7 +156,7 @@ public final class CoordinateUtil {
         }
 
         // 从 GCJ-02 转到目标
-        switch (to) {
+        switch (t) {
             case "wgs84":
                 return gcj02ToWgs84(gcjLat, gcjLng);
             case "bd09":

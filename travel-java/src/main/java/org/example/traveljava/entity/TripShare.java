@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "trip_shares", indexes = {
-        @Index(name = "idx_trip_shares_token", columnList = "token"),
+        // L-ENT-2 修复：token 已有 @Column(unique=true) 生成 UNIQUE KEY，普通索引 idx_trip_shares_token 纯冗余，移除
         @Index(name = "idx_trip_shares_plan", columnList = "plan_id")
 })
 public class TripShare {

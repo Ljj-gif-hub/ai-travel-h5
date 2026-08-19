@@ -20,7 +20,7 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     List<Coupon> findByUserIdAndStatusAndValidUntilAfter(Long userId, String status, LocalDateTime dateTime);
 
     /** 原子占位：仅当 status='unused' 时置为 used，返回受影响行数（0=已被并发使用） */
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("update Coupon c set c.status = 'used', c.usedAt = :now, c.orderId = :orderId " +
             "where c.id = :id and c.status = 'unused'")
     int claimCoupon(@Param("id") Long id, @Param("now") LocalDateTime now, @Param("orderId") Long orderId);

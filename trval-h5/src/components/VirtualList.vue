@@ -100,6 +100,7 @@ watch(() => props.itemHeight, () => initHeights(props.items.length))
 /* ---------------- ResizeObserver 实测修正（仅动态高度模式） ---------------- */
 let ro = null
 const measureMap = new Map() // el -> index
+const itemRefs = [] // index -> 当前渲染的 el（配合卸载时精确清理，避免反向遍历误删）
 
 function ensureRO() {
   if (ro || props.itemHeight != null || typeof ResizeObserver === 'undefined') return
@@ -120,11 +121,20 @@ function ensureRO() {
 
 function setItemRef(el, index) {
   if (!el) {
-    // 卸载：vue 会给 null 调用清理——需要先从 map 找 index
-    for (const [k, v] of measureMap) { if (v === index) { measureMap.delete(k); ro?.unobserve(k) } }
+    // BUGID COMP-2 修复：卸载时按下标从 itemRefs 精确删除对应 el，
+    // 不再反向遍历 measureMap——虚拟列表复用下标时反向查找会误删其它项
+    if (itemRefs[index]) {
+      const oldEl = itemRefs[index]
+      if (measureMap.get(oldEl) === index) {
+        measureMap.delete(oldEl)
+        ro?.unobserve(oldEl)
+      }
+      itemRefs[index] = null
+    }
     return
   }
   ensureRO()
+  itemRefs[index] = el
   if (ro && !measureMap.has(el)) {
     measureMap.set(el, index)
     ro.observe(el)
@@ -136,6 +146,7 @@ onBeforeUnmount(() => {
   ro?.disconnect()
   ro = null
   measureMap.clear()
+  itemRefs.length = 0
 })
 
 /* ---------------- 可视窗口计算 ---------------- */
@@ -163,7 +174,6 @@ const window = computed(() => {
   <div
     class="virtual-list"
     :style="{ height: totalHeight + 'px', position: 'relative' }"
-    aria-hidden="true"
   >
     <div
       class="virtual-list-window"

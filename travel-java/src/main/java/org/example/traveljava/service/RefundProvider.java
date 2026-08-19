@@ -11,7 +11,7 @@ public interface RefundProvider {
      *
      * @param orderId  订单 id
      * @param orderNo  订单号
-     * @param amount   退款金额（分）
+     * @param amount   退款金额（元，与订单 price 单位一致）
      * @param reason   退款原因
      */
     String refund(Long orderId, String orderNo, Long amount, String reason);

@@ -10,9 +10,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,11 +57,14 @@ public class RealFlightProvider implements FlightProvider {
             if (props.getFlight().getApiKey() != null && !props.getFlight().getApiKey().isBlank()) {
                 headers.setBearerAuth(props.getFlight().getApiKey());
             }
-            // 【安全】查询参数 URL 编码：防止城市名包含 & / # 等字符破坏 URL 结构或注入额外参数
-            String url = endpoint + "?fromCity=" + URLEncoder.encode(fromCity, StandardCharsets.UTF_8)
-                    + "&toCity=" + URLEncoder.encode(toCity, StandardCharsets.UTF_8)
-                    + "&date=" + URLEncoder.encode(String.valueOf(date), StandardCharsets.UTF_8);
-            JsonNode resp = restTemplate.exchange(url, org.springframework.http.HttpMethod.GET,
+            // 【安全】查询参数交给 UriComponentsBuilder 自动编码：既能防止城市名包含 & / # 等字符
+            // 破坏 URL 结构或注入额外参数，也避免手动 URLEncoder + getForObject(String) 的双重编码坑（%→%25）
+            java.net.URI uri = UriComponentsBuilder.fromHttpUrl(endpoint)
+                    .queryParam("fromCity", fromCity)
+                    .queryParam("toCity", toCity)
+                    .queryParam("date", String.valueOf(date))
+                    .build().encode().toUri();
+            JsonNode resp = restTemplate.exchange(uri, org.springframework.http.HttpMethod.GET,
                     new HttpEntity<>(headers), JsonNode.class).getBody();
             return parse(resp);
         } catch (Exception e) {

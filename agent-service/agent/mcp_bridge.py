@@ -31,6 +31,21 @@ logger = logging.getLogger("travel-agent.mcp")
 _mcp_start_lock = threading.Lock()
 
 
+def _run_mcp_server_thread(server, transport: str) -> None:
+    """MCP 服务端线程入口（L-PY-4）。
+
+    server.run() 是异步阻塞调用，端口冲突等失败发生在线程内部——
+    旧实现 _started 在 t.start() 即置 True，run() 在线程内挂掉后线程静默死亡，
+    /api/agent/health 永远误报 running。这里捕获异常并回写 _started，线程退出也一并清理。
+    """
+    try:
+        server.run(transport=transport)
+    except Exception as e:  # noqa: BLE001
+        logger.error("MCP 服务端线程异常退出，健康检查将标记未运行: %s", e)
+    finally:
+        start_mcp_server._started = False
+
+
 # ==================== 可用性探测 ====================
 
 def _mcp_available() -> bool:
@@ -122,7 +137,7 @@ def create_mcp_server():
                         search_hotels_info as _sh_tool,
                         get_commute_info as _gc_tool,
                         calculate_budget as _cb_tool)
-    from .knowledge import create_knowledge_provider
+    from .knowledge import knowledge_store
 
     # 默认只监听本机回环（S8）：MCP 端口不应默认暴露公网；
     # 确需对外提供服务时显式设置 MCP_SERVER_HOST=0.0.0.0
@@ -161,8 +176,8 @@ def create_mcp_server():
     def retrieve_guide(destination: str, query: str = "") -> str:
         """从内置旅游攻略知识库检索目的地相关信息（RAG）"""
         try:
-            provider = create_knowledge_provider()
-            chunks = provider.retrieve(destination, query)
+            # L-PY-1 修复：复用全局单例知识库，避免每次检索重建 TF-IDF 索引
+            chunks = knowledge_store.retrieve(destination, query)
             return json.dumps([c.to_dict() for c in chunks], ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
             return json.dumps({"error": f"知识库检索失败: {e}"}, ensure_ascii=False)
@@ -178,7 +193,8 @@ def start_mcp_server() -> None:
         try:
             server = create_mcp_server()
             transport = os.getenv("MCP_SERVER_TRANSPORT", "streamable-http").strip().lower()
-            t = threading.Thread(target=server.run, kwargs={"transport": transport},
+            # L-PY-4：线程目标用包装函数，run() 内部异步失败也能回写 _started
+            t = threading.Thread(target=_run_mcp_server_thread, args=(server, transport),
                                  daemon=True, name="mcp-server")
             t.start()
             start_mcp_server._started = True

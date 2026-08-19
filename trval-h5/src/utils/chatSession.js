@@ -103,13 +103,15 @@ const writeAll = (data) => {
 
 /* ==================== 公开API ==================== */
 
-/** 获取当前会话ID，无则自动创建新会话 */
+/** 获取当前会话ID；无会话时返回 null（调用方自行处理空会话场景） */
 export function getCurrentSessionId() {
   const data = readAll()
   if (data.currentSessionId && data.sessions[data.currentSessionId]) {
     return data.currentSessionId
   }
-  return createNewSession()
+  // BUGID L-COMP-6 修复：查询路径不再隐式创建新会话（副作用），
+  // 创建会话仅由显式调用 createNewSession 负责，避免 get 触发写存储/脏会话
+  return null
 }
 
 /** 设置当前活跃会话ID */

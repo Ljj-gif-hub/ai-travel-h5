@@ -8,7 +8,7 @@
  * - 单根 <img>，class/style/@click 等属性自动透传，直接替换既有 <img> 零布局改动
  * - 不支持 IntersectionObserver 的环境降级为立即加载
  */
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   src: { type: String, default: '' },
@@ -55,6 +55,28 @@ function ensureObserver() {
 onMounted(() => {
   const el = elRef.value
   if (!el || !props.src) return
+  const observer = ensureObserver()
+  if (observer) {
+    observeMap.set(el, () => { inView.value = true })
+    observer.observe(el)
+  } else {
+    inView.value = true // 降级：无 IO 支持直接加载
+  }
+})
+
+// BUGID COMP-1 修复：src 变化时重置加载/失败状态并重新走 observer 加载新图；
+// 同时修复 failed 状态无 reset——换 src 后旧错误图不再残留
+watch(() => props.src, () => {
+  failed.value = false
+  loaded.value = false
+  const el = elRef.value
+  if (!el || !props.src) return
+  // 重置 observer：解除旧监听，重新观察等待新 src 进入视口后加载
+  if (sharedObserver) {
+    sharedObserver.unobserve(el)
+    observeMap.delete(el)
+  }
+  inView.value = false
   const observer = ensureObserver()
   if (observer) {
     observeMap.set(el, () => { inView.value = true })

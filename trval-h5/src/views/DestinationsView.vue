@@ -37,7 +37,7 @@
             @click="goToDetail(dest)"
           >
             <div class="dest-img-wrap">
-              <img :src="dest.image" :alt="dest.name" class="dest-img" loading="lazy" decoding="async" @error="e=>e.target.style.opacity='0'" />
+              <img :src="dest.image" :alt="dest.name" class="dest-img" loading="lazy" decoding="async" @error="onImageError" />
               <div class="dest-img-mask"></div>
               <div class="dest-heat" v-if="dest.heat">
                 <van-icon name="fire-o" size="12" color="#fff" />
@@ -68,8 +68,8 @@ import { useI18n } from 'vue-i18n'
 const router = useRouter()
 const { t } = useI18n()
 
-const IMAGE_API = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image'
-
+// BUGID FEAT-9 修复：移除第三方 AI 生图接口（trae-api-cn.mchost.guru），
+// 直连外部接口会把目的地名拼进 prompt 外发（隐私泄露），且跨域/防盗链不稳定
 const staticImageMap = ref({})
 
 const loadStaticImageMap = async () => {
@@ -79,11 +79,18 @@ const loadStaticImageMap = async () => {
   } catch {}
 }
 
-/** 主渠道：后端 API / AI 生成 → 静态 JSON 兜底 */
+/** 主渠道：后端 API → 静态 JSON 兜底 → 本地占位图 */
 const getImageUrl = (keyword) => {
   if (staticImageMap.value[keyword]) return staticImageMap.value[keyword]
-  const encodedKeyword = encodeURIComponent(`${keyword} 风景 旅游摄影`)
-  return `${IMAGE_API}?prompt=${encodedKeyword}&image_size=landscape_4_3`
+  // BUGID FEAT-9 修复：兜底改为项目本地占位图，不再外发生成请求
+  return '/images/default-placeholder.png'
+}
+
+// BUGID FEAT-9 修复：图片加载失败时切换本地占位图，避免整卡空白
+const onImageError = (e) => {
+  const img = e.target
+  img.onerror = null // 防止占位图也失败时无限重试
+  img.src = '/images/default-placeholder.png'
 }
 
 const destinations = ref([])

@@ -6,6 +6,7 @@ import org.example.traveljava.service.AIService;
 import org.example.traveljava.service.SavedTravelPlanService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,9 +40,9 @@ public class TripAIController {
     @PostMapping("/generateTrip")
     public Result<Map<String, Object>> generateTrip(@RequestHeader("Authorization") String authHeader,
                                                      @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil); // 校验登录
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil); // 校验登录
         String dest = (String) body.getOrDefault("destination", "");
-        int days = ((Number) body.getOrDefault("days", 3)).intValue();
+        int days = NumberUtil.toInt(body.getOrDefault("days", 3), 3);
         String origin = (String) body.getOrDefault("origin", "深圳");
         String style = (String) body.getOrDefault("style", "综合");
 
@@ -50,7 +51,8 @@ public class TripAIController {
             origin, dest, days, style, "纯JSON格式，字段：day,dayTitle,timeSlots[{timeOfDay,time,attraction,activity,duration,cost,transport,tips}]");
 
         try {
-            String result = aiService.chat(Arrays.asList(
+            // L-AI-2：chat 缓存键带 userId，防止跨用户共享缓存回复
+            String result = aiService.chat(userId, Arrays.asList(
                 ChatMessage.builder().role("system").content("你是旅行规划师，只输出JSON。").build(),
                 ChatMessage.builder().role("user").content(prompt).build()
             ));
@@ -69,14 +71,15 @@ public class TripAIController {
     @PostMapping("/optimizeRoute")
     public Result<Map<String, Object>> optimizeRoute(@RequestHeader("Authorization") String authHeader,
                                                       @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
-        Long planId = body.get("planId") != null ? ((Number) body.get("planId")).longValue() : null;
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long planId = body.get("planId") != null ? NumberUtil.toLong(body.get("planId"), 0L) : null;
 
         String prompt = "以下是行程数据：" + body.getOrDefault("tripData", "").toString() +
             "。请根据景点地理位置和开放时间重新排序每天行程，使路线最顺路。返回优化后的JSON。";
 
         try {
-            String result = aiService.chat(Arrays.asList(
+            // L-AI-2：chat 缓存键带 userId
+            String result = aiService.chat(userId, Arrays.asList(
                 ChatMessage.builder().role("system").content("你是路线优化师，只输出优化后的JSON。").build(),
                 ChatMessage.builder().role("user").content(prompt).build()
             ));
@@ -93,21 +96,35 @@ public class TripAIController {
     @PostMapping("/chat")
     public Result<String> tripChat(@RequestHeader("Authorization") String authHeader,
                                     @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        // L-CTRL-1 修复：body 为 null 先判空，避免 NPE 500
+        if (body == null) {
+            return Result.fail("请求体不能为空");
+        }
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String question = (String) body.getOrDefault("question", "");
         String context = (String) body.getOrDefault("tripContext", "");
-        List<Map<String, String>> history = (List<Map<String, String>>) body.getOrDefault("history", List.of());
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(ChatMessage.builder().role("system").content(
             "你是旅行助理。当前行程上下文：" + (context.isEmpty() ? "无" : context) + "。根据此上下文回答用户问题。").build());
-        for (Map<String, String> h : history) {
-            messages.add(ChatMessage.builder().role(h.get("role")).content(h.get("content")).build());
+
+        // L-CTRL-1 修复：history 不再裸强转——必须是 List 且元素为 Map 才采纳，
+        // role/content 缺失（null）的元素跳过，杜绝 CCE 500 与 null role 消息传给 LLM
+        Object historyObj = body.get("history");
+        if (historyObj instanceof List<?> history) {
+            for (Object item : history) {
+                if (!(item instanceof Map<?, ?> hm)) continue;
+                Object roleObj = hm.get("role");
+                Object contentObj = hm.get("content");
+                if (!(roleObj instanceof String role) || !(contentObj instanceof String content)) continue;
+                messages.add(ChatMessage.builder().role(role).content(content).build());
+            }
         }
         messages.add(ChatMessage.builder().role("user").content(question).build());
 
         try {
-            String reply = aiService.chat(messages);
+            // L-AI-2：chat 缓存键带 userId，防止跨用户共享缓存回复
+            String reply = aiService.chat(userId, messages);
             return Result.ok(reply);
         } catch (Exception e) {
             return Result.fail("AI 回复失败，请稍后重试");
@@ -118,7 +135,7 @@ public class TripAIController {
     @PostMapping("/generateRemark")
     public Result<Map<String, Object>> generateRemark(@RequestHeader("Authorization") String authHeader,
                                                        @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String dest = (String) body.getOrDefault("destination", "");
         String type = (String) body.getOrDefault("type", "城市");
 
@@ -126,7 +143,8 @@ public class TripAIController {
             "为%s旅行（类型：%s）生成5条出行备注提醒。包含防晒、穿搭、避坑、蚊虫、饮食等方面。返回JSON:{\"remarks\":[\"备注1\",\"备注2\",...]}", dest, type);
 
         try {
-            String result = aiService.chat(Arrays.asList(
+            // L-AI-2：chat 缓存键带 userId
+            String result = aiService.chat(userId, Arrays.asList(
                 ChatMessage.builder().role("system").content("只输出JSON，不要其他文字。").build(),
                 ChatMessage.builder().role("user").content(prompt).build()
             ));
@@ -142,16 +160,17 @@ public class TripAIController {
     @PostMapping("/travelInspiration")
     public Result<Map<String, Object>> travelInspiration(@RequestHeader("Authorization") String authHeader,
                                                           @RequestBody Map<String, Object> body) {
-        AuthUtils.requireUserId(authHeader, jwtUtil);
+        Long userId = AuthUtils.requireUserId(authHeader, jwtUtil);
         String dest = (String) body.getOrDefault("destination", "");
-        int days = ((Number) body.getOrDefault("days", 3)).intValue();
+        int days = NumberUtil.toInt(body.getOrDefault("days", 3), 3);
 
         String prompt = String.format(
             "为%s%d天旅行生成旅行灵感，包含：美食推荐、小众景点、本地文化体验。返回JSON:{\"food\":[\"美食1\"],\"spots\":[\"景点1\"],\"culture\":[\"文化1\"]}",
             dest, days);
 
         try {
-            String result = aiService.chat(Arrays.asList(
+            // L-AI-2：chat 缓存键带 userId
+            String result = aiService.chat(userId, Arrays.asList(
                 ChatMessage.builder().role("system").content("只输出JSON。").build(),
                 ChatMessage.builder().role("user").content(prompt).build()
             ));
@@ -183,7 +202,8 @@ public class TripAIController {
                     try { emitter.send(SseEmitter.event().data(chunk)); } catch (Exception e) {}
                 },
                 error -> {
-                    try { emitter.send(SseEmitter.event().data("❌ " + error.getMessage())); emitter.complete(); } catch (Exception e) {}
+                    // L-CTRL-2 修复：不把上游异常 message 透传给客户端（可能含内网 URL/代理地址），改固定文案
+                    try { emitter.send(SseEmitter.event().data("❌ 生成失败，请稍后重试")); emitter.complete(); } catch (Exception e) {}
                 },
                 () -> { try { emitter.complete(); } catch (Exception e) {} }
             );

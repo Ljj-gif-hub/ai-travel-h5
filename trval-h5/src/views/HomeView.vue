@@ -149,6 +149,16 @@ const loadStaticImageMap = async () => {
     const resp = await fetch('/city-images.json')
     if (resp.ok) Object.assign(staticImageMap.value, await resp.json())
   } catch {}
+  // 合并景点图映射：推广轮播/种草笔记里引用的景点名（黄果树瀑布、都江堰等）也能命中本地图
+  try {
+    const resp = await fetch('/attraction-images.json')
+    if (resp.ok) {
+      const attrMap = await resp.json()
+      for (const [k, v] of Object.entries(attrMap)) {
+        if (v && !staticImageMap.value[k]) staticImageMap.value[k] = v
+      }
+    }
+  } catch {}
 }
 
 /** 获取图片：优先本地静态 JSON（真实地标），兜底后端 API */
@@ -158,27 +168,29 @@ const getImageUrl = (keyword) => staticImageMap.value[keyword] || `/api/city/ima
 const resolveImage = (keyword) => staticImageMap.value[keyword] || getImageUrl(keyword)
 
 /* ==================== Layer 6: 双列卡片 ==================== */
-const eventBanner = {
+// BUGID L-HOME-1 修复：默认封面改为 computed，staticImageMap 加载完成后自动重算，避免首屏裂图
+const eventBanner = computed(() => ({
   image: getImageUrl('三亚'),
   title: 'home.summerTravel',
   label: 'home.hotActivity',
   link: '/destination-detail?city=三亚',
-}
-const citySeedCard = {
+}))
+const citySeedCard = computed(() => ({
   image: getImageUrl('北京'),
   label: 'home.citySeed',
   cta: 'home.aiPlanForMe',
-}
+}))
 
 /* ==================== 默认数据 ==================== */
-const defaultBanners = [
+// BUGID L-HOME-1 修复：默认 Banners/目的地封面改为 computed，staticImageMap 就绪后自动重算
+const defaultBanners = computed(() => [
   { id: 1, image: getImageUrl('大理'), title: '云南大理', subtitle: 'home.bannerSubtitle1', link: '/destination-detail?city=大理' },
   { id: 2, image: getImageUrl('拉萨'), title: '西藏拉萨', subtitle: 'home.bannerSubtitle2', link: '/destination-detail?city=拉萨' },
   { id: 3, image: getImageUrl('天山'), title: '新疆天山', subtitle: 'home.bannerSubtitle3', link: '/destination-detail?city=乌鲁木齐' },
   { id: 4, image: getImageUrl('三亚'), title: '海南三亚', subtitle: 'home.bannerSubtitle4', link: '/destination-detail?city=三亚' },
-]
+])
 
-const defaultDestinations = [
+const defaultDestinations = computed(() => [
   { name: '北京', tag: '经典必去', image: getImageUrl('北京') },
   { name: '上海', tag: '都市潮流', image: getImageUrl('上海') },
   { name: '广州', tag: '美食之都', image: getImageUrl('广州') },
@@ -187,7 +199,7 @@ const defaultDestinations = [
   { name: '杭州', tag: '诗画江南', image: getImageUrl('杭州') },
   { name: '西安', tag: '千年古都', image: getImageUrl('西安') },
   { name: '重庆', tag: '8D魔幻', image: getImageUrl('重庆') },
-]
+])
 
 const ph = (hue, label) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="hsl(${hue},60%,65%)"/><stop offset="100%" stop-color="hsl(${hue+30},70%,45%)"/></linearGradient></defs><rect fill="url(#g)" width="400" height="300"/><text fill="rgba(255,255,255,0.7)" font-size="28" font-family="sans-serif" x="200" y="150" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`)}`
 
@@ -199,7 +211,7 @@ const seedNotes = [
     title: '🎠 上海迪士尼亲子二日游全攻略！轻松带娃不踩雷',
     content: '带4岁娃的上海迪士尼亲子攻略！轻松版游玩路线，避开人潮不用排长队。重点推荐旋转木马、小飞象和冰雪奇缘表演，孩子玩得超开心。附上园区儿童餐推荐和午睡tips。',
     images: [getImageUrl('上海'), getImageUrl('迪士尼'), getImageUrl('外滩')],
-    viewCount: 12800, tag: '亲子', time: '2小时前',
+    viewCount: 12800, likeCount: 0, isLiked: false, tag: '亲子', time: '2小时前',
     hasVideo: false,
   },
   {
@@ -209,7 +221,7 @@ const seedNotes = [
     content: '刚回来！贵州太美了！黄果树瀑布气势磅礴，荔波小七孔水绿如翡翠，西江千户苗寨万家灯火震撼心灵。这份攻略整理了吃住行全攻略，人均不到3000玩转贵州精华景点！',
     images: [getImageUrl('黄果树瀑布'), getImageUrl('荔波'), getImageUrl('千户苗寨')],
     videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
-    viewCount: 35600, tag: '贵州', time: '4小时前',
+    viewCount: 35600, likeCount: 0, isLiked: false, tag: '贵州', time: '4小时前',
     hasVideo: true,
   },
   {
@@ -218,7 +230,7 @@ const seedNotes = [
     title: '📜 都江堰景区一日游｜千年水利工程太震撼了',
     content: '都江堰到底值不值得去？答案是：绝对值得！亲眼看到两千多年前李冰父子修建的水利工程至今仍在发挥作用，鱼嘴分水、飞沙堰溢洪、宝瓶口引水，古人的智慧让人叹服。附上门票交通全攻略。',
     images: [getImageUrl('都江堰'), getImageUrl('成都'), getImageUrl('青城山')],
-    viewCount: 22100, tag: '都江堰', time: '6小时前',
+    viewCount: 22100, likeCount: 0, isLiked: false, tag: '都江堰', time: '6小时前',
     hasVideo: false,
   },
   {
@@ -227,7 +239,7 @@ const seedNotes = [
     title: '🏨 上海外滩周边高性价比酒店推荐｜睡在风景里',
     content: '整理了上海外滩/南京路周边5家高性价比酒店，从网红民宿到五星级酒店都有实测。关键看江景、交通便利度和性价比。和平饭店的下午茶、华尔道夫的老上海风情，每一家都有独特体验！',
     images: [getImageUrl('上海'), getImageUrl('南京路'), getImageUrl('陆家嘴')],
-    viewCount: 18900, tag: '上海', time: '8小时前',
+    viewCount: 18900, likeCount: 0, isLiked: false, tag: '上海', time: '8小时前',
     hasVideo: false,
   },
   {
@@ -236,7 +248,7 @@ const seedNotes = [
     title: '🌄 贵阳周边绝美风景｜本地人私藏的小众打卡地',
     content: '贵阳不止有甲秀楼！花溪十里河滩骑行、青岩古镇品猪蹄、天河潭看溶洞瀑布、黔灵山看野生猕猴…这些本地人常去的地方才是贵阳的正确打开方式。美食推荐：肠旺面、丝娃娃、酸汤鱼，好吃到哭！',
     images: [getImageUrl('贵阳'), getImageUrl('青岩古镇'), getImageUrl('黔灵山')],
-    viewCount: 15200, tag: '贵阳', time: '12小时前',
+    viewCount: 15200, likeCount: 0, isLiked: false, tag: '贵阳', time: '12小时前',
     hasVideo: false,
   },
   {
@@ -245,7 +257,7 @@ const seedNotes = [
     title: '🌾 大理旅居一个月｜环洱海自驾保姆级攻略',
     content: '大理旅居一个月，整理了这份环洱海自驾攻略。路线：古城-喜洲-双廊-挖色-海东。全程130公里，建议分两天慢慢玩。喜洲的稻田、双廊的日落、海东的悬崖公路，每一段都让人不想离开。',
     images: [getImageUrl('大理'), getImageUrl('喜洲'), getImageUrl('双廊')],
-    viewCount: 45600, tag: '大理', time: '1天前',
+    viewCount: 45600, likeCount: 0, isLiked: false, tag: '大理', time: '1天前',
     hasVideo: false,
   },
   {
@@ -255,7 +267,7 @@ const seedNotes = [
     content: '避开网红店，整理了12家藏在居民楼里的老火锅。每家都有特色招牌菜，从人均40到80都有。特别推荐弹子石的巷子火锅和观音桥的防空洞火锅，麻辣鲜香巴适得板！建议收藏！',
     images: [getImageUrl('重庆'), getImageUrl('洪崖洞'), getImageUrl('解放碑')],
     videoUrl: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
-    viewCount: 38900, tag: '重庆', time: '1天前',
+    viewCount: 38900, likeCount: 0, isLiked: false, tag: '重庆', time: '1天前',
     hasVideo: true,
   },
   {
@@ -264,7 +276,7 @@ const seedNotes = [
     title: '📸 杭州西湖边的绝美咖啡馆合集｜拍照超出片',
     content: '整理了环西湖最值得去的5家独立咖啡馆，从断桥边的民国老宅到龙井山上的玻璃房。每一家都有独特的设计美学和出品，附上每家的推荐饮品和最佳拍摄机位，文艺青年必收藏！',
     images: [getImageUrl('杭州'), getImageUrl('西湖'), getImageUrl('龙井')],
-    viewCount: 27300, tag: '杭州', time: '2天前',
+    viewCount: 27300, likeCount: 0, isLiked: false, tag: '杭州', time: '2天前',
     hasVideo: false,
   },
   {
@@ -273,7 +285,7 @@ const seedNotes = [
     title: '⛰️ 华山一日游挑战长空栈道｜云海翻涌太震撼',
     content: '早上5点出发，索道上北峰，一路徒步经过苍龙岭、金锁关，最后挑战长空栈道。虽然腿软但风景绝美，云海翻涌，值得一生铭记的体验。附登山装备清单和体力分配建议！',
     images: [getImageUrl('华山'), getImageUrl('西安'), getImageUrl('渭南')],
-    viewCount: 31200, tag: '华山', time: '2天前',
+    viewCount: 31200, likeCount: 0, isLiked: false, tag: '华山', time: '2天前',
     hasVideo: false,
   },
   {
@@ -282,7 +294,7 @@ const seedNotes = [
     title: '🚴 深圳湾公园骑行｜沿海岸线看绝美日落',
     content: '深圳湾公园骑行真的太舒服了！沿着海岸线一路骑行，海风轻拂，视野开阔。推荐傍晚时分出发，可以看到绝美的海上日落，沿途还有很多拍照打卡点。全程15公里左右，新手也完全能驾驭。',
     images: [getImageUrl('深圳'), getImageUrl('深圳湾'), getImageUrl('大梅沙')],
-    viewCount: 19500, tag: '深圳', time: '3天前',
+    viewCount: 19500, likeCount: 0, isLiked: false, tag: '深圳', time: '3天前',
     hasVideo: false,
   },
 ]
@@ -303,15 +315,15 @@ const experiences = ref([])
 
 const isLoading = ref({ destinations: true, notes: true })
 
-const loadBanners = () => { banners.value = defaultBanners }
+const loadBanners = () => { banners.value = defaultBanners.value }
 const loadHotDestinations = async () => {
   isLoading.value.destinations = true
   try {
     const res = await getHotDestinations()
     const list = res.data || []
-    hotDestinations.value = list.length ? list.map(item => ({ ...item, image: item.imageUrl || getImageUrl(item.name), tag: item.tag || '热门推荐' })) : defaultDestinations
+    hotDestinations.value = list.length ? list.map(item => ({ ...item, image: item.imageUrl || getImageUrl(item.name), tag: item.tag || '热门推荐' })) : defaultDestinations.value
   } catch (e) {
-    hotDestinations.value = defaultDestinations
+    hotDestinations.value = defaultDestinations.value
   } finally { isLoading.value.destinations = false }
 }
 
@@ -401,12 +413,15 @@ const goToCommunity = () => {
   try { router.push('/notes') } catch (e) { console.error('goToCommunity 失败:', e) }
 }
 
-const promotionSlides = ref([
+// BUGID L-HOME-1 修复：推广轮播改为 computed，staticImageMap 就绪后自动重算，避免首屏裂图
+const promotionSlides = computed(() => [
   { image: getImageUrl('迪士尼'), title: 'home.promoFamilyTitle', subtitle: 'home.promoFamilySubtitle', tag: 'home.promoFamilyTag' },
   { image: getImageUrl('黄果树瀑布'), title: 'home.promoGuizhouTitle', subtitle: 'home.promoGuizhouSubtitle', tag: 'home.promoGuizhouTag' },
   { image: getImageUrl('都江堰'), title: 'home.promoDujiangyanTitle', subtitle: 'home.promoDujiangyanSubtitle', tag: 'home.promoDujiangyanTag' },
 ])
 
+/* BUGID PAGE-1 修复：加载序号守卫，防止触底滚动与首屏加载并发重复拉页（旧的 loadingMore 无并发守卫） */
+const loadSeq = ref(0)
 const loadNotes = async (reset = false) => {
   if (reset) {
     page.value = 1
@@ -414,10 +429,12 @@ const loadNotes = async (reset = false) => {
     notesLoading.value = true
   }
   if (!hasMore.value && !reset) return
+  const seq = ++loadSeq.value
   try {
     loadingMore.value = !reset
     // 服务端分页加载
     const res = await noteApi.getAllNotes(page.value)
+    if (seq !== loadSeq.value) return  // 已有更新的加载请求，丢弃本次结果
     if (res && res.code === 0 && res.data) {
       const list = Array.isArray(res.data) ? res.data : (res.data.list || [])
       const mapped = list.map(mapNoteItem)
@@ -433,10 +450,12 @@ const loadNotes = async (reset = false) => {
       hasMore.value = false
     }
   } catch (e) {
+    if (seq !== loadSeq.value) return
     console.warn('加载社区笔记失败，使用本地种子数据:', e.message)
     if (reset) notes.value = [...seedNotes]
     hasMore.value = false
   } finally {
+    if (seq !== loadSeq.value) return
     notesLoading.value = false
     loadingMore.value = false
     isLoading.value.notes = false
@@ -560,13 +579,14 @@ const handleLike = async (note) => {
   }
   const prevLiked = note.isLiked
   note.isLiked = !note.isLiked
-  note.likeCount += note.isLiked ? 1 : -1
+  // BUGID L-HOME-2 修复：种子数据可能缺失 likeCount，对缺失值兜底，避免 NaN
+  note.likeCount = (Number(note.likeCount) || 0) + (note.isLiked ? 1 : -1)
   try {
     const res = await noteApi.likeNote(note.id)
     if (res.code !== 0) throw new Error(res.message)
   } catch (e) {
     note.isLiked = prevLiked
-    note.likeCount += prevLiked ? 1 : -1
+    note.likeCount = (Number(note.likeCount) || 0) + (prevLiked ? 1 : -1)
     showToast({ message: t('home.operationFailedRetry'), position: 'middle', duration: 1500 })
   }
 }
@@ -766,7 +786,7 @@ const handleQuickTab = (tab) => {
 
 /* Layer 6: 双列卡片点击 */
 const handleEventBannerClick = () => {
-  try { router.push(eventBanner.link) } catch (e) { console.error('handleEventBannerClick 失败:', e) }
+  try { router.push(eventBanner.value.link) } catch (e) { console.error('handleEventBannerClick 失败:', e) }
 }
 
 const handleCitySeedClick = () => {
@@ -830,14 +850,21 @@ const handlePickerWheel = (e) => {
   st.timer = setTimeout(() => { if (st.rafId) cancelAnimationFrame(st.rafId); st.currentY = st.targetY; dispatchTouch(col, 'touchmove', cx, cy + st.currentY); dispatchTouch(col, 'touchend', cx, cy + st.currentY); wheelGesture.delete(col) }, 320)
 }
 
+let wheelTimer = null  // BUGID L-HOME-3 修复：setTimeout 句柄，弹窗关闭时取消挂载任务
 const addWheelListeners = () => {
-  setTimeout(() => {
-    const popup = document.querySelector('.van-popup')
+  clearTimeout(wheelTimer)  // 重复打开时先取消上一次未执行的挂载任务
+  wheelTimer = setTimeout(() => {
+    // BUGID FEAT-5 修复：用组件自身 popup 的 id 精确定位，不再全局抓取第一个 .van-popup
+    const popup = document.getElementById('city-picker-popup')
     if (popup) { const picker = popup.querySelector('.van-picker'); if (picker) { const handler = (e) => handlePickerWheel(e); popup.addEventListener('wheel', handler, { passive: false }); wheelHandlers.value.push({ column: popup, handler }) } }
   }, 500)
 }
 
-const removeWheelListeners = () => { wheelHandlers.value.forEach(({ column, handler }) => column.removeEventListener('wheel', handler)); wheelHandlers.value = [] }
+const removeWheelListeners = () => {
+  clearTimeout(wheelTimer); wheelTimer = null  // BUGID L-HOME-3 修复：关闭时取消未执行的挂载，避免挂到残留 popup
+  wheelHandlers.value.forEach(({ column, handler }) => column.removeEventListener('wheel', handler))
+  wheelHandlers.value = []
+}
 watch(showCityPicker, (newVal) => {
   if (newVal) addWheelListeners()
   else removeWheelListeners()
@@ -848,7 +875,8 @@ const handleScroll = () => {
   const scrollTop = window.pageYOffset || document.documentElement.scrollTop
   const scrollHeight = document.documentElement.scrollHeight
   const clientHeight = window.innerHeight
-  if (scrollHeight - scrollTop - clientHeight < 200 && hasMore.value && !loadingMore.value) {
+  // BUGID PAGE-1 修复：首屏加载中或翻页中不触发，避免重复拉页
+  if (scrollHeight - scrollTop - clientHeight < 200 && hasMore.value && !loadingMore.value && !notesLoading.value) {
     loadNotes()
   }
 }
@@ -1266,7 +1294,7 @@ onUnmounted(() => {
     </van-popup>
 
     <!-- ==================== 城市选择器 ==================== -->
-    <van-popup v-model:show="showCityPicker" position="bottom" round safe-area-inset-bottom>
+    <van-popup id="city-picker-popup" v-model:show="showCityPicker" position="bottom" round safe-area-inset-bottom>
       <van-area ref="cityAreaRef" :title="t('home.selectCity')" :columns-num="2" :area-list="areaList" @confirm="onCityConfirm" @cancel="showCityPicker = false" />
     </van-popup>
   </div>

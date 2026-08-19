@@ -4,6 +4,7 @@ import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.service.ShareService;
 import org.example.traveljava.util.AuthUtils;
 import org.example.traveljava.util.JwtUtil;
+import org.example.traveljava.util.NumberUtil;
 import org.example.traveljava.vo.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +41,7 @@ public class ShareController {
             if (planIdObj == null) {
                 return Result.fail("缺少行程ID");
             }
-            Long planId = ((Number) planIdObj).longValue();
+            Long planId = NumberUtil.toLong(planIdObj, 0L);
             return Result.ok(shareService.createShare(userId, planId));
         } catch (AuthUtils.AuthException e) {
             throw e;

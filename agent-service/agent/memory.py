@@ -25,6 +25,10 @@ logger = logging.getLogger("travel-agent.memory")
 _RESEARCH_CACHE_MAX = 200
 # 用户反馈容量上限（每用户保留最近 N 条，随记忆持久化）
 _FEEDBACK_MAX = 20
+# PY-6 修复：会话数上限，防止 sessions 无界增长（session_id 客户端任意提供）
+_SESSIONS_MAX = 500
+# PY-6 修复：用户数上限，防止 users 无界增长（user_id 客户端任意提供）
+_USERS_MAX = 20000
 
 
 class MemoryStore:
@@ -87,7 +91,14 @@ class MemoryStore:
         if not user_id:
             return
         with self._lock:
-            self._data["users"][str(user_id)] = prefs
+            users = self._data["users"]
+            uid = str(user_id)
+            # PY-6 修复：用户数超上限时淘汰最旧的（按插入顺序），防止无界增长
+            if uid not in users and len(users) >= _USERS_MAX:
+                oldest = next(iter(users), None)
+                if oldest is not None:
+                    del users[oldest]
+            users[uid] = prefs
             self._save()
 
     def build_user_context(self, user_id: str) -> str:
@@ -116,7 +127,15 @@ class MemoryStore:
         if not session_id:
             return
         with self._lock:
-            self._data["sessions"][str(session_id)] = data
+            sessions = self._data["sessions"]
+            sid = str(session_id)
+            # PY-6 修复：会话数超上限时淘汰最旧的（按插入顺序），防止无界增长
+            if sid not in sessions and len(sessions) >= _SESSIONS_MAX:
+                # 淘汰第一个（最旧的会话）
+                oldest = next(iter(sessions), None)
+                if oldest is not None:
+                    del sessions[oldest]
+            sessions[sid] = data
             self._save()
 
     def build_session_context(self, session_id: str) -> str:

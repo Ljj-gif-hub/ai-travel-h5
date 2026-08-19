@@ -9,7 +9,7 @@
  * position:fixed 遮罩/面板的 z-index 被限制在该上下文中。
  * 同时 style.css 的 entranceUp 动画不再残留 transform，防止 creating containing block。
  */
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -67,6 +67,17 @@ const selectHistory = (item) => {
 const handleInput = (e) => { searchText.value = e.target.value; emit('update:modelValue', e.target.value) }
 const setFilter = (key) => { activeFilter.value = key }
 
+// BUGID L-COMP-4 修复：历史/收藏/标签三态按钮不再只切高亮，真正按 activeFilter 过滤 history 列表
+const filteredHistory = computed(() => {
+  if (activeFilter.value === 'favorites') {
+    return props.history.filter(item => item && !!item.url) // 收藏：有 url 的条目
+  }
+  if (activeFilter.value === 'tabs') {
+    return props.history.filter(item => item && item.tags && item.tags.length > 0) // 标签：带 tags 的条目
+  }
+  return props.history // history（默认）：全部
+})
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside, true)
   document.addEventListener('keydown', handleKeydown)
@@ -97,7 +108,9 @@ onUnmounted(() => {
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#7b42f5" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
         </button>
         <div class="edge-list">
-          <div v-for="(item, idx) in history" :key="idx" class="edge-row" @mousedown.prevent="selectHistory(item)">
+          <!-- BUGID L-COMP-4 修复：按 activeFilter 过滤后的列表；无匹配时显示空态 -->
+          <div v-if="filteredHistory.length === 0" class="edge-empty">{{ t('components.filterEmpty', undefined, '该分类暂无内容') }}</div>
+          <div v-for="(item, idx) in filteredHistory" :key="idx" class="edge-row" @mousedown.prevent="selectHistory(item)">
             <svg class="edge-clock" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="#7b42f5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><polyline points="8 4.5 8 8 11 10"/><path d="M1.5 4 A6.5 6.5 0 0 1 5.5 1.5"/><polyline points="2 2 1.5 4 4 4.5"/></svg>
             <span class="edge-city">{{ item.text }}</span>
             <div v-if="item.tags && item.tags.length" class="edge-tags">
@@ -183,6 +196,9 @@ onUnmounted(() => {
 
 /* ── 历史列表 ── */
 .edge-list { max-height:50vh; overflow-y:auto; overflow-x:hidden; padding:6px 0 2px; -webkit-overflow-scrolling:touch; }
+
+/* BUGID L-COMP-4 修复：筛选空态文案样式 */
+.edge-empty { padding: 24px 12px; text-align: center; font-size: 13px; color: #9ca3af; }
 
 .edge-row {
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;

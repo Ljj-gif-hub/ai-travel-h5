@@ -4,11 +4,13 @@ import org.example.traveljava.entity.Order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -48,4 +50,31 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Modifying(clearAutomatically = true)
     @Query("update Order o set o.status = 'cancelled' where o.id = :id and o.status = 'paid'")
     int cancelIfPaid(@Param("id") Long id);
+
+    /**
+     * 【并发安全】悲观锁查询订单，序列化同一订单的并发退款申请（REFUND-2① 修复）。
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 【并发安全】原子应用优惠券：仅当订单仍为 pending 时更新 price/couponId/couponValue。
+     * 避免与支付回调并发时全字段 merge 把已支付订单打回 pending（COUPON-1 修复）。
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.price = o.price - :discount, o.couponId = :couponId, o.couponValue = :couponValue " +
+            "where o.id = :orderId and o.status = 'pending'")
+    int applyCouponIfPending(@Param("orderId") Long orderId, @Param("discount") long discount,
+                             @Param("couponId") Long couponId, @Param("couponValue") int couponValue);
+
+    /**
+     * 【并发安全】原子更新支付渠道信息：仅当订单仍为 pending 时更新 payChannel/payTradeNo。
+     * 避免全字段 merge 在并发回调下把已支付订单打回 pending（PAYMENT-1 修复）。
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.payChannel = :channel, o.payTradeNo = :tradeNo " +
+            "where o.id = :orderId and o.status = 'pending'")
+    int updatePaymentInfoIfPending(@Param("orderId") Long orderId, @Param("channel") String channel,
+                                   @Param("tradeNo") String tradeNo);
 }

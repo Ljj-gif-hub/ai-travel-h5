@@ -11,8 +11,10 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 【新功能】异步审计服务 — 业务事件审计落库（async_audit 表），
@@ -37,12 +39,18 @@ public class AuditService {
     private final AsyncAuditRepository auditRepository;
     private final ObjectMapper objectMapper;
 
-    /** 审计写入线程：单线程串行，守护线程不阻塞 JVM 退出 */
-    private final ExecutorService auditExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "audit-writer");
-        t.setDaemon(true);
-        return t;
-    });
+    /** 审计写入线程：单线程串行，守护线程不阻塞 JVM 退出。
+     *  L-AUD-1 修复：newSingleThreadExecutor 默认无界队列，DB 长期不可达时任务只增不减；
+     *  改为有界队列 200 + 满时丢弃（审计非关键路径，不允许把内存堆满）。 */
+    private final ExecutorService auditExecutor = new ThreadPoolExecutor(
+            1, 1, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(200),
+            r -> {
+                Thread t = new Thread(r, "audit-writer");
+                t.setDaemon(true);
+                return t;
+            },
+            (r, executor) -> log.warn("审计队列已满（200），丢弃审计事件（审计不阻塞业务）"));
 
     public AuditService(AsyncAuditRepository auditRepository, ObjectMapper objectMapper) {
         this.auditRepository = auditRepository;

@@ -116,7 +116,13 @@ const saveHistory = (city) => {
   localStorage.setItem('city_select_history', JSON.stringify(historyCities.value))
 }
 const clearHistory = () => { historyCities.value = []; localStorage.removeItem('city_select_history') }
-const selectCity = (city) => { saveHistory(city); sessionStorage.setItem('selected_origin_city', city); router.back() }
+const selectCity = (city) => {
+  saveHistory(city)
+  sessionStorage.setItem('selected_origin_city', city)
+  // BUGID FEAT-8 修复：无历史可回退时兜底跳首页，避免 router.back() 无效果
+  if (window.history.length > 1) router.back()
+  else router.replace('/')
+}
 
 // ====== 搜索 ======
 const allCityNames = getAllCityNames()

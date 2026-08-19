@@ -43,6 +43,8 @@ const switchCity = (city) => {
 
 /* ==================== 预订弹层 ==================== */
 const showBook = ref(false)
+// BUGID DBLCLICK-1 修复：提交锁，防止弱网双击重复创建订单
+const submitting = ref(false)
 const bookingHotel = ref(null)
 const checkIn = ref(todayStr(1))
 const nights = ref(1)
@@ -79,7 +81,9 @@ const openBook = (hotel) => {
 }
 
 const confirmBook = async () => {
+  if (submitting.value) return // BUGID DBLCLICK-1：提交中防重入
   if (!getToken()) { showToast(t('common.notLoggedIn')); router.push('/login'); return }
+  submitting.value = true
   try {
     const res = await hotelApi.bookHotel({
       hotelId: bookingHotel.value.id,
@@ -96,6 +100,8 @@ const confirmBook = async () => {
     }
   } catch (e) {
     showToast(t('booking.failRetry'))
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -155,7 +161,7 @@ onMounted(() => { loadHotels(currentCity.value) })
           <span class="pop-price">{{ t('booking.total') }} ¥{{ totalPrice }}</span>
         </div>
 
-        <van-button block type="primary" class="confirm-btn" @click="confirmBook">{{ t('booking.confirmBook') }}</van-button>
+        <van-button block type="primary" class="confirm-btn" :loading="submitting" :disabled="submitting" @click="confirmBook">{{ t('booking.confirmBook') }}</van-button>
       </template>
     </van-popup>
   </div>

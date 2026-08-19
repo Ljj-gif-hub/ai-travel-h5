@@ -186,6 +186,9 @@ export function clearSession() {
     // RefreshToken 一并清除（旋转刷新凭据，退出登录后失效）
     localStorage.removeItem('REFRESH_TOKEN')
     sessionStorage.removeItem('REFRESH_TOKEN')
+    // ACCT-2 修复：全局 userInfo 一并清除，防止登出后另一账号登录仍显示旧账号信息
+    localStorage.removeItem('userInfo')
+    sessionStorage.removeItem('userInfo')
     // 清除临时页面缓存
     localStorage.removeItem('redirectUrl')
   } catch { /* noop */ }
