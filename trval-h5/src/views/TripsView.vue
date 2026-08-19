@@ -215,15 +215,17 @@ const relocate = async () => { await locateUser(); if (nearbyMapInstance.value &
 const goAttractionDetail = async (attr) => {
   if (!attr?.name) return
   // 周边景点卡：destination-detail 是"城市详情页"，须用真实城市名而非景点名。
-  // 有坐标时先逆地理取所在城市再进入（天气/图片/景点列表才正常），失败兜底用景点名
+  // 有坐标时先逆地理取所在城市再进入（天气/图片/景点列表才正常），失败兜底用景点名；
+  // 图片沿用该景点的推荐图（不带则用城市图）
+  const img = attr.imageUrl || ''
   if (attr.lat && attr.lng) {
     try {
       const resp = await fetch(`/api/city/location?lat=${attr.lat}&lng=${attr.lng}`)
       const json = await resp.json()
-      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city); return }
+      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city, img); return }
     } catch (e) { /* 逆地理失败，走下方兜底 */ }
   }
-  goDestinationDetail(attr.name)
+  goDestinationDetail(attr.name, img)
 }
 
 const miniMapReady = ref(false); let miniMapInstance = null
@@ -315,7 +317,18 @@ const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t
 /** 城市名规范化：去掉后缀"市"，与热门目的地/本地图库短名一致（三亚市→三亚），保证天气/图片/景点都能命中 */
 const toShortCity = (name) => (name || '').replace(/市$/, '')
 
-const goDestinationDetail = (city) => { if (!city) return; router.push(`/destination-detail?city=${encodeURIComponent(toShortCity(city))}`) }
+/** 进 destination-detail：city 必传（天气/景点/地图都按城市），img 可选（景点推荐图覆盖城市封面） */
+const goDestinationDetail = (city, img = '') => {
+  if (!city) return
+  const base = `city=${encodeURIComponent(toShortCity(city))}`
+  router.push(`/destination-detail?${base}${img ? `&img=${encodeURIComponent(img)}` : ''}`)
+}
+
+/** 景点推荐卡：复用卡片当前展示的景点图（POI实景→图库→城市兜底）进详情，而不是换成城市图 */
+const goGuideAttraction = (attr, city) => {
+  if (!attr?.name || !city) return
+  goDestinationDetail(city, getAttractionImage(city, attr))
+}
 const handleMoreAction = (action) => { showMoreMenu.value = false; showToast(t('trips.featureWip')) }
 
 /* ==================== 行程模板（新功能） ==================== */
@@ -528,7 +541,7 @@ onUnmounted(() => {
         <div v-for="guide in cityGuides" :key="guide.city" class="guide-section" v-show="guide.attractions.length > 0">
           <div class="sec-head"><span class="sec-title">{{ guide.city }}</span><span class="sec-guide-label" v-if="guide.label">{{ guide.label }}</span><span class="sec-more" @click="goDestinationDetail(guide.city)">{{ t('trips.guideLink') }}</span></div>
           <div class="h-scroll">
-            <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goDestinationDetail(guide.city)">
+            <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goGuideAttraction(attr, guide.city)">
               <div class="guide-card-img-wrap">
                 <img :src="getAttractionImage(guide.city, attr)" class="guide-card-img" loading="lazy" @error="e => onGuideImgError(e, guide.city)" />
                 <div class="guide-card-img-placeholder"><van-icon name="photo-o" size="24" color="rgba(139,92,246,0.3)" /></div>

@@ -160,8 +160,10 @@ const loadStaticImageMap = async () => {
  * 根因：直接访问 /destination-detail 无 query 时 city 为空，页面完全空白
  */
 const city = ref(route.query.city || '')
+// 行程页景点卡传入的景点推荐图（覆盖城市封面，优先级最高）；无则用城市图
+const heroImg = route.query.img || ''
 const cityInfo = ref({})
-const cityImageOverride = ref('') // 后端素材库/热门目的地接口返回的封面图（优先级最高）
+const cityImageOverride = ref(heroImg) // 后端素材库/热门目的地接口返回的封面图（优先级最高）
 const attractions = ref([])
 const isLoadingAttractions = ref(false)
 const mapError = ref(false)
@@ -226,7 +228,8 @@ const loadCityInfo = async () => {
     const found = (res.data || []).find(d => d.name === city.value || d.name === city.value.replace(/市$/, ''))
     if (found) {
       cityInfo.value = found
-      if (found.imageUrl) {
+      // 已传入景点推荐图(img参数)时优先用它，不被城市封面覆盖
+      if (found.imageUrl && !heroImg) {
         cityImageOverride.value = found.imageUrl
       }
     }
