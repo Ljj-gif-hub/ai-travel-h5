@@ -181,6 +181,9 @@ if (!hasCity) {
 const cityImage = computed(() => {
   if (cityImageOverride.value) return cityImageOverride.value
   if (staticImageMap.value[city.value]) return staticImageMap.value[city.value]
+  // 兼容带"市"后缀名（行程页逆地理返回 三亚市），本地图库键是短名（三亚）
+  const short = city.value.replace(/市$/, '')
+  if (short !== city.value && staticImageMap.value[short]) return staticImageMap.value[short]
   return '/images/default-placeholder.png'
 })
 
@@ -220,7 +223,7 @@ const handleImageError = (type) => {
 const loadCityInfo = async () => {
   try {
     const res = await getHotDestinations()
-    const found = (res.data || []).find(d => d.name === city.value)
+    const found = (res.data || []).find(d => d.name === city.value || d.name === city.value.replace(/市$/, ''))
     if (found) {
       cityInfo.value = found
       if (found.imageUrl) {
@@ -442,7 +445,8 @@ const loadWeather = async () => {
   weatherFailed.value = false
   try {
     const res = await weatherApi.getWeather(city.value)
-    if (res.code === 0 && res.data) weather.value = res.data
+    // 空成功（城市名无效时后端返回 {forecast:[]}）也按失败降级，避免天气块空白
+    if (res.code === 0 && res.data?.temperature) weather.value = res.data
     else { weather.value = null; weatherFailed.value = true }
   } catch (e) {
     // 高德 Key 未配置/服务失败时后端返回 502，此处静默降级展示提示

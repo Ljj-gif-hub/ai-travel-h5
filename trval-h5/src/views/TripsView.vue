@@ -212,7 +212,19 @@ const changeRadius = async (radius) => {
 
 const relocate = async () => { await locateUser(); if (nearbyMapInstance.value && userLocation.value) { if (nearbyMapProvider.value === 'amap') nearbyMapInstance.value.setCenter([userLocation.value.lng, userLocation.value.lat]); else if (nearbyMapProvider.value === 'leaflet') nearbyMapInstance.value.setView([userLocation.value.lat, userLocation.value.lng], 14) }; await loadNearbyAttractions() }
 
-const goAttractionDetail = (attr) => { if (!attr?.name) return; router.push(`/destination-detail?city=${encodeURIComponent(attr.name)}`) }
+const goAttractionDetail = async (attr) => {
+  if (!attr?.name) return
+  // 周边景点卡：destination-detail 是"城市详情页"，须用真实城市名而非景点名。
+  // 有坐标时先逆地理取所在城市再进入（天气/图片/景点列表才正常），失败兜底用景点名
+  if (attr.lat && attr.lng) {
+    try {
+      const resp = await fetch(`/api/city/location?lat=${attr.lat}&lng=${attr.lng}`)
+      const json = await resp.json()
+      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city); return }
+    } catch (e) { /* 逆地理失败，走下方兜底 */ }
+  }
+  goDestinationDetail(attr.name)
+}
 
 const miniMapReady = ref(false); let miniMapInstance = null
 
@@ -300,8 +312,10 @@ const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = tru
 const goToAgentPlanner = () => { router.push('/agent-planner') }
 const onPlanSaved = () => { showAIChat.value = false; showToast(t('trips.planSaved')); loadTrips() }
 const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t('trips.deleteTrip'), message: t('trips.confirmDeleteMsg', { name: plan?.destination || t('trips.unknown') }) }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast(t('trips.deleted')); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
-const goDestinationDetail = (city) => { if (!city) return; router.push(`/destination-detail?city=${encodeURIComponent(city)}`) }
-const goAttraction = (name) => { if (!name) return; router.push(`/destination-detail?city=${encodeURIComponent(name)}`) }
+/** 城市名规范化：去掉后缀"市"，与热门目的地/本地图库短名一致（三亚市→三亚），保证天气/图片/景点都能命中 */
+const toShortCity = (name) => (name || '').replace(/市$/, '')
+
+const goDestinationDetail = (city) => { if (!city) return; router.push(`/destination-detail?city=${encodeURIComponent(toShortCity(city))}`) }
 const handleMoreAction = (action) => { showMoreMenu.value = false; showToast(t('trips.featureWip')) }
 
 /* ==================== 行程模板（新功能） ==================== */
@@ -514,7 +528,7 @@ onUnmounted(() => {
         <div v-for="guide in cityGuides" :key="guide.city" class="guide-section" v-show="guide.attractions.length > 0">
           <div class="sec-head"><span class="sec-title">{{ guide.city }}</span><span class="sec-guide-label" v-if="guide.label">{{ guide.label }}</span><span class="sec-more" @click="goDestinationDetail(guide.city)">{{ t('trips.guideLink') }}</span></div>
           <div class="h-scroll">
-            <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goAttraction(attr.name)">
+            <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goDestinationDetail(guide.city)">
               <div class="guide-card-img-wrap">
                 <img :src="getAttractionImage(guide.city, attr)" class="guide-card-img" loading="lazy" @error="e => onGuideImgError(e, guide.city)" />
                 <div class="guide-card-img-placeholder"><van-icon name="photo-o" size="24" color="rgba(139,92,246,0.3)" /></div>
