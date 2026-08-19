@@ -37,9 +37,10 @@ function Copy-Clean {
 # trval-h5 保留 public/images/landmarks（App 在用），剔除 demos/showcase（README 素材）
 # 【2026-08-18 加固】travel-java/.env 同样排除（注意：robocopy /XD 只排目录，.env 是文件必须放 /XF）：
 # 服务器已有自己的 .env，带本地版会覆盖服务器密钥（不一致则 agent 401/AI 失效），且避免密钥随包中转
+# 【2026-08-19 加固】trval-h5 的 .env(含百度AK)/.env.production 一并排除，密钥类文件永不进部署包
 Copy-Clean 'travel-java'   @('target','data','logs','uploads','docs','.git','.idea','.vscode','bundle') @('.env','*.log')
 Copy-Clean 'agent-service' @('.venv','data','.git','__pycache__','.idea','.vscode')   @('.env','*.log','*.log.err')
-Copy-Clean 'trval-h5'      @('node_modules','dist','dev-dist','demos','showcase','.git','.idea','.vscode') @('*.log')
+Copy-Clean 'trval-h5'      @('node_modules','dist','dev-dist','demos','showcase','.git','.idea','.vscode') @('*.log','.env','.env.production')
 
 # 服务器端部署脚本放到包根目录
 Copy-Item (Join-Path $RepoRoot 'deploy\deploy.sh') (Join-Path $bundle 'deploy.sh') -Force
