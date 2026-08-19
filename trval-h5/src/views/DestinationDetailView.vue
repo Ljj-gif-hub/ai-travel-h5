@@ -2,7 +2,7 @@
   <div class="detail-page">
     <div class="page-container">
       <van-nav-bar
-        :title="city"
+        :title="detailName || city"
         :left-text="t('common.back')"
         left-arrow
         safe-area-inset-top
@@ -15,7 +15,7 @@
             <img :src="getSafeImageUrl(cityImage)" :alt="city" class="city-img" loading="lazy" @error="handleImageError('city')" />
             <div class="city-img-mask"></div>
             <div class="city-info-overlay">
-              <h1 class="city-name">{{ sanitizeText(city) }}</h1>
+              <h1 class="city-name">{{ sanitizeText(detailName || city) }}</h1>
               <span class="city-province" v-if="cityInfo.province">{{ sanitizeText(cityInfo.province) }}</span>
             </div>
           </div>
@@ -162,6 +162,8 @@ const loadStaticImageMap = async () => {
 const city = ref(route.query.city || '')
 // 行程页景点卡传入的景点推荐图（覆盖城市封面，优先级最高）；无则用城市图
 const heroImg = route.query.img || ''
+// 行程页景点卡传入的景点名：有则标题/大标题显示景点名，数据仍按城市(city)走；无则显示城市名
+const detailName = route.query.name || ''
 const cityInfo = ref({})
 const cityImageOverride = ref(heroImg) // 后端素材库/热门目的地接口返回的封面图（优先级最高）
 const attractions = ref([])

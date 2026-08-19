@@ -216,16 +216,16 @@ const goAttractionDetail = async (attr) => {
   if (!attr?.name) return
   // 周边景点卡：destination-detail 是"城市详情页"，须用真实城市名而非景点名。
   // 有坐标时先逆地理取所在城市再进入（天气/图片/景点列表才正常），失败兜底用景点名；
-  // 图片沿用该景点的推荐图（不带则用城市图）
+  // 图片沿用该景点的推荐图（不带则用城市图），标题显示景点名
   const img = attr.imageUrl || ''
   if (attr.lat && attr.lng) {
     try {
       const resp = await fetch(`/api/city/location?lat=${attr.lat}&lng=${attr.lng}`)
       const json = await resp.json()
-      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city, img); return }
+      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city, img, attr.name); return }
     } catch (e) { /* 逆地理失败，走下方兜底 */ }
   }
-  goDestinationDetail(attr.name, img)
+  goDestinationDetail(attr.name, img, attr.name)
 }
 
 const miniMapReady = ref(false); let miniMapInstance = null
@@ -317,17 +317,19 @@ const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t
 /** 城市名规范化：去掉后缀"市"，与热门目的地/本地图库短名一致（三亚市→三亚），保证天气/图片/景点都能命中 */
 const toShortCity = (name) => (name || '').replace(/市$/, '')
 
-/** 进 destination-detail：city 必传（天气/景点/地图都按城市），img 可选（景点推荐图覆盖城市封面） */
-const goDestinationDetail = (city, img = '') => {
+/** 进 destination-detail：city 必传（天气/景点/地图都按城市），img 可选（景点推荐图覆盖城市封面），name 可选（标题显示景点名而非城市名） */
+const goDestinationDetail = (city, img = '', name = '') => {
   if (!city) return
-  const base = `city=${encodeURIComponent(toShortCity(city))}`
-  router.push(`/destination-detail?${base}${img ? `&img=${encodeURIComponent(img)}` : ''}`)
+  const params = [`city=${encodeURIComponent(toShortCity(city))}`]
+  if (img) params.push(`img=${encodeURIComponent(img)}`)
+  if (name) params.push(`name=${encodeURIComponent(name)}`)
+  router.push(`/destination-detail?${params.join('&')}`)
 }
 
-/** 景点推荐卡：复用卡片当前展示的景点图（POI实景→图库→城市兜底）进详情，而不是换成城市图 */
+/** 景点推荐卡：复用卡片当前展示的景点图（POI实景→图库→城市兜底）进详情，标题显示景点名 */
 const goGuideAttraction = (attr, city) => {
   if (!attr?.name || !city) return
-  goDestinationDetail(city, getAttractionImage(city, attr))
+  goDestinationDetail(city, getAttractionImage(city, attr), attr.name)
 }
 const handleMoreAction = (action) => { showMoreMenu.value = false; showToast(t('trips.featureWip')) }
 
