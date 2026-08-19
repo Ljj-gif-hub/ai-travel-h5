@@ -30,11 +30,38 @@ const loadCityImageMap = async () => {
     const resp = await fetch('/city-images.json')
     if (resp.ok) Object.assign(cityImageMap.value, await resp.json())
   } catch {}
+  // 合并景点图映射：推荐卡片引用的景点名（故宫/外滩等）能命中本地图，避免全部落到后端占位图
+  try {
+    const resp = await fetch('/attraction-images.json')
+    if (resp.ok) {
+      const attrMap = await resp.json()
+      for (const [k, v] of Object.entries(attrMap)) {
+        if (v && !cityImageMap.value[k]) cityImageMap.value[k] = v
+      }
+    }
+  } catch {}
 }
 
-/** 主渠道：后端 API；兜底：静态 JSON */
+/** 主渠道：静态 JSON（本地图库，同源必达）；兜底：后端 API */
 const getCityImage = (name) => {
-  return `/api/city/image?name=${encodeURIComponent(name)}`
+  return cityImageMap.value[name] || `/api/city/image?name=${encodeURIComponent(name)}`
+}
+
+/** 景点卡片取图：后端 POI 实景图 -> 本地静态图库 -> 城市图（guide.city 是已知城市，必能出图） */
+const getAttractionImage = (city, attr) => {
+  if (attr.imageUrl) return attr.imageUrl
+  const local = cityImageMap.value[attr.name]
+  if (local) return local
+  return getCityImage(city)
+}
+
+/** 景点图加载失败兜底：先换城市图（只换一次），再失败才隐藏让位占位图标 */
+const onGuideImgError = (e, city) => {
+  const img = e.target
+  if (!img) return
+  if (img.dataset.fb) { img.style.display = 'none'; return }
+  img.dataset.fb = '1'
+  img.src = getCityImage(city)
 }
 
 const carouselImages = ref([])
@@ -252,7 +279,7 @@ const loadCityGuides = async () => {
   }
   try {
     const results = await Promise.allSettled(cities.map(c => import('../api/destination').then(m => m.getCityAttractions(c))))
-    cityGuides.value = results.map((r, i) => ({ city: cities[i], label: cities[i] === currentCity ? t('trips.currentCityLabel') : t('trips.hotRecommendLabel'), attractions: (r.status === 'fulfilled' && r.value?.code === 0) ? (r.value.data || []).slice(0, 4).map(a => ({ name: a.name, address: a.address || '', rating: a.rating || null })) : [] })).filter(g => g.attractions.length > 0)
+    cityGuides.value = results.map((r, i) => ({ city: cities[i], label: cities[i] === currentCity ? t('trips.currentCityLabel') : t('trips.hotRecommendLabel'), attractions: (r.status === 'fulfilled' && r.value?.code === 0) ? (r.value.data || []).slice(0, 4).map(a => ({ name: a.name, address: a.address || '', rating: a.rating || null, imageUrl: a.imageUrl || '' })) : [] })).filter(g => g.attractions.length > 0)
   } catch (e) { cityGuides.value = [] }
 }
 
@@ -489,7 +516,7 @@ onUnmounted(() => {
           <div class="h-scroll">
             <div v-for="(attr, i) in guide.attractions" :key="i" class="guide-card" @click="goAttraction(attr.name)">
               <div class="guide-card-img-wrap">
-                <img :src="getCityImage(attr.name)" class="guide-card-img" loading="lazy" @error="e => e.target.style.display='none'" />
+                <img :src="getAttractionImage(guide.city, attr)" class="guide-card-img" loading="lazy" @error="e => onGuideImgError(e, guide.city)" />
                 <div class="guide-card-img-placeholder"><van-icon name="photo-o" size="24" color="rgba(139,92,246,0.3)" /></div>
               </div>
               <div class="guide-card-body"><div class="guide-card-name">{{ attr.name }}</div><div class="guide-card-meta" v-if="attr.rating">⭐ {{ Number(attr.rating).toFixed(1) }}</div></div>

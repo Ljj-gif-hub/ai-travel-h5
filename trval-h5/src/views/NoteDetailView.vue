@@ -6,6 +6,7 @@ import { showToast } from 'vant';
 import { getToken } from '../utils/auth';
 import { filterXss } from '../utils/security';
 import { noteApi, commentApi, uploadApi, followApi } from '../api';
+import { avatarUrl } from '../utils/avatar';
 import LazyImage from '../components/LazyImage.vue';
 import SkeletonCard from '../components/skeleton/SkeletonCard.vue';
 import ReportSheet from '../components/ReportSheet.vue';
@@ -329,7 +330,7 @@ onMounted(() => {
     <div class="custom-nav-bar" :style="{ paddingTop: 'env(safe-area-inset-top, 0px)' }">
       <div class="nav-left" @click="goBack"><van-icon name="arrow-left" size="22" color="#1f2937" /></div>
       <div class="nav-center">
-        <van-image round width="30" height="30" :src="note.authorAvatar || 'https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png'" fit="cover" class="nav-avatar" />
+        <van-image round width="30" height="30" :src="note.authorAvatar || avatarUrl('note-' + (note.userId || 'an'), note.authorName)" fit="cover" class="nav-avatar" />
         <span class="nav-username">{{ note.authorName || t('note.anonymousUser') }}</span>
       </div>
       <div class="nav-right">
@@ -370,7 +371,7 @@ onMounted(() => {
         <div v-if="comments.length === 0" class="no-comments">{{ t('note.noComments') }}</div>
         <template v-for="g in groupedComments" :key="g.parent.id">
           <div class="comment-item">
-            <van-image round width="28px" height="28px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
+            <van-image round width="28px" height="28px" :src="g.parent.authorAvatar || avatarUrl(String(g.parent.userId))" fit="cover" class="comment-avatar" />
             <div class="comment-body">
               <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
               <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
@@ -382,7 +383,7 @@ onMounted(() => {
           </div>
           <template v-if="g.replies.length">
             <div v-for="(r, i) in g.replies" :key="r.id" v-show="i < 2 || expandedGroups.has(g.parent.id)" class="comment-item is-reply">
-              <van-image round width="20px" height="20px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
+              <van-image round width="20px" height="20px" :src="r.authorAvatar || avatarUrl(String(r.userId))" fit="cover" class="comment-avatar" />
               <div class="comment-body">
                 <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
                 <div class="comment-content" v-if="withMention(r).mention || withMention(r).content">
@@ -408,19 +409,19 @@ onMounted(() => {
       <button type="button" class="comment-oval-btn" @click="openDrawer()">{{ t('note.writeComment') }}</button>
       <div class="bottom-actions">
         <div class="action-item" :class="{ liked: note.isLiked }" @click="handleLike">
-          <van-icon :name="note.isLiked ? 'good-job' : 'good-job-o'" size="24" /><span>{{ note.likes || 0 }}</span>
+          <van-icon :name="note.isLiked ? 'good-job' : 'good-job-o'" size="20" /><span>{{ note.likes || 0 }}</span>
         </div>
         <div class="action-item" @click="showCommentsDrawer = true">
-          <van-icon name="chat-o" size="24" /><span>{{ note.comments || 0 }}</span>
+          <van-icon name="chat-o" size="20" /><span>{{ note.comments || 0 }}</span>
         </div>
         <div class="action-item" @click="showShareSheet = true">
-          <van-icon name="share-o" size="24" /><span>{{ t('note.share') }}</span>
+          <van-icon name="share-o" size="20" /><span>{{ t('note.share') }}</span>
         </div>
         <div class="action-item" :class="{ hearted: isHearted }" @click="toggleHeart">
-          <van-icon :name="isHearted ? 'like' : 'like-o'" size="24" /><span>{{ heartCount || t('note.like') }}</span>
+          <van-icon :name="isHearted ? 'like' : 'like-o'" size="20" /><span>{{ heartCount || t('note.like') }}</span>
         </div>
         <div class="action-item" @click="openCollection">
-          <van-icon name="label-o" size="24" /><span>{{ t('collection.saveToCollection') }}</span>
+          <van-icon name="label-o" size="20" /><span>{{ t('collection.saveToCollection') }}</span>
         </div>
       </div>
     </div>
@@ -436,7 +437,7 @@ onMounted(() => {
           <div v-if="comments.length === 0" class="no-comments">{{ t('note.noComments') }}</div>
           <template v-for="g in groupedComments" :key="'d'+g.parent.id">
             <div class="comment-item">
-              <van-image round width="28px" height="28px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
+              <van-image round width="28px" height="28px" :src="g.parent.authorAvatar || avatarUrl(String(g.parent.userId))" fit="cover" class="comment-avatar" />
               <div class="comment-body">
                 <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ g.parent.userId }}</span><span class="comment-date">{{ g.parent.date }}</span></div>
                 <div class="comment-content" v-if="g.parent.content">{{ g.parent.content }}</div>
@@ -448,7 +449,7 @@ onMounted(() => {
             </div>
             <template v-if="g.replies.length">
               <div v-for="(r, i) in g.replies" :key="r.id" v-show="i < 2 || expandedGroups.has(g.parent.id)" class="comment-item is-reply">
-                <van-image round width="20px" height="20px" src="https://img.zcool.cn/community/01e5e35c5c5c5ea80121985c5c5c5c.png" fit="cover" class="comment-avatar" />
+                <van-image round width="20px" height="20px" :src="r.authorAvatar || avatarUrl(String(r.userId))" fit="cover" class="comment-avatar" />
                 <div class="comment-body">
                   <div class="comment-top"><span class="comment-user">{{ t('note.user') }}{{ r.userId }}</span><span class="comment-date">{{ r.date }}</span></div>
                   <div class="comment-content" v-if="withMention(r).mention || withMention(r).content">
@@ -564,10 +565,11 @@ onMounted(() => {
 
 /* 底部操作栏 — iOS 透光磨砂玻璃 */
 .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.4) 100%),rgba(255,255,255,0.4); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border-top: 0.5px solid rgba(0,0,0,0.06); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5); z-index: 500; }
-.comment-oval-btn { padding: 6px 42px; border: 1px solid rgba(0,0,0,0.08); border-radius: 24px; background: rgba(255,255,255,0.5); color: #6b7280; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-right: 16px; }
+.comment-oval-btn { padding: 6px 20px; border: 1px solid rgba(0,0,0,0.08); border-radius: 24px; background: rgba(255,255,255,0.5); color: #6b7280; font-size: 13px; cursor: pointer; transition: all 0.2s; margin-right: 14px; flex-shrink: 0; white-space: nowrap; }
 .comment-oval-btn:active { background: #f3f4f6; transform: scale(0.97); }
-.bottom-actions { display: flex; align-items: center; gap: 16px; }
-.bottom-actions .action-item { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #6b7280; cursor: pointer; min-width: 36px; }
+.bottom-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bottom-actions .action-item { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 10px; color: #6b7280; cursor: pointer; min-width: 30px; line-height: 1.3; }
+.bottom-actions .action-item span { white-space: nowrap; }
 .bottom-actions .action-item.liked { color: #e74c3c; }
 .bottom-actions .action-item.hearted { color: #ff2d55; }
 

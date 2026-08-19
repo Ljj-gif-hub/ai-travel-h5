@@ -92,7 +92,10 @@ onBeforeUnmount(() => {
 })
 
 const computedSrc = () => {
-  if (!inView.value) return '' // 未进视口：仅显示占位背景
+  // 未进视口：返回 undefined 让 Vue 移除 src 属性。
+  // 千万不能用 ''：Chrome 对 <img src=""> 会立即触发 error 事件，
+  // 把 failed 提前置位 -> 进视口后直接显示错误占位图，真实图片请求永远发不出去
+  if (!inView.value) return undefined
   if (failed.value) return ERROR_SRC
   return props.src
 }
