@@ -22,6 +22,8 @@ public class Refund {
     public static final String STATUS_PROCESSING = "processing";
     public static final String STATUS_REFUNDED = "refunded";
     public static final String STATUS_REJECTED = "rejected";
+    /** 【REFUND-4 修复】补偿任务重试超限后置为失败，等待人工介入（status 列为 varchar(20)，无需迁移） */
+    public static final String STATUS_FAILED = "failed";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

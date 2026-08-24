@@ -562,8 +562,11 @@ const initAmapMap = async (centerCity) => {
  */
 const addCityLabelAmap = (city, center) => {
   if (!window.AMap || !mapInstance) return
+  // MAPXSS 修复：city 来自 route.query（URL 可控），AMap.Text 的 text 按 HTML 渲染，
+  // 含 <img onerror> 等标签可注入脚本，必须转义后再传入（与 Leaflet 分支一致）
+  const safeCity = escapeHtml(city || t('map.destination'))
   const label = new window.AMap.Text({
-    text: city || t('map.destination'),
+    text: safeCity,
     position: [center.lng, center.lat],
     offset: [0, -40],
     style: {
@@ -968,7 +971,7 @@ const goCalendar = () => {
     return
   }
   // CAL-1 修复：传 savedPlanId 到日历页，防止组件卸载 resetState 后日历页读到 null planData
-  router.push({ path: '/trip-calendar', query: { planId: store.state.savedPlanId || '' } })
+  router.push({ path: '/trip-calendar', query: { savedPlanId: store.state.savedPlanId || '' } })
 }
 
 /* 离线地图开关（B5）：强制 Leaflet + 缓存 OSM 瓦片 */
@@ -1107,8 +1110,10 @@ const loadSavedPlan = async (planId) => {
       store.state.drawerState = 'mid'
       store.setSavedPlanId(planId)
       showSuccessToast(t('map.savedPlanLoaded'))
-      initMap(data.destination || '北京')
-      loadMapMarkers(data.destination || '北京')
+      // MAP-1 修复：loadMapMarkers 必须在 initMap 完成后执行，否则 mapInstance 尚为 null 时地标/圆点永不显示
+      initMap(data.destination || '北京').then(() => {
+        loadMapMarkers(data.destination || '北京')
+      })
     } else {
       showToast(t('map.loadFailedRegen'))
       startGeneration()

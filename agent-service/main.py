@@ -429,16 +429,23 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
     async def event_generator():
         stream_start = time.monotonic()
         record = _current_request.get()
-        # PY-3 修复：后台心跳任务，每 15s 发送 ping 事件防止 nginx proxy_read_timeout(60s) 断流
+        # PY-3 修复：心跳与 planner 事件交错等待。原实现心跳任务只往队列塞数据，
+        # 但生成器挂在 async for planner.run() 上不 yield，LLM 静默期心跳发不出去；
+        # 改为后台 pump 拉取 planner 事件入队，主循环 wait_for 超时 15s 即发心跳。
         import asyncio as _aio
-        ping_queue: _aio.Queue = _aio.Queue()
+        event_queue: _aio.Queue = _aio.Queue()
+        pump_task = None
 
-        async def _heartbeat():
-            while True:
-                await _aio.sleep(15)
-                await ping_queue.put(": heartbeat\n\n")
+        async def _pump_planner():
+            # 结束放 None 哨兵；异常也进队列，主循环 re-raise 走统一错误处理
+            try:
+                async for ev in planner.run():
+                    await event_queue.put(ev)
+            except Exception as exc:  # noqa: BLE001
+                await event_queue.put(exc)
+                return
+            await event_queue.put(None)
 
-        heartbeat_task = _aio.create_task(_heartbeat())
         try:
             # 立即发送连接确认，确保浏览器收到流式响应头
             yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
@@ -459,12 +466,20 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
                 debug=os.getenv("DEBUG", "").lower() == "true",
                 demo=demo_mode,
             )
+            pump_task = _aio.create_task(_pump_planner())
             count = 0
             final_result = None
-            async for event in planner.run():
-                # 先排空心跳（防止 nginx 超时断流）
-                while not ping_queue.empty():
-                    yield await ping_queue.get()
+            while True:
+                try:
+                    # 最多等 15s：超时说明 planner 处于静默期，先发心跳保持连接
+                    event = await _aio.wait_for(event_queue.get(), timeout=15)
+                except _aio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+                if isinstance(event, Exception):
+                    raise event
+                if event is None:
+                    break  # 规划流正常结束
                 count += 1
                 # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
                 if count % 2 == 0 and await request.is_disconnected():
@@ -482,7 +497,8 @@ async def generate_plan_stream(req: TravelRequest, request: Request):
             err = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {err}\n\n"
         finally:
-            heartbeat_task.cancel()
+            if pump_task is not None:
+                pump_task.cancel()
             # 用量收尾：用真实流时长刷新请求记录（幂等）
             if record is not None:
                 usage_tracker.finish_request(record, time.monotonic() - stream_start)
@@ -538,16 +554,22 @@ async def generate_plan_stream_raw(request: Request):
     async def raw_generator():
         stream_start = time.monotonic()
         record = _current_request.get()
-        # PY-3 修复：后台心跳任务，每 15s 发送 ping 事件防止 nginx proxy_read_timeout(60s) 断流
+        # PY-3 修复：心跳与 planner 事件交错等待（同 /plan/stream：后台 pump 拉事件入队，
+        # 主循环 wait_for 超时 15s 即发心跳，LLM 静默期心跳不再发不出去）
         import asyncio as _aio
-        ping_queue: _aio.Queue = _aio.Queue()
+        event_queue: _aio.Queue = _aio.Queue()
+        pump_task = None
 
-        async def _heartbeat():
-            while True:
-                await _aio.sleep(15)
-                await ping_queue.put(": heartbeat\n\n")
+        async def _pump_planner():
+            # 结束放 None 哨兵；异常也进队列，主循环 re-raise 走统一错误处理
+            try:
+                async for ev in planner.run():
+                    await event_queue.put(ev)
+            except Exception as exc:  # noqa: BLE001
+                await event_queue.put(exc)
+                return
+            await event_queue.put(None)
 
-        heartbeat_task = _aio.create_task(_heartbeat())
         try:
             yield f"data: {json.dumps(AgentEvent(event_type='connected', message='Agent 已连接').model_dump(), ensure_ascii=False)}\n\n"
             # 缓存命中：跳过 LLM 直接产出 complete 事件（附 cached: true 标记）
@@ -563,12 +585,20 @@ async def generate_plan_stream_raw(request: Request):
                 yield f"data: {json.dumps(done.model_dump(), ensure_ascii=False)}\n\n"
                 return
             planner = TravelAgentPlanner(data, demo=demo_mode)
+            pump_task = _aio.create_task(_pump_planner())
             count = 0
             final_result = None
-            async for event in planner.run():
-                # 先排空心跳（防止 nginx 超时断流）
-                while not ping_queue.empty():
-                    yield await ping_queue.get()
+            while True:
+                try:
+                    # 最多等 15s：超时说明 planner 处于静默期，先发心跳保持连接
+                    event = await _aio.wait_for(event_queue.get(), timeout=15)
+                except _aio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+                if isinstance(event, Exception):
+                    raise event
+                if event is None:
+                    break  # 规划流正常结束
                 count += 1
                 # B4：周期性探测客户端断连（每 2 个事件一次），断连立即停止 LLM 流程
                 if count % 2 == 0 and await request.is_disconnected():
@@ -587,7 +617,8 @@ async def generate_plan_stream_raw(request: Request):
             error_json = json.dumps(AgentEvent(event_type="error", message="服务异常，请稍后重试").model_dump(), ensure_ascii=False)
             yield f"data: {error_json}\n\n"
         finally:
-            heartbeat_task.cancel()
+            if pump_task is not None:
+                pump_task.cancel()
             # 用量收尾：用真实流时长刷新请求记录（幂等）
             if record is not None:
                 usage_tracker.finish_request(record, time.monotonic() - stream_start)

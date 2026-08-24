@@ -31,6 +31,8 @@ public class SecurityConfig implements WebMvcConfigurer {
                         "/api/travel/plan/stream",
                         "/api/travel/plan/structured",
                         "/api/travel/chat",
+                        "/api/travel/chat/stream",
+                        "/api/travel/recommend",
                         "/api/travel/planner/**",
                         "/api/travel/trip/**",
                         "/api/trip/ai/**");

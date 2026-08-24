@@ -25,7 +25,7 @@ spring:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    password: ${RABBITMQ_PASSWORD:}
     listener:
       simple:
         # 生产环境开启消费者（确保 MQ 已就绪，或 RABBITMQ 不可用时不致命）

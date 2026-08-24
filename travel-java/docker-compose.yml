@@ -15,7 +15,8 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-travel_plans}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travel_root_2026}
+      # 凭证必填（fail-closed）：不显式设置则拒绝启动，杜绝公开默认口令
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请设置 MYSQL_ROOT_PASSWORD}
       TZ: Asia/Shanghai
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
@@ -23,7 +24,7 @@ services:
     ports:
       - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-travel_root_2026}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -32,13 +33,14 @@ services:
     image: redis:7-alpine
     container_name: travel-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    # requirepass 必填：Redis 承载限流计数与刷新令牌，无口令则宿主机任意进程/SSRF 可达即失守
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -48,8 +50,8 @@ services:
     container_name: travel-rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?请设置 RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?请设置 RABBITMQ_PASSWORD}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
@@ -102,9 +104,12 @@ services:
       DB_PORT: 3306
       DB_NAME: ${MYSQL_DATABASE:-travel_plans}
       DB_USERNAME: root
-      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-travel_root_2026}
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请设置 MYSQL_ROOT_PASSWORD}
       REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}
       RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USER:?请设置 RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?请设置 RABBITMQ_PASSWORD}
       # 【RATE-1 修复】信任 nginx 注入的 X-Real-IP（仅公网走 nginx:80 时安全；3200 端口只绑 127.0.0.1，
       # 无直连入口，X-Real-IP 不会被伪造）。不设此项则全站合并为 nginx 容器 IP 一个限流桶，高峰期假性 429。
       RATE_LIMIT_TRUST_PROXY: "true"

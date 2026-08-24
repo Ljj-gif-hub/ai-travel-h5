@@ -3,7 +3,7 @@ Pydantic 数据模型 — 定义 Agent 输入/输出的结构化 Schema
 """
 from __future__ import annotations
 
-from typing import List, Optional, Any
+from typing import Annotated, List, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -11,16 +11,17 @@ from pydantic import BaseModel, Field
 
 class TravelRequest(BaseModel):
     """用户旅行规划请求"""
-    destination: str = Field(..., description="目的地城市", examples=["成都"])
+    destination: str = Field(..., max_length=50, description="目的地城市", examples=["成都"])
     origin: str = Field(default="深圳", description="出发地", examples=["深圳"])
     days: int = Field(default=3, ge=1, le=14, description="出行天数")
     people: int = Field(default=2, ge=1, le=20, description="出行人数")
-    budget: int = Field(default=5000, description="人均预算（元）", examples=[5000])
+    budget: int = Field(default=5000, ge=1, description="人均预算（元）", examples=[5000])
     companion: str = Field(default="独行", description="同行人群", examples=["情侣", "亲子", "朋友", "独行"])
-    styles: List[str] = Field(default_factory=list, description="旅行偏好标签", examples=[["美食", "人文", "自然风光"]])
+    styles: List[str] = Field(default_factory=list, max_length=20, description="旅行偏好标签", examples=[["美食", "人文", "自然风光"]])
     hotel_level: str = Field(default="舒适型", description="酒店档次", examples=["经济型", "舒适型", "豪华型"])
     pace: str = Field(default="适中", description="行程节奏", examples=["轻松", "适中", "紧凑"])
-    months: List[int] = Field(default_factory=list, description="出行月份（1-12）", examples=[[4, 5]])
+    # 月份元素约束：ge/le 需落在元素类型上（List[int] 的 Field 上加 ge/le 会作用到整个列表 → TypeError）
+    months: List[Annotated[int, Field(ge=1, le=12)]] = Field(default_factory=list, description="出行月份（1-12）", examples=[[4, 5]])
     schedule: str = Field(default="", description="作息偏好（如早起/夜猫子）")
     cabin: str = Field(default="", description="航班舱位偏好（如经济舱/商务舱）")
     # ---- 记忆层标识（可选）：用于长期用户偏好 + 短期会话上下文 ----

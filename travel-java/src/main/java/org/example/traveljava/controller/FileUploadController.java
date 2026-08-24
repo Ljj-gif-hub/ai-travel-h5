@@ -132,7 +132,10 @@ public class FileUploadController {
             String newName = UUID.randomUUID().toString() + storedExt;
 
             Path targetPath = uploadDir.resolve(newName);
-            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+            // CTRL-5 修复：try-with-resources 关闭 MultipartFile 输入流，避免句柄泄漏
+            try (var in = file.getInputStream()) {
+                Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
 
             String fileUrl = "/uploads/" + newName;
 

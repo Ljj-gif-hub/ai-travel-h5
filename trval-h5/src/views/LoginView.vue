@@ -13,6 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { showToast, showLoadingToast, closeToast, showDialog } from 'vant'
 import { setToken, setRefreshToken } from '../utils/auth'
 import { authApi } from '../api'
+import { useTripStore } from '../stores/trip'
 import {
   setCurrentUser, initAccountData, accountExists,
   getAccountData, setAccountData,
@@ -21,6 +22,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const tripStore = useTripStore()
 
 const activeTab = ref(route.meta?.initialTab === 'register' ? 'register' : 'login')
 const switchTab = (tab) => { activeTab.value = tab }
@@ -94,6 +96,8 @@ const handleLogin = async () => {
   try {
     const response = await authApi.login({ username: loginForm.username.trim(), password: loginForm.password })
     if (response.code === 0) {
+      // BUGID ACCT 修复：换账号登录时清空行程 store 残留（token 过期被踢回登录页后 trip 状态未清）
+      tripStore.resetState()
       const data = response.data; setToken(data.token)
       // 【Token 自动刷新】保存长寿命 refreshToken（7 天），401 时 api 层自动旋转刷新
       if (data.refreshToken) setRefreshToken(data.refreshToken)

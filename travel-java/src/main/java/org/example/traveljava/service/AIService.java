@@ -106,6 +106,16 @@ public class AIService {
      * 用于自然语言行程生成
      */
     public void streamChatText(String userPrompt, java.util.function.Consumer<String> onChunk) {
+        streamChatText(userPrompt, onChunk, null);
+    }
+
+    /**
+     * 流式对话（带任务取消检测）。
+     * 【SSE-4 修复】传入 taskId 后，每收到一个数据块前先 checkTaskCancel——
+     * 客户端断开（onCompletion/onTimeout 触发 cancelTask）时抛 TaskCancelledException 中止拉取，
+     * 避免断连后 .block(120s) 期间继续烧 DeepSeek token。taskId 为 null 时退化为原行为。
+     */
+    public void streamChatText(String userPrompt, java.util.function.Consumer<String> onChunk, String taskId) {
         // 声明在 try 外，catch 分支也能读取是否已产生内容
         final int[] chunkCount = {0};
         final StringBuilder fullContent = new StringBuilder();
@@ -125,6 +135,8 @@ public class AIService {
                 .retrieve()
                 .bodyToFlux(String.class)
                 .doOnNext(line -> {
+                    // SSE-4 修复：每块前检测取消（客户端断开），命中则中止 block，停止继续拉取
+                    checkTaskCancel(taskId);
                     String t = line.trim();
                     if (t.isEmpty()) return;
                     // 尝试直接解析整行 JSON（有些供应商不包 SSE data: 前缀）
@@ -146,6 +158,9 @@ public class AIService {
                 onChunk.accept("\n\n> ⚠️ AI返回为空，使用预设行程：\n\n");
                 onChunk.accept(buildFallbackText(userPrompt));
             }
+        } catch (TaskCancelledException e) {
+            // SSE-4 修复：任务被取消/客户端断开，直接结束，不推送兜底文本
+            log.info("流式文本生成被取消: taskId={}", taskId);
         } catch (Exception e) {
             log.error("流式文本生成失败: {}", e.getMessage());
             // 已产生内容则保留已推送部分，避免"半成品+回退文本"拼接

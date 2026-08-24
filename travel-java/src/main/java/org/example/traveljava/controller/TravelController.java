@@ -108,7 +108,10 @@ public class TravelController {
         // L-CTRL-6：登记任务归属，/planner/stop 校验操作者
         String taskId = sseService.registerNewTaskOwner(userId);
 
-        emitter.onCompletion(() -> log.info("进度SSE完成: {}", dest));
+        // SSE-2 修复：onCompletion 也 cancelTask —— 客户端断开（连接关闭）与超时/异常同等对待，
+        // 防止用户关页后后台多阶段 AI 生成继续烧 token；正常完成路径由 streamPlannerWithStages 的
+        // finally removeTask 兜底清理取消标志，不会误伤已完成任务
+        emitter.onCompletion(() -> { aiService.cancelTask(taskId); log.info("进度SSE完成: {}", dest); });
         emitter.onTimeout(() -> { aiService.cancelTask(taskId); log.warn("进度SSE超时: {}", dest); });
         emitter.onError(e -> { aiService.cancelTask(taskId); log.error("进度SSE异常: {}", e.getMessage()); });
 
@@ -218,7 +221,10 @@ public class TravelController {
         log.info("单端点SSE: dest={}, days={}, taskId={}", destination, days, taskId);
 
         sseService.registerEmitter(taskId, emitter);
-        emitter.onCompletion(() -> { sseService.removeEmitter(taskId); log.info("SSE完成:{}", taskId); });
+        // SSE-4 修复：onCompletion 也 cancelTask —— 客户端断开立即标记取消，
+        // streamChatText 在下一块前检测到后中止剩余 AI 拉取；startSingleEndpointGeneration 的
+        // finally removeTask 会清理取消标志
+        emitter.onCompletion(() -> { sseService.removeEmitter(taskId); aiService.cancelTask(taskId); log.info("SSE完成:{}", taskId); });
         emitter.onTimeout(() -> { sseService.removeEmitter(taskId); aiService.cancelTask(taskId); });
         emitter.onError(e -> { sseService.removeEmitter(taskId); aiService.cancelTask(taskId); });
 
@@ -307,9 +313,12 @@ public class TravelController {
 
         SseEmitter emitter = new SseEmitter(600_000L);
 
+        // SSE-2 修复：onCompletion 也 cancelTask —— 客户端断开时后台多阶段生成立即停止，
+        // 不再等 onTimeout/onError；正常完成路径由 startStagedGeneration 的 finally removeTask 兜底清理
         emitter.onCompletion(() -> {
             sseService.removeEmitter(taskId);
             sseService.removePending(taskId);
+            aiService.cancelTask(taskId);
             log.info("SSE完成: taskId={}", taskId);
         });
         emitter.onTimeout(() -> {

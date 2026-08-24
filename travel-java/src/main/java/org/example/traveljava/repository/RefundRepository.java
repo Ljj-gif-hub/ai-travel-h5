@@ -27,6 +27,9 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     /** 管理端：按状态过滤 + 分页 */
     Page<Refund> findByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 
+    /** 【REFUND-4 修复】补偿任务：扫描卡在指定状态且超过指定时间未更新的退款单 */
+    List<Refund> findByStatusAndUpdatedAtBefore(String status, java.time.LocalDateTime time);
+
     /** 管理端：全量分页 */
     Page<Refund> findAllByOrderByCreatedAtDesc(Pageable pageable);
 

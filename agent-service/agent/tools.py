@@ -322,6 +322,16 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
                 duration = int(path.get("duration", 0))
             else:
                 distance, duration = 0, 0
+
+            # PY-2 修复：骑行分支此前漏 return，函数落到末尾隐式返回 None → 骑行模式永远输出 "None"
+            return json.dumps({
+                "origin": origin,
+                "destination": destination,
+                "mode": mode,
+                "distance_km": round(distance / 1000, 1),
+                "duration_min": round(duration / 60),
+                "source": "高德地图实时数据",
+            }, ensure_ascii=False)
         elif route_data.get("status") == "1":
             route = route_data.get("route", {})
             if amap_mode == "driving" and route.get("paths"):

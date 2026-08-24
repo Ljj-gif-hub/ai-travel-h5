@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * 行程分享服务
- * - 创建分享：校验属主 → 生成 8 位短码 → 落库 ShareRecord
+ * - 创建分享：校验属主 → 生成 16 位短码 → 落库 ShareRecord
  * - 公开读取：短码 → 只读返回行程摘要（免登录，配合 SavedTravelPlanService.getPlanPublic）
  */
 @Service
@@ -62,12 +62,16 @@ public class ShareService {
         return savedTravelPlanService.getPlanPublic(record.getPlanId());
     }
 
-    /** 生成 8 位 base62 短码（UUID 哈希），带唯一性检查 */
+    /** 生成 16 位 base62 短码（UUID 哈希，约 95 bit 熵，防遍历枚举），带唯一性检查 */
     private String generateToken() {
         for (int attempt = 0; attempt < 10; attempt++) {
             long l = UUID.randomUUID().getMostSignificantBits() & 0x7fffffffffffffffL;
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 8; i++) {
+            for (int i = 0; i < 16; i++) {
+                // 63 bit 仅够 ~10 个 base62 字符，耗尽后重新取 UUID 位，避免剩余位全为 'A' 导致弱 token
+                if (l == 0) {
+                    l = UUID.randomUUID().getMostSignificantBits() & 0x7fffffffffffffffL;
+                }
                 sb.append(TOKEN_CHARS.charAt((int) (l % 62)));
                 l /= 62;
             }

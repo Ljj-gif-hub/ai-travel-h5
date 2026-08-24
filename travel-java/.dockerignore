@@ -1,0 +1,22 @@
+# 密钥与运行数据绝不进构建上下文
+.env
+.env.*
+!.env.example
+data/
+logs/
+uploads/
+
+# 构建产物
+target/
+*.class
+
+# VCS / 编辑器
+.git
+.gitignore
+.idea
+.vscode
+
+# 本地部署脚本与文档
+deploy/
+docs/
+*.md

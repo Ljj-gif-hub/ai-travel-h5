@@ -112,8 +112,9 @@ public class UserController {
         } catch (AuthUtils.AuthException e) {
             throw e; // let GlobalExceptionHandler return 401
         } catch (Exception e) {
+            // CTRL-2 修复：退出失败不再伪装成功，记录日志并返回失败（token 未进黑名单可能被继续使用）
             log.error("退出登录异常", e);
-            return Result.ok("退出成功");
+            return Result.fail("退出失败，请稍后重试");
         }
     }
 

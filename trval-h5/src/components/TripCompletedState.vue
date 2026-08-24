@@ -105,7 +105,8 @@ import MarkdownIt from 'markdown-it'
 
 const { t } = useI18n()
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
+// MAPXSS 修复：linkify 生成的 <a href> 不做 scheme 过滤，仅放行 http/https/mailto 防 javascript: 注入
+const md = new MarkdownIt({ html: false, linkify: true, typographer: true, validateLink: (url) => /^(https?:|mailto:)/i.test(url) })
 function renderMd(t) { return t ? md.render(t) : '' }
 
 const props = defineProps({

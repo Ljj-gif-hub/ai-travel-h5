@@ -17,5 +17,9 @@ RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
 USER appuser
 
 EXPOSE 3201
+# 健康检查：每 30s 探测健康接口（该接口免鉴权）。slim 镜像无 curl/wget，用 python -c；
+# urlopen 对非 2xx 抛异常 → 退出码非 0 即判定不健康。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:3201/api/agent/health', timeout=4)"
 # 启动参数：GUNICORN_WORKERS=N 可切换 gunicorn 多 worker（默认单进程）
 CMD ["python", "main.py"]

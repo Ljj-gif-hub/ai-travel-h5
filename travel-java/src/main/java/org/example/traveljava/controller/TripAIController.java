@@ -187,6 +187,12 @@ public class TripAIController {
     public SseEmitter tripChatStream(@RequestHeader("Authorization") String authHeader,
                                       @RequestBody Map<String, Object> body) {
         AuthUtils.requireUserId(authHeader, jwtUtil);
+        // CTRL-1 修复：body 为 null 先判空，避免 NPE 500（SSE 端点返回错误事件）
+        if (body == null) {
+            SseEmitter err = new SseEmitter();
+            try { err.send(SseEmitter.event().data("❌ 请求体不能为空")); err.complete(); } catch (Exception ignore) {}
+            return err;
+        }
         String question = (String) body.getOrDefault("question", "");
         String context = (String) body.getOrDefault("tripContext", "");
 
@@ -196,7 +202,8 @@ public class TripAIController {
             ChatMessage.builder().role("user").content(question).build()
         );
 
-        aiService.streamChat(messages)
+        // SSE-3 修复：保存 Disposable，客户端断开/超时/异常时 dispose 上游，停止从 DeepSeek 拉取防白烧 token
+        reactor.core.Disposable disposable = aiService.streamChat(messages)
             .subscribe(
                 chunk -> {
                     try { emitter.send(SseEmitter.event().data(chunk)); } catch (Exception e) {}
@@ -207,6 +214,10 @@ public class TripAIController {
                 },
                 () -> { try { emitter.complete(); } catch (Exception e) {} }
             );
+
+        emitter.onCompletion(() -> { if (!disposable.isDisposed()) disposable.dispose(); });
+        emitter.onTimeout(() -> { if (!disposable.isDisposed()) disposable.dispose(); });
+        emitter.onError(e -> { if (!disposable.isDisposed()) disposable.dispose(); });
 
         return emitter;
     }

@@ -1,5 +1,10 @@
 ﻿.env
+.env.*
+!.env.example
 __pycache__/
 .venv/
 data/
+*.log
 *.log.err
+# 依赖审计产物
+pipaudit.json

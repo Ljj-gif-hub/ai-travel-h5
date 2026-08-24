@@ -2,7 +2,8 @@
 规划结果缓存 — 按请求参数 hash 缓存最终行程方案
 
 设计：
-  - key：destination/days/budget/styles/companion/user_id/ui_lang 归一化后
+  - key：destination/origin/days/people/budget/styles/companion/hotel_level/pace/
+    months/schedule/cabin/adjustment/user_id/ui_lang 归一化后
     JSON sort_keys 序列化 → sha256 取前 16 位
   - TTL 1 小时、容量上限 100 条（LRU，超出淘汰最旧）
   - Demo 模式 / user_id 为 None 时由调用方跳过缓存（避免跨用户混用）
@@ -44,12 +45,21 @@ class PlanResultCache:
         返回值恒为 16 位 hex 字符串。
         """
         styles = sorted([str(s) for s in (req.get("styles") or [])])
+        months = sorted([str(m) for m in (req.get("months") or [])])
         params = {
             "destination": str(req.get("destination") or "").strip(),
+            "origin": str(req.get("origin") or "").strip(),
             "days": str(req.get("days") or ""),
+            "people": str(req.get("people") or ""),
             "budget": str(req.get("budget") or ""),
             "styles": styles,
             "companion": str(req.get("companion") or ""),
+            "hotel_level": str(req.get("hotel_level") or ""),
+            "pace": str(req.get("pace") or ""),
+            "months": months,
+            "schedule": str(req.get("schedule") or ""),
+            "cabin": str(req.get("cabin") or ""),
+            "adjustment": str(req.get("adjustment") or "").strip(),
             "user_id": str(req.get("user_id") or ""),
             # ui_lang 也参与 key：同一参数下不同界面语言的缓存不能混用
             "ui_lang": str(req.get("ui_lang") or "zh"),

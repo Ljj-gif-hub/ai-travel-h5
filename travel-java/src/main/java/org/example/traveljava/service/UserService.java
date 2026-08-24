@@ -7,10 +7,12 @@ import org.example.traveljava.util.TokenBlacklist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,14 +26,23 @@ public class UserService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final TokenBlacklist tokenBlacklist;
     private final RefreshTokenService refreshTokenService;
+    private final StringRedisTemplate redisTemplate;
+
+    /** 【登录防爆破】连续失败次数上限（达到即锁定账号） */
+    private static final int MAX_LOGIN_FAILURES = 5;
+    /** 【登录防爆破】失败计数与账号锁定时长：15 分钟 */
+    private static final Duration LOGIN_LOCK_DURATION = Duration.ofMinutes(15);
+    private static final String LOGIN_FAIL_PREFIX = "login:fail:";
+    private static final String LOGIN_LOCK_PREFIX = "login:lock:";
 
     public UserService(UserRepository userRepository, JwtUtil jwtUtil, TokenBlacklist tokenBlacklist,
-                       RefreshTokenService refreshTokenService) {
+                       RefreshTokenService refreshTokenService, StringRedisTemplate redisTemplate) {
         this.userRepository = userRepository;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = new BCryptPasswordEncoder();
         this.tokenBlacklist = tokenBlacklist;
         this.refreshTokenService = refreshTokenService;
+        this.redisTemplate = redisTemplate;
     }
 
     @Transactional
@@ -75,16 +86,30 @@ public class UserService {
     public Map<String, Object> login(String username, String password) {
         log.info("用户登录：username={}", username);
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("用户名或密码错误"));
+        // 【登录防爆破】账号维度锁定：锁定期间直接拒绝（Redis 故障 fail-open 放行，不阻断正常登录）
+        if (isLoginLocked(username)) {
+            throw new IllegalArgumentException("账号已锁定，请15分钟后再试");
+        }
+
+        User user = userRepository.findByUsername(username).orElse(null);
+
+        // 用户不存在：不计失败次数（避免暴露用户存在性），返回统一文案
+        if (user == null) {
+            throw new IllegalArgumentException("用户名或密码错误");
+        }
 
         if (user.getStatus() != 1) {
             throw new IllegalArgumentException("账号已被禁用");
         }
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
+            // 【登录防爆破】密码错误：连续失败计数，5 次锁定 15 分钟
+            recordLoginFailure(username);
             throw new IllegalArgumentException("用户名或密码错误");
         }
+
+        // 【登录防爆破】登录成功：清零失败计数与账号锁定
+        clearLoginFailures(username);
 
         String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
         log.info("用户登录成功：id={}, username={}", user.getId(), user.getUsername());
@@ -121,6 +146,50 @@ public class UserService {
         }
 
         return result;
+    }
+
+    /* ==================== 【登录防爆破】账号维度锁定（Redis，参考 RateLimitInterceptor 用法） ==================== */
+
+    /** 是否处于锁定期（Redis 故障时 fail-open 放行，不阻断正常登录） */
+    private boolean isLoginLocked(String username) {
+        if (username == null || username.isBlank()) return false;
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey(LOGIN_LOCK_PREFIX + username));
+        } catch (Exception e) {
+            log.warn("登录锁定检查失败（Redis 不可用？），放行: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** 记录一次登录失败：15 分钟滚动窗口内连续失败 5 次 → 锁定 15 分钟（Redis 故障不阻断登录） */
+    private void recordLoginFailure(String username) {
+        if (username == null || username.isBlank()) return;
+        try {
+            String failKey = LOGIN_FAIL_PREFIX + username;
+            Long count = redisTemplate.opsForValue().increment(failKey);
+            if (count != null && count == 1) {
+                redisTemplate.expire(failKey, LOGIN_LOCK_DURATION);
+            }
+            if (count != null && count >= MAX_LOGIN_FAILURES) {
+                redisTemplate.opsForValue().set(LOGIN_LOCK_PREFIX + username, "1", LOGIN_LOCK_DURATION);
+                redisTemplate.delete(failKey);
+                log.warn("账号连续登录失败 {} 次，已锁定 {} 分钟: username={}", MAX_LOGIN_FAILURES,
+                        LOGIN_LOCK_DURATION.toMinutes(), username);
+            }
+        } catch (Exception e) {
+            log.warn("登录失败计数失败（Redis 不可用？）: {}", e.getMessage());
+        }
+    }
+
+    /** 登录成功：清零失败计数并解除锁定 */
+    private void clearLoginFailures(String username) {
+        if (username == null || username.isBlank()) return;
+        try {
+            redisTemplate.delete(LOGIN_FAIL_PREFIX + username);
+            redisTemplate.delete(LOGIN_LOCK_PREFIX + username);
+        } catch (Exception e) {
+            log.warn("清除登录失败计数失败（Redis 不可用？）: {}", e.getMessage());
+        }
     }
 
     public User getUserByUsername(String username) {

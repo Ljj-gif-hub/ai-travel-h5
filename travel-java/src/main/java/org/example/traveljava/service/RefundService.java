@@ -8,10 +8,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,11 +25,22 @@ import java.util.Map;
  * - 管理员审核：approve → 调用退款渠道（Mock 300ms）→ 状态 refunded + 订单原子取消 + 释放优惠券
  *              reject  → 状态 rejected
  * - 处理动作写审计（REFUND_APPROVED / REFUND_REJECTED，异步非阻塞）
+ *
+ * 【REFUND-4 修复】补偿任务：handle() 里事务2（落库 refunded）失败或进程崩溃时，
+ * 退款单可能卡在 processing（渠道侧可能已退款成功）。定时扫描超时 processing 单做幂等恢复：
+ * 重新调渠道补记 refunded；渠道持续失败超过 5 次 → 置 failed 标记人工介入。
  */
 @Service
 public class RefundService {
 
     private static final Logger log = LoggerFactory.getLogger(RefundService.class);
+
+    /** 【REFUND-4】补偿任务：卡在 processing 超过该时长（3 分钟）即触发恢复 */
+    private static final Duration STUCK_THRESHOLD = Duration.ofMinutes(3);
+    /** 【REFUND-4】补偿重试上限：渠道连续失败超过该次数 → 置 failed 需人工 */
+    private static final int MAX_RECOVER_RETRIES = 5;
+    /** 【REFUND-4】补偿重试计数 Redis key 前缀（进程重启后计数丢失，可接受：重启后按新周期重试） */
+    private static final String RECOVER_COUNT_PREFIX = "refund:recover:";
 
     private final RefundRepository refundRepository;
     private final OrderRepository orderRepository;
@@ -32,16 +48,19 @@ public class RefundService {
     private final CouponService couponService;
     private final AuditService auditService;
     private final TransactionTemplate transactionTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     public RefundService(RefundRepository refundRepository, OrderRepository orderRepository,
                          RefundProvider refundProvider, CouponService couponService,
-                         AuditService auditService, TransactionTemplate transactionTemplate) {
+                         AuditService auditService, TransactionTemplate transactionTemplate,
+                         StringRedisTemplate redisTemplate) {
         this.refundRepository = refundRepository;
         this.orderRepository = orderRepository;
         this.refundProvider = refundProvider;
         this.couponService = couponService;
         this.auditService = auditService;
         this.transactionTemplate = transactionTemplate;
+        this.redisTemplate = redisTemplate;
     }
 
     /** 用户申请退款：仅已支付订单可退 */
@@ -184,6 +203,112 @@ public class RefundService {
             ));
             log.info("退款审核驳回: refundId={}, adminId={}", refundId, adminId);
             return saved;
+        }
+    }
+
+    /* ==================== 【REFUND-4 修复】processing 卡死补偿 ==================== */
+
+    /**
+     * 补偿任务：扫描卡在 processing 超过 3 分钟的退款单做幂等恢复。
+     * 触发场景：handle() 中事务2（落库 refunded）失败 / 进程崩溃——渠道侧可能已退款成功，
+     * DB 却停在 processing。每 60s 扫描一次：
+     *  - 渠道可调通 → 补记 refunded + 取消订单 + 审计（与 handle() 事务2 同构，幂等）；
+     *  - 渠道持续失败 → 每失败一次计数，超过 5 次置 failed 并留日志标记人工介入。
+     */
+    @Scheduled(fixedDelay = 60_000)
+    public void recoverStuckProcessingRefunds() {
+        List<Refund> stuck = refundRepository.findByStatusAndUpdatedAtBefore(
+                Refund.STATUS_PROCESSING, LocalDateTime.now().minus(STUCK_THRESHOLD));
+        if (stuck.isEmpty()) {
+            return;
+        }
+        log.info("退款补偿任务扫描到卡死 processing 退款单 {} 笔", stuck.size());
+        for (Refund refund : stuck) {
+            try {
+                recoverOne(refund);
+            } catch (Exception e) {
+                log.error("退款补偿任务处理失败: refundId={}", refund.getId(), e);
+            }
+        }
+    }
+
+    /** 单笔退款单的幂等恢复 */
+    private void recoverOne(Refund refund) {
+        Long refundId = refund.getId();
+        // 幂等：重新调用渠道（outRefundNo 用 orderId，真实渠道按单号幂等，Mock 渠道无副作用）
+        try {
+            String refundNo = refundProvider.refund(refund.getOrderId(), String.valueOf(refund.getOrderId()),
+                    refund.getAmount(), refund.getReason());
+            completeRefundedByRecovery(refundId, refundNo);
+            clearRecoverCount(refundId);
+            log.info("退款补偿成功: refundId={}, refundNo={}", refundId, refundNo);
+        } catch (Exception e) {
+            long retries = incrementRecoverCount(refundId);
+            if (retries >= MAX_RECOVER_RETRIES) {
+                // 超过重试上限：置 failed 标记人工介入（status 列 varchar(20)，直接存 "failed"）
+                transactionTemplate.executeWithoutResult(status -> {
+                    Refund r = refundRepository.findById(refundId).orElse(null);
+                    if (r != null && Refund.STATUS_PROCESSING.equals(r.getStatus())) {
+                        r.setStatus(Refund.STATUS_FAILED);
+                        refundRepository.save(r);
+                    }
+                });
+                log.error("退款补偿连续{}次失败，退款单标记 failed 需人工介入: refundId={}", retries, refundId);
+            } else {
+                log.warn("退款补偿第{}次失败，稍后重试: refundId={}, err={}", retries, refundId, e.getMessage());
+            }
+        }
+    }
+
+    /** 补记 refunded：仅当仍为 processing 时生效（幂等，防与 handle() 并发双写） */
+    private void completeRefundedByRecovery(Long refundId, String refundNo) {
+        transactionTemplate.executeWithoutResult(status -> {
+            Refund r = refundRepository.findById(refundId).orElse(null);
+            if (r == null || !Refund.STATUS_PROCESSING.equals(r.getStatus())) {
+                return; // 已被并发处理（refunded/rejected/failed），跳过
+            }
+            r.setRefundNo(refundNo);
+            r.setStatus(Refund.STATUS_REFUNDED);
+            refundRepository.save(r);
+
+            Order order = orderRepository.findById(r.getOrderId()).orElse(null);
+            if (order != null && "paid".equals(order.getStatus())) {
+                int updated = orderRepository.cancelIfPaid(order.getId());
+                if (updated == 1 && order.getCouponId() != null) {
+                    couponService.releaseByOrder(order.getId());
+                }
+            }
+            auditService.record(AuditService.REFUND_APPROVED, Map.of(
+                    "refundId", refundId,
+                    "orderId", r.getOrderId(),
+                    "amount", r.getAmount(),
+                    "refundNo", refundNo,
+                    "adminId", "recovery"
+            ));
+        });
+    }
+
+    /** 补偿失败计数（Redis；不可用时按 0 处理，不阻断补偿） */
+    private long incrementRecoverCount(Long refundId) {
+        try {
+            String key = RECOVER_COUNT_PREFIX + refundId;
+            Long c = redisTemplate.opsForValue().increment(key);
+            if (c != null && c == 1) {
+                redisTemplate.expire(key, Duration.ofHours(1));
+            }
+            return c == null ? 0 : c;
+        } catch (Exception e) {
+            log.warn("退款补偿计数失败（Redis 不可用？）: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /** 补偿成功清零计数 */
+    private void clearRecoverCount(Long refundId) {
+        try {
+            redisTemplate.delete(RECOVER_COUNT_PREFIX + refundId);
+        } catch (Exception e) {
+            log.warn("清除退款补偿计数失败: {}", e.getMessage());
         }
     }
 }

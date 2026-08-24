@@ -47,6 +47,11 @@ uploads/*.gif
 src/main/resources/application.yml
 data/
 
+### Secrets ###
+.env
+.env.*
+!.env.example
+
 ### Runtime logs ###
 logs/
 *.log

@@ -89,6 +89,11 @@ public class FollowService {
             throw new IllegalArgumentException("不能关注自己");
         }
 
+        // CTRL-3 修复：插入前校验被关注用户存在，避免关注不存在的用户（脏数据 + 计数虚增）
+        if (followingId == null || !userRepository.existsById(followingId)) {
+            throw new IllegalArgumentException("关注的用户不存在");
+        }
+
         if (followRepository.existsByFollowerIdAndFollowingId(followerId, followingId)) {
             throw new IllegalArgumentException("已经关注过了");
         }

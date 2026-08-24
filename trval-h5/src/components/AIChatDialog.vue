@@ -58,6 +58,8 @@ const md = new MarkdownIt({
   html: false,
   linkify: true,
   typographer: true,
+  // MAPXSS 修复：linkify 生成的 <a href> 不做 scheme 过滤，仅放行 http/https/mailto 防 javascript: 注入
+  validateLink: (url) => /^(https?:|mailto:)/i.test(url),
   highlight: function (str, lang) {
     if (lang && hljs.getLanguage(lang)) {
       try {

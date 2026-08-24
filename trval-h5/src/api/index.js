@@ -1,5 +1,6 @@
 import { getToken, setToken, getRefreshToken, setRefreshToken, removeRefreshToken } from '../utils/auth';
 import { clearSession } from '../utils/userAccountStorage';
+import { useTripStore } from '../stores/trip';
 
 const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
@@ -26,6 +27,9 @@ function redirectToLogin() {
   removeRefreshToken();
   // 【多账号隔离】仅清空会话缓存，保留账号持久化数据
   clearSession();
+  // BUGID ACCT 修复：被动登出（token 过期被踢回登录页）也清空行程 store，
+  // 否则换账号登录仍读到上一账号的行程数据
+  useTripStore().resetState();
   if (typeof window !== 'undefined' && !window.location.hash.includes('/login')) {
     localStorage.setItem('redirectUrl', window.location.hash || '#/');
     window.location.hash = '#/login';

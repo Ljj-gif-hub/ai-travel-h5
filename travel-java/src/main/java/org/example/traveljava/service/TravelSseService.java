@@ -209,15 +209,21 @@ public class TravelSseService {
         }
     }
 
-    public void safeSendJson(SseEmitter emitter, Object data) {
+    /**
+     * SSE-2 修复：改为返回 boolean —— 推送失败（客户端断开/通道已关闭）返回 false，
+     * 供上层 onProgress 回调据此触发取消，停止后续 AI 生成防白烧 token。
+     */
+    public boolean safeSendJson(SseEmitter emitter, Object data) {
         try {
-            if (emitter == null) return;
+            if (emitter == null) return false;
             String json = objectMapper.writeValueAsString(data);
             emitter.send(SseEmitter.event().data(json, MediaType.APPLICATION_JSON));
             // 心跳注释强制刷新缓冲区，避免Tomcat缓冲导致前端收不到数据
             emitter.send(SseEmitter.event().comment(""));
+            return true;
         } catch (IOException e) {
             log.debug("SSE JSON推送IO异常(客户端断开): {}", e.getMessage());
+            return false;
         } catch (Exception e) {
             // already completed 是正常现象（客户端离开/超时），不打印WARN
             String msg = e.getMessage();
@@ -226,6 +232,7 @@ public class TravelSseService {
             } else {
                 log.warn("SSE JSON异常: {}", msg);
             }
+            return false;
         }
     }
 
@@ -301,7 +308,11 @@ public class TravelSseService {
                 Thread.sleep(150);
 
                 aiService.streamPlannerWithStages(req, dto -> {
-                    safeSendJson(emitter, dto);
+                    // SSE-2 修复：推送失败（客户端断开）→ 标记取消，让 streamPlannerWithStages
+                    // 下一阶段 checkTaskCancel 检测后停止，防客户端离开后继续烧 AI token
+                    if (!safeSendJson(emitter, dto)) {
+                        aiService.cancelTask(taskId);
+                    }
                 }, taskId);
                 safeSendJson(emitter, Map.of("eventType", "generate-finish", "destination", dest));
             } catch (TaskCancelledException e) {
@@ -311,9 +322,12 @@ public class TravelSseService {
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
                 log.error("多阶段生成异常", e);
-                safeSendJson(emitter, Map.of("eventType", "stream-error", "message", e.getMessage()));
+                // SSE-6 修复：不把原始异常透传给前端（可能含内网 URL），固定文案；原文留在服务端日志
+                safeSendJson(emitter, Map.of("eventType", "stream-error", "message", "生成失败，请稍后重试"));
             } finally {
                 try { emitter.complete(); } catch (Exception ex) {}
+                // SSE-2 修复：清理 onCompletion/onTimeout 中 cancelTask 残留的取消标志，防泄漏
+                aiService.removeTask(taskId);
             }
         });
     }
@@ -333,7 +347,8 @@ public class TravelSseService {
                 safeSendJson(emitter, Map.of("eventType", "task-stop", "message", "生成已终止"));
             } catch (Exception e) {
                 log.error("详情流式异常", e);
-                safeSendJson(emitter, Map.of("eventType", "stream-error", "message", e.getMessage()));
+                // SSE-6 修复：固定文案，原始异常只进服务端日志
+                safeSendJson(emitter, Map.of("eventType", "stream-error", "message", "生成失败，请稍后重试"));
             } finally {
                 try { emitter.complete(); } catch (Exception ex) {}
             }
@@ -354,10 +369,17 @@ public class TravelSseService {
                 if (em2 != null) {
                     String fullPrompt = buildAIPrompt(dest, days, budget, origin, companion, styles, hotelLevel, pace, schedule);
                     log.info("AI提示词: {}", fullPrompt.substring(0, Math.min(200, fullPrompt.length())));
+                    // SSE-4 修复：传入 taskId，streamChatText 内部在每块前检测取消标志；
+                    // 客户端断开（emitter 被移除/onCompletion 触发 cancelTask）后中止剩余 AI 拉取
                     aiService.streamChatText(fullPrompt, chunk -> {
                         SseEmitter em = emitterRegistry.get(taskId);
-                        if (em != null) safeSendJson(em, Map.of("eventType", "text-update", "text", chunk));
-                    });
+                        if (em == null) {
+                            // 客户端断开：标记取消，让上游 streamChatText 停止拉取，防白烧 token
+                            aiService.cancelTask(taskId);
+                        } else {
+                            safeSendJson(em, Map.of("eventType", "text-update", "text", chunk));
+                        }
+                    }, taskId);
                 }
 
                 /* ===== 阶段3: 交通 ===== */
@@ -389,7 +411,8 @@ public class TravelSseService {
             } catch (Exception e) {
                 log.error("生成异常:{}", taskId, e);
                 SseEmitter em = emitterRegistry.get(taskId);
-                if (em != null) { safeSendJson(em, Map.of("eventType", "stream-error", "message", e.getMessage())); try { em.complete(); } catch (Exception ex) {} }
+                // SSE-6 修复：固定文案，原始异常只进服务端日志
+                if (em != null) { safeSendJson(em, Map.of("eventType", "stream-error", "message", "生成失败，请稍后重试")); try { em.complete(); } catch (Exception ex) {} }
             } finally {
                 emitterRegistry.remove(taskId);
                 // AI-1 修复：清理超时/错误回调 cancelTask 残留的取消标志，防泄漏
@@ -404,7 +427,12 @@ public class TravelSseService {
             try {
                 aiService.streamPlannerWithStages(req, dto -> {
                     SseEmitter em = emitterRegistry.get(taskId);
-                    if (em != null) safeSendJson(em, dto);
+                    if (em == null) {
+                        // SSE-2 修复：客户端断开（emitter 已被移除）→ 标记取消，停止后续 AI 阶段
+                        aiService.cancelTask(taskId);
+                    } else if (!safeSendJson(em, dto)) {
+                        aiService.cancelTask(taskId);
+                    }
                 }, taskId);
 
                 SseEmitter em = emitterRegistry.get(taskId);
@@ -419,9 +447,12 @@ public class TravelSseService {
             } catch (Exception e) {
                 log.error("生成异常: taskId={}", taskId, e);
                 SseEmitter em = emitterRegistry.get(taskId);
-                if (em != null) { safeSendJson(em, Map.of("eventType", "stream-error", "message", e.getMessage() != null ? e.getMessage() : "生成失败")); try { em.complete(); } catch (Exception ex) {} }
+                // SSE-6 修复：固定文案，原始异常只进服务端日志
+                if (em != null) { safeSendJson(em, Map.of("eventType", "stream-error", "message", "生成失败，请稍后重试")); try { em.complete(); } catch (Exception ex) {} }
             } finally {
                 emitterRegistry.remove(taskId);
+                // SSE-2 修复：清理 onCompletion/onTimeout 中 cancelTask 残留的取消标志，防泄漏
+                aiService.removeTask(taskId);
             }
         });
     }

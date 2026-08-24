@@ -4,6 +4,8 @@ agent.auth 单元测试。
 运行前提：pip install pytest（项目 requirements 未包含 pytest）
     python -m pytest tests -q
 """
+from datetime import datetime, timedelta
+
 import pytest
 
 from agent import auth
@@ -68,7 +70,7 @@ def test_decode_jwt_user_id_invalid(monkeypatch):
     assert auth._decode_jwt_user_id("a.b.c") is None
     # 用错误密钥签发的 token 也应被拒绝
     jwt = pytest.importorskip("jwt")
-    forged = jwt.encode({"userId": "u1"}, "wrong-secret", algorithm="HS256")
+    forged = jwt.encode({"userId": "u1", "exp": datetime.utcnow() + timedelta(hours=1)}, "wrong-secret", algorithm="HS256")
     assert auth._decode_jwt_user_id(forged) is None
 
 
@@ -82,5 +84,9 @@ def test_decode_jwt_user_id_valid(monkeypatch):
     jwt = pytest.importorskip("jwt")
     monkeypatch.setenv("AGENT_JWT_SECRET", "jwt-test-secret")
     monkeypatch.delenv("JWT_SECRET", raising=False)
-    token = jwt.encode({"userId": 42}, "jwt-test-secret", algorithm="HS256")
+    # auth._decode_jwt_user_id 强制要求 exp（L-PY-3），测试 token 需带上 exp 才合法
+    token = jwt.encode(
+        {"userId": 42, "exp": datetime.utcnow() + timedelta(hours=1)},
+        "jwt-test-secret", algorithm="HS256",
+    )
     assert auth._decode_jwt_user_id(token) == "42"

@@ -51,7 +51,12 @@ public class FavoriteService {
 
     @Transactional
     public Favorite addFavorite(Long userId, Map<String, Object> params) {
-        Long targetId = ((Number) params.get("targetId")).longValue();
+        // CTRL-4 修复：targetId 为 null 或非数字时不再 NPE/CCE，返回明确业务错误
+        Object targetIdObj = params.get("targetId");
+        if (!(targetIdObj instanceof Number targetIdNum)) {
+            throw new IllegalArgumentException("targetId 不能为空且必须为数字");
+        }
+        Long targetId = targetIdNum.longValue();
         String targetType = (String) params.get("targetType");
 
         if (favoriteRepository.existsByUserIdAndTargetIdAndTargetType(userId, targetId, targetType)) {
