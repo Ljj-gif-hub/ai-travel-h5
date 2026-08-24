@@ -1,10 +1,17 @@
 # 密钥文件（docker compose 部署用，禁止提交）
 .env
+.env.*
+!.env.example
 
 # 面试/求职相关材料（隐私敏感，禁止提交）
 面试准备*.md
+面试准备*.docx
 *简历*.md
 *简历*.pdf
+*简历*.html
+resume.html
+_resume_assets/
+项目全解*.md
 
 # 本地部署产物（prepare-bundle.ps1 生成，勿提交）
 deploy/bundle/
