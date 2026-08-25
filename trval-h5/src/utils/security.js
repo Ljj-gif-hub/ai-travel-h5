@@ -36,9 +36,11 @@ export function filterXss(content) {
     'p', 'br', 'hr', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'del', 'ins',
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code',
     'a', 'img', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
-    'figure', 'figcaption', 'mark', 'sub', 'sup', 'small', 'q', 'cite'
+    'figure', 'figcaption', 'mark', 'sub', 'sup', 'small', 'q', 'cite',
+    'video', 'source'
   ])
-  const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'class', 'width', 'height'])
+  // controls 为布尔属性（无 URL），供视频内嵌播放；其余 URL 类属性走 SAFE_PROTOCOL 校验
+  const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'class', 'width', 'height', 'controls'])
   // 只放行安全协议；data: 仅允许位图图片，排除 data:image/svg+xml（可内嵌脚本）与 data:text/html
   const SAFE_PROTOCOL = /^(https?:|mailto:|tel:|#|\/|data:image\/(png|jpe?g|gif|webp))/i
 
