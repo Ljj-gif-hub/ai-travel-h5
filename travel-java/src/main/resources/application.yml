@@ -17,9 +17,10 @@ spring:
     name: travel-java
   servlet:
     multipart:
-      # 单文件 50MB / 整请求 100MB（此前 1GB/2GB 可被超大上传打爆内存）
-      max-file-size: 50MB
-      max-request-size: 100MB
+      # 单文件 200MB / 整请求 250MB（手机实拍视频普遍 100MB+；multipart 默认 file-size-threshold=0
+      # 全量流式落临时盘不占内存，3.4G 服务器安全；nginx client_max_body_size 需同步 ≥250m）
+      max-file-size: 200MB
+      max-request-size: 250MB
   datasource:
     url: ${DB_URL:jdbc:h2:file:./data/travel_plans;MODE=MySQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
     driver-class-name: ${DB_DRIVER:org.h2.Driver}

@@ -113,8 +113,8 @@ const handleContentImageUpload = async (e) => {
 const handleContentVideoUpload = async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
-  // 前端预检：文件大小
-  if (file.size > 1024 * 1024 * 1024) {
+  // 前端预检：文件大小（与后端 200MB 对齐，超限快速提示避免白传）
+  if (file.size > 200 * 1024 * 1024) {
     showToast(t('note.videoTooLarge'));
     if (e.target) e.target.value = '';
     return;

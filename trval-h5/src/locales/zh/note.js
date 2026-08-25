@@ -74,7 +74,7 @@ export default {
   imageAdded: '图片已添加',
   videoAdded: '视频已添加',
   pleaseUploadVideo: '请上传视频文件',
-  videoTooLarge: '视频大小不能超过1GB',
+  videoTooLarge: '视频大小不能超过200MB',
   titleRequired: '标题不能为空',
   contentRequired: '内容不能为空',
   saving: '保存中...',

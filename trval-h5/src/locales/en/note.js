@@ -74,7 +74,7 @@ export default {
   imageAdded: 'Image added',
   videoAdded: 'Video added',
   pleaseUploadVideo: 'Please upload a video file',
-  videoTooLarge: 'Video cannot exceed 1GB',
+  videoTooLarge: 'Video cannot exceed 200MB',
   titleRequired: 'Title is required',
   contentRequired: 'Content is required',
   saving: 'Saving...',

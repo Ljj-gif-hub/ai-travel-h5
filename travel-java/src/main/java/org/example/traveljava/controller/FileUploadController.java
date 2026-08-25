@@ -59,7 +59,7 @@ public class FileUploadController {
     // L-UPLOAD-2 修复：视频上限与框架 multipart.max-file-size（50MB，内存安全考量）对齐。
     // 此前声明 1GB 永远不可达——50MB 以上请求在进入控制器前就被 Spring 拒绝（MaxUploadSizeExceededException 统一兜底），
     // 保留 1GB 会让前端按错误上限提示、控制器自身的大小校验形同虚设。
-    private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;
+    private static final long MAX_VIDEO_SIZE = 200L * 1024 * 1024;
 
     private final Path uploadDir;
     private final JwtUtil jwtUtil;
@@ -121,7 +121,7 @@ public class FileUploadController {
             return Result.fail("图片大小不能超过10MB");
         }
         if (isVideo && size > MAX_VIDEO_SIZE) {
-            return Result.fail("视频大小不能超过50MB");
+            return Result.fail("视频大小不能超过200MB");
         }
 
         try {
