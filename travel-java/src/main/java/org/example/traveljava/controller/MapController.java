@@ -2,11 +2,14 @@ package org.example.traveljava.controller;
 
 import org.example.traveljava.annotation.RateLimit;
 import org.example.traveljava.dto.AttractionDTO;
+import org.example.traveljava.dto.GeocodeResultDTO;
 import org.example.traveljava.dto.HotDestinationDTO;
 import org.example.traveljava.dto.MapMarkerDTO;
 import org.example.traveljava.dto.POIDetailDTO;
 import org.example.traveljava.dto.POISuggestionDTO;
+import org.example.traveljava.dto.SurroundTourVO;
 import org.example.traveljava.service.MapService;
+import org.example.traveljava.service.NearbyTourService;
 import org.example.traveljava.util.CoordinateUtil;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -16,7 +19,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -27,9 +32,11 @@ public class MapController {
     private static final Logger log = LoggerFactory.getLogger(MapController.class);
 
     private final MapService mapService;
+    private final NearbyTourService nearbyTourService;
 
-    public MapController(MapService mapService) {
+    public MapController(MapService mapService, NearbyTourService nearbyTourService) {
         this.mapService = mapService;
+        this.nearbyTourService = nearbyTourService;
     }
 
     @GetMapping("/suggestion")
@@ -129,6 +136,45 @@ public class MapController {
         }
     }
 
+    /**
+     * 批量获取景点图片：key=景点名，value=最多 3 张图片 URL（30 分钟有界缓存）
+     * 供前端行程卡片恢复真实图片；无匹配/失败返回空列表，前端就近回落本地静态图。
+     */
+    @GetMapping("/attraction-images")
+    @RateLimit(max = 60, duration = 60, key = "map_attraction_images")
+    public Result<Map<String, List<String>>> getAttractionImages(
+            @RequestParam(required = false) String city,
+            @RequestParam List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return Result.fail("请提供景点名称参数");
+        }
+        // 去重 + 限长，防超大请求
+        List<String> deduped = new ArrayList<>();
+        for (String n : names) {
+            if (n == null || n.isBlank() || n.length() > 50) continue;
+            if (!deduped.contains(n)) deduped.add(n.trim());
+        }
+        if (deduped.isEmpty()) {
+            return Result.ok(new LinkedHashMap<>());
+        }
+        String cacheKey = (city == null ? "" : city.trim()) + "@" + String.join("|", deduped);
+        Map<String, List<String>> cached = attractionImageCache.getIfPresent(cacheKey);
+        if (cached != null) {
+            return Result.ok(cached);
+        }
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        for (String name : deduped) {
+            try {
+                result.put(name, mapService.fetchAttractionPhotos(name, city));
+            } catch (Exception e) {
+                log.warn("获取景点图片失败: name={}, city={}", name, city);
+                result.put(name, new ArrayList<>());
+            }
+        }
+        attractionImageCache.put(cacheKey, result);
+        return Result.ok(result);
+    }
+
     @GetMapping("/nearby-attractions")
     @RateLimit(max = 30, duration = 60, key = "map_nearby_attr")
     public Result<List<AttractionDTO>> getNearbyAttractions(
@@ -157,29 +203,68 @@ public class MapController {
         }
     }
 
+    /**
+     * 周边游 —— 出发城市可到达城市 + 热门路线（精选种子数据，非实时）。
+     * 一次返回全量，前端按出发城市切换，避免 N+1。
+     */
+    @GetMapping("/surround-tour")
+    @RateLimit(max = 30, duration = 60, key = "map_surround_tour")
+    public Result<SurroundTourVO> getSurroundTour() {
+        log.info("获取周边游数据请求");
+        try {
+            return Result.ok(nearbyTourService.getSurroundTour());
+        } catch (Exception e) {
+            log.error("获取周边游数据失败", e);
+            return Result.fail("获取周边游数据失败");
+        }
+    }
+
     /* ==================== 地理编码接口 ==================== */
 
     @GetMapping("/geocode")
     @RateLimit(max = 60, duration = 60, key = "map_geocode")
-    public Result<double[]> geocode(@RequestParam String address) {
-        log.info("地理编码请求: address={}", address);
+    public Result<GeocodeResultDTO> geocode(@RequestParam String address, @RequestParam(required = false) String city) {
+        log.info("地理编码请求: address={}, city={}", address, city);
         if (address == null || address.trim().isEmpty()) {
             return Result.fail("请提供地址");
         }
         try {
-            // 1) 国内：高德/百度
-            double[] coords = mapService.geocode(address.trim());
-            if (coords != null) return Result.ok(coords);
+            // 1) 国内：高德/百度（原生坐标系，随 provider 返回 gcj02/bd09）
+            //    传 city 到服务层，用 inputtips 的 city 参数消歧同名地标（"故宫"沈阳/北京都有同名）
+            double[] coords = mapService.geocode(address.trim(), city);
+            if (coords != null) {
+                String crs = mapService.getCoordinateSystem();
+                if (cityOkay(coords[0], coords[1], city)) {
+                    return Result.ok(new GeocodeResultDTO(coords[0], coords[1], crs, null));
+                }
+            }
 
-            // 2) 国际兜底：Nominatim (OpenStreetMap，免费不限 Key)
+            // 2) 国际兜底：Nominatim (OpenStreetMap，免费不限 Key)，返回 WGS-84
             coords = nominatimGeocode(address.trim());
-            if (coords != null) return Result.ok(coords);
+            if (coords != null) {
+                if (cityOkay(coords[0], coords[1], city)) {
+                    return Result.ok(new GeocodeResultDTO(coords[0], coords[1], "wgs84", null));
+                }
+            }
 
             return Result.fail("未找到该地址");
         } catch (Exception e) {
             log.error("地理编码失败: {}", address, e);
             return Result.fail("地理编码失败");
         }
+    }
+
+    /**
+     * 城市合理性校验（跨城错配的守门员）：当提供了 city 且结果为国内坐标时，
+     * 若距该城市中心过远（超出国内城市景点合理范围），判定为"同名异地"错配，拒绝本次结果。
+     * 境外/无法解析城市中心时不做约束（境外景点范围广，且 Nominatim 对境外可靠）。
+     */
+    private boolean cityOkay(double lat, double lng, String city) {
+        if (city == null || city.isBlank()) return true;
+        if (!CoordinateUtil.isInChina(lat, lng)) return true;           // 境外不校验
+        double[] center = mapService.geocode(city.trim(), null);        // 用同 provider 解析城市中心（城市名全国唯一，无需 city 限定）
+        if (center == null) return true;                                // 无法定位城市中心 → 放行
+        return CoordinateUtil.distanceMeters(lat, lng, center[0], center[1]) <= 100_000; // 100km 上限
     }
 
     /** Nominatim 全球地理编码（免费，1次/秒限速） */
@@ -301,6 +386,10 @@ public class MapController {
             .expireAfterWrite(30, TimeUnit.MINUTES)
             .build();
     private final Cache<String, List<MapMarkerDTO>> metroCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
+    private final Cache<String, Map<String, List<String>>> attractionImageCache = Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(30, TimeUnit.MINUTES)
             .build();

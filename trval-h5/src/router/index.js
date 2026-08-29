@@ -51,6 +51,12 @@ const routes = [
     meta: { transition: 'slide-left', hideTabBar: true },
   },
   {
+    path: '/agent-planner-old',
+    name: 'AgentPlannerOld',
+    component: () => import('../views/OldPlannerView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
+  },
+  {
     path: '/agent-map',
     name: 'AgentMap',
     component: () => import('../views/AgentMapView.vue'),

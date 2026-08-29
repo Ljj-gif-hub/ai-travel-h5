@@ -55,9 +55,18 @@ public interface MapService {
     /**
      * 地理编码：地址 → 坐标
      * @param address 地址（城市名、地标名等）
+     * @param city 城市限定（可空，空则全国搜索；用于消歧同名地标，如"故宫"在多个城市都有同名）
      * @return [lat, lng]，失败返回 null
      */
-    double[] geocode(String address);
+    double[] geocode(String address, String city);
+
+    /**
+     * 获取景点的真实图片（POI photos 检索）
+     * @param scenicName 景点名
+     * @param city 城市限定（可空；用于消歧同名景点）
+     * @return 最多 3 张图片 URL，无匹配返回空列表；失败返回空列表
+     */
+    List<String> fetchAttractionPhotos(String scenicName, String city);
 
     /**
      * @return 当前地图提供商标识，如 "baidu" / "amap"

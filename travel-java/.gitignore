@@ -55,3 +55,11 @@ data/
 ### Runtime logs ###
 logs/
 *.log
+
+### Local build/launch artifacts (not source, must never ship in deploy bundle) ###
+cp.txt
+backend-boot.log.err
+local-boot.out.log
+local-boot.err.log
+launch.ps1
+run_local_backend.cmd

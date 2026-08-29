@@ -54,6 +54,17 @@ export default {
   clearConversation: '清空对话',
   saveToPlan: '保存到行程',
   newConversationStarted: '已开启新对话',
+  // 历史对话列表
+  history: '历史对话',
+  historyEmptyConversation: '(空对话)',
+  deleteConversationTitle: '删除对话',
+  deleteConversationMsg: '确定删除这条对话？删除后不可恢复',
+  deleteConfirm: '删除',
+  deleteConversationDone: '对话已删除',
+  timeJustNow: '刚刚',
+  timeMinAgo: '{n}分钟前',
+  timeHourAgo: '{n}小时前',
+  timeDayAgo: '{n}天前',
   // 无障碍 aria-label（图标按钮）
   restoreHistory: '恢复历史记录',
   voiceInput: '语音输入',

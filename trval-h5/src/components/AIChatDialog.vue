@@ -1,13 +1,14 @@
 <script setup>
 import { ref, nextTick, watch, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { chatApi, planApi } from '../api'
 import { CHAT_SYSTEM_PROMPT } from '../constants/systemPrompts'
 import {
   getCurrentSessionId, getCurrentSessionMessages,
   saveCurrentSessionMessages, clearCurrentSession, createNewSession,
+  getAllSessions, switchToSession, deleteSession,
   genMsgId,
 } from '../utils/chatSession'
 import MarkdownIt from 'markdown-it'
@@ -313,6 +314,9 @@ const sendMessage = async () => {
   sendDebounce = true
   setTimeout(() => { sendDebounce = false }, 500)
 
+  // 【历史对话】确保存在当前会话，否则首次对话无法持久化
+  if (!getCurrentSessionId()) createNewSession()
+
   isSending.value = true
   isThinking.value = true
   showQuickBar.value = false
@@ -482,6 +486,72 @@ const clearConversation = () => {
   showToast({ message: t('chat.conversationCleared'), position: 'top' })
 }
 
+/* ==================== 历史对话列表（豆包式历史会话入口） ==================== */
+const showHistory = ref(false)
+const conversations = ref([])
+const loadConversations = () => { conversations.value = getAllSessions() }
+const openHistory = () => { saveSessionMessagesSafe(); loadConversations(); showHistory.value = true }
+
+/** 会话预览：优先取最近一条 AI 回复，否则用户消息 */
+const convPreview = (c) => {
+  if (!c.messages || !c.messages.length) return t('chat.historyEmptyConversation')
+  const msgs = [...c.messages].reverse()
+  const a = msgs.find((x) => x.type === 'ai' && x.content)
+  if (a) return a.content.slice(0, 50) + (a.content.length > 50 ? '...' : '')
+  const u = msgs.find((x) => x.type === 'user' && x.content)
+  return u ? u.content.slice(0, 50) + (u.content.length > 50 ? '...' : '') : t('chat.historyEmptyConversation')
+}
+
+const convTime = (ts) => {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  if (mins < 1) return t('chat.timeJustNow')
+  if (mins < 60) return t('chat.timeMinAgo', { n: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('chat.timeHourAgo', { n: hours })
+  const days = Math.floor(hours / 24)
+  if (days < 7) return t('chat.timeDayAgo', { n: days })
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 切换到指定历史会话 */
+const pickConversation = (conv) => {
+  saveSessionMessagesSafe()
+  const restored = switchToSession(conv.id)
+  if (restored) {
+    messages.value = restored.map((m) => (m.type === 'ai' ? { ...m, content: stripLeadingNulls(m.content) } : m))
+  } else {
+    messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
+  }
+  showQuickBar.value = messages.value.length > 1
+  showHistory.value = false
+  nextTick(); nextTick(); scrollToBottom(true)
+  showToast({ message: t('chat.historyRestored'), position: 'top' })
+}
+
+/** 删除指定历史会话；若删的是当前会话则重置为全新对话 */
+const removeConversation = async (id) => {
+  try {
+    await showConfirmDialog({
+      title: t('chat.deleteConversationTitle'),
+      message: t('chat.deleteConversationMsg'),
+      confirmButtonText: t('chat.deleteConfirm'),
+      cancelButtonText: t('common.cancel'),
+    })
+    const wasCurrent = getCurrentSessionId() === id
+    deleteSession(id)
+    loadConversations()
+    if (wasCurrent) {
+      messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
+      showQuickBar.value = false
+    }
+    showToast({ message: t('chat.deleteConversationDone'), position: 'top' })
+  } catch (e) { /* 用户取消 */ }
+}
+
+const startNewFromHistory = () => { newConversation(); showHistory.value = false }
+
 /* ==================== Lifecycle ==================== */
 watch(
   () => props.visible,
@@ -489,6 +559,7 @@ watch(
     if (val) {
       // 【修复】打开时从持久存储恢复会话消息
       initMessages()
+      showHistory.value = false
       showQuickBar.value = messages.value.length > 1
       await nextTick(); await nextTick()
       scrollToBottom(true)
@@ -531,9 +602,41 @@ onBeforeUnmount(() => {
     @update:show="(val) => !val && closeDialog()"
   >
     <div class="dialog-root">
+      <!-- ======== 历史对话列表视图 ======== -->
+      <div v-if="showHistory" class="history-view">
+        <div class="history-header">
+          <span class="history-title">{{ t('chat.history') }}</span>
+          <van-icon name="cross" size="20" color="#64748B" class="header-close" role="button" :aria-label="t('chat.close')" @click="showHistory = false" />
+        </div>
+        <div class="history-body">
+          <div v-if="conversations.length === 0" class="history-empty">
+            <div class="history-empty-icon">🕘</div>
+            <div class="history-empty-text">{{ t('chat.noHistory') }}</div>
+          </div>
+          <div v-else class="history-list">
+            <div v-for="conv in conversations" :key="conv.id" class="history-item" @click="pickConversation(conv)">
+              <div class="hi-main">
+                <div class="hi-title">{{ conv.title || t('chat.newConversation') }}</div>
+                <div class="hi-preview">{{ convPreview(conv) }}</div>
+              </div>
+              <div class="hi-right">
+                <span class="hi-time">{{ convTime(conv.updatedAt) }}</span>
+                <van-icon name="delete-o" size="18" color="#EF4444" class="hi-del" role="button" :aria-label="t('chat.deleteConversationTitle')" @click.stop="removeConversation(conv.id)" />
+              </div>
+            </div>
+          </div>
+          <button class="history-new-btn" @click="startNewFromHistory">
+            <van-icon name="add-o" size="18" />{{ t('chat.newConversation') }}
+          </button>
+        </div>
+      </div>
+      <template v-else>
       <!-- ======== Header ======== -->
       <div class="dialog-header">
         <div class="header-left">
+          <button class="header-action-btn" @click="openHistory" :title="t('chat.history')" :aria-label="t('chat.history')">
+            <van-icon name="clock-o" size="18" color="#64748B" />
+          </button>
           <button class="header-action-btn" @click="newConversation" :title="t('chat.newConversation')" :aria-label="t('chat.newConversation')">
             <van-icon name="add-o" size="18" color="#64748B" />
           </button>
@@ -657,6 +760,7 @@ onBeforeUnmount(() => {
           <span class="voice-pulse" />{{ t('chat.listening') }}
         </div>
       </div>
+      </template>
     </div>
   </van-popup>
 </template>
@@ -1220,4 +1324,25 @@ onBeforeUnmount(() => {
     padding: 4px 4px 4px 12px;
   }
 }
+
+/* ==================== 历史对话列表视图 ==================== */
+.history-view { display:flex; flex-direction:column; height:100%; }
+.history-header { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:rgba(255,255,255,0.5); backdrop-filter:blur(18px) saturate(170%); -webkit-backdrop-filter:blur(18px) saturate(170%); border-bottom:0.5px solid rgba(0,0,0,0.05); }
+.history-title { font-size:17px; font-weight:700; color:#1E293B; }
+.history-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 14px 20px; }
+.history-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 0; gap:12px; color:#94A3B8; }
+.history-empty-icon { font-size:40px; }
+.history-empty-text { font-size:14px; }
+.history-list { display:flex; flex-direction:column; gap:10px; }
+.history-item { display:flex; align-items:center; gap:10px; padding:12px 14px; background:rgba(255,255,255,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:16px; border:1px solid rgba(139,92,246,0.08); box-shadow:0 2px 10px rgba(0,0,0,0.03); cursor:pointer; transition:transform .15s; }
+.history-item:active { transform:scale(.98); }
+.hi-main { flex:1; min-width:0; }
+.hi-title { font-size:14px; font-weight:600; color:#1E293B; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hi-preview { font-size:12px; color:#94A3B8; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hi-right { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+.hi-time { font-size:11px; color:#A8B2C0; }
+.hi-del { padding:4px; border-radius:50%; }
+.hi-del:active { background:rgba(239,68,68,0.1); }
+.history-new-btn { display:flex; align-items:center; justify-content:center; gap:6px; margin:16px auto 0; padding:11px 26px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; border:none; border-radius:24px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 4px 14px rgba(139,92,246,0.3); }
+.history-new-btn:active { transform:scale(.96); }
 </style>

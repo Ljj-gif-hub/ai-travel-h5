@@ -54,6 +54,17 @@ export default {
   clearConversation: 'Clear conversation',
   saveToPlan: 'Save to Itinerary',
   newConversationStarted: 'New conversation started',
+  // Conversation history list
+  history: 'History',
+  historyEmptyConversation: '(Empty)',
+  deleteConversationTitle: 'Delete conversation',
+  deleteConversationMsg: 'Delete this conversation? This cannot be undone.',
+  deleteConfirm: 'Delete',
+  deleteConversationDone: 'Conversation deleted',
+  timeJustNow: 'just now',
+  timeMinAgo: '{n}m ago',
+  timeHourAgo: '{n}h ago',
+  timeDayAgo: '{n}d ago',
   // Accessibility aria-labels (icon-only buttons)
   restoreHistory: 'Restore chat history',
   voiceInput: 'Voice input',

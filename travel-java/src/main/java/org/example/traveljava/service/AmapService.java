@@ -109,6 +109,10 @@ public class AmapService implements MapService {
     /** 热门目的地缓存 */
     private final ConcurrentHashMap<String, CacheEntry<List<HotDestinationDTO>>> hotDestCache = new ConcurrentHashMap<>();
 
+    /** 景点图片缓存：key = city|scenicName，value = 最多 3 张图片 URL（TTL 24h），避免重复打高德（令牌桶限速） */
+    private final ConcurrentHashMap<String, CacheEntry<List<String>>> attractionPhotoCache = new ConcurrentHashMap<>();
+    private static final long ATTR_PHOTO_TTL_MS = 24 * 60 * 60 * 1000;
+
     public AmapService(RestTemplate restTemplate, ObjectMapper objectMapper, MapConfig mapConfig) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
@@ -132,24 +136,36 @@ public class AmapService implements MapService {
     public String getCoordinateSystem() { return "gcj02"; }
 
     @Override
-    public double[] geocode(String address) {
+    public double[] geocode(String address, String city) {
         if (key == null || key.isBlank() || address == null || address.isBlank()) return null;
         rateLimit();
+        // Input Tips（POI 检索）而不是 /v3/geocode/geo（行政区划检索）。
+        // 本接口用「景点/地标」名词反查坐标：/geocode/geo 只适合结构化地址，拿 "国家博物馆" 去查会
+        // 搜出 "某省某市国家" 这类把地名关键词当 POI 名的噪声，导致命中失败。
+        // 传 city 限定，消歧同名地标（如 "故宫" 沈阳/北京都有），否则 inputtips 会优先命中全国排序在第一位的那个。
         try {
-            URI uri = UriComponentsBuilder.fromHttpUrl("https://restapi.amap.com/v3/geocode/geo")
-                    .queryParam("address", address)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(INPUT_TIPS_URL)
+                    .queryParam("keywords", address.trim())
                     .queryParam("key", key)
-                    .queryParam("output", "JSON")
-                    .build().encode().toUri();
+                    .queryParam("datatype", "all");
+            if (city != null && !city.isBlank()) {
+                builder.queryParam("city", city.trim());
+            }
+            URI uri = builder.build().encode().toUri();
             String resp = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(resp);
-            if ("1".equals(root.get("status").asText()) && root.get("geocodes").isArray()) {
-                JsonNode geo = root.get("geocodes").get(0);
-                String loc = geo.get("location").asText(); // "lng,lat"
-                String[] parts = loc.split(",");
-                return new double[]{Double.parseDouble(parts[1]), Double.parseDouble(parts[0])};
+            if ("1".equals(root.get("status").asText()) && root.get("tips").isArray()) {
+                // 取第一条带合法 location 的 tip；跳过 location 为空的条目（是 tip 混入的行政区/道路结点）
+                for (JsonNode tip : root.get("tips")) {
+                    if (!tip.has("location") || tip.get("location").asText().isEmpty()) continue;
+                    String loc = tip.get("location").asText(); // "lng,lat"
+                    String[] parts = loc.split(",");
+                    if (parts.length == 2) {
+                        return new double[]{Double.parseDouble(parts[1]), Double.parseDouble(parts[0])};
+                    }
+                }
             }
-        } catch (Exception e) { log.warn("高德地理编码失败: {}", address); }
+        } catch (Exception e) { log.warn("高德地理编码失败(InputTips): {}, city={}", address, city, e); }
         return null;
     }
 
@@ -880,6 +896,82 @@ public class AmapService implements MapService {
         } catch (Exception e) {
             log.warn("高德POI图片搜索失败: keywords={}, city={}, error={}", keywords, city, e.getMessage());
             return null;
+        }
+    }
+
+    /** 获取景点图片：返回最多 3 张真实照片 URL，带 24h 内存缓存 */
+    @Override
+    public List<String> fetchAttractionPhotos(String scenicName, String city) {
+        if (scenicName == null || scenicName.isBlank()) return new ArrayList<>();
+        String cacheKey = (city == null ? "" : city.trim()) + "|" + scenicName.trim();
+        // 命中缓存
+        CacheEntry<List<String>> entry = attractionPhotoCache.get(cacheKey);
+        if (entry != null && !entry.isExpired()) return entry.data;
+        // 未命中 → 查高德 POI photos
+        List<String> photos = searchPhotosByKeywords(scenicName.trim(), city);
+        // 兜底：缓存空列表（防对无图景点反复打高德限速的接口）
+        attractionPhotoCache.put(cacheKey, new CacheEntry<>(photos, System.currentTimeMillis() + ATTR_PHOTO_TTL_MS));
+        return photos;
+    }
+
+    /**
+     * 高德 POI 检索：取第一个匹配 POI 的 photos 数组，最多 3 张
+     * 优先跳过含 "/comment/" 的用户评论图；非评论图不足 3 张时回填评论图。
+     */
+    private List<String> searchPhotosByKeywords(String keywords, String city) {
+        List<String> result = new ArrayList<>();
+        if (key == null || key.isBlank()) return result;
+        rateLimit();
+        try {
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
+                    .queryParam("keywords", keywords)
+                    .queryParam("key", key)
+                    .queryParam("offset", 1)
+                    .queryParam("page", 1)
+                    .queryParam("extensions", "all");
+            if (city != null && !city.isBlank() && !"全国".equals(city)) {
+                builder.queryParam("city", city.trim());
+            }
+            URI uri = builder.build().encode().toUri();
+            String response = restTemplate.getForObject(uri, String.class);
+            if (response == null) return result;
+
+            JsonNode root = objectMapper.readTree(response);
+            if (!root.has("status") || !"1".equals(root.get("status").asText())) {
+                String info = root.has("info") ? root.get("info").asText() : "未知错误";
+                log.warn("高德POI多图检索失败: keywords={}, status={}, info={}", keywords, info);
+                return result;
+            }
+            JsonNode pois = root.get("pois");
+            if (pois == null || !pois.isArray() || pois.size() == 0) return result;
+
+            JsonNode poi = pois.get(0);
+            if (!poi.has("photos") || !poi.get("photos").isArray()) return result;
+
+            // 先收非评论官方图
+            for (JsonNode photo : poi.get("photos")) {
+                if (!photo.has("url")) continue;
+                String url = photo.get("url").asText();
+                if (url.isEmpty()) continue;
+                boolean comment = url.contains("/comment/") || url.contains("comment/");
+                if (!comment && !result.contains(url)) result.add(url);
+                if (result.size() >= 3) return result;
+            }
+            // 不足 3 张 → 回填评论图
+            if (result.size() < 3) {
+                for (JsonNode photo : poi.get("photos")) {
+                    if (!photo.has("url")) continue;
+                    String url = photo.get("url").asText();
+                    if (url.isEmpty() || result.contains(url)) continue;
+                    boolean comment = url.contains("/comment/") || url.contains("comment/");
+                    if (comment) result.add(url);
+                    if (result.size() >= 3) break;
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("高德POI多图检索失败: keywords={}, city={}, error={}", keywords, city, e.getMessage());
+            return result;
         }
     }
 

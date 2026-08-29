@@ -37,3 +37,8 @@ export function getCityAttractions(city) {
 export function getNearbyAttractions(lat, lng, radius = 5000) {
   return request(`/map/nearby-attractions?lat=${lat}&lng=${lng}&radius=${radius}`);
 }
+
+/** 周边游 — GET /api/map/surround-tour（出发城市可到达城市 + 热门路线） */
+export function getSurroundTour() {
+  return request('/map/surround-tour');
+}

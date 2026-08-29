@@ -65,6 +65,24 @@ export default {
   locationFailed: '定位失败',
   myLocation: '我的位置',
 
+  // ===== 周边游（从出发城市可到达城市 + 热门路线） =====
+  tourSurround: '周边游',
+  tourSurroundDesc: '从出发城市，高铁几小时能到的宝藏目的地',
+  popularRoutes: '热门路线',
+  filterRail: '铁路游',
+  filterDriving: '自驾游',
+  hours: '{n}小时',
+  allDay: '全天',
+  viewDestinations: '查看{n}个目的地',
+  locToDep: '回出发地',
+  heat: '热度{n}',
+  hotSpot: '旅行热点',
+  routeCities: '{n}城',
+  citySheetTitle: '出发地 {dep} → 目的地',
+  departCity: '出发城市',
+  emptyTour: '暂无周边游数据',
+  tourLoadFailed: '周边游数据加载失败',
+
   // ===== 行程模板（新功能） =====
   tripTemplates: '行程模板',
   templateSlogan: '一键套用达人行程，说走就走',

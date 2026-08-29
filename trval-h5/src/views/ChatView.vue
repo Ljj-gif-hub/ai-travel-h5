@@ -12,6 +12,7 @@ defineOptions({ name: 'ChatView' })
 import { getToken } from '../utils/auth'
 import { chatApi } from '../api'
 import { CHAT_SYSTEM_PROMPT } from '../constants/systemPrompts'
+import { getCurrentSessionId, getCurrentSessionMessages, saveCurrentSessionMessages, clearCurrentSession, createNewSession, getAllSessions, switchToSession, deleteSession, genMsgId } from '../utils/chatSession'
 
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
@@ -44,11 +45,7 @@ let abortController = null
 const showQuickBar = ref(true)
 
 import { getCurrentUser } from '../utils/userAccountStorage'
-// 【多账号隔离】聊天记录键名带用户名后缀，账号间数据完全隔离
-const STORAGE_KEY = () => {
-  const user = getCurrentUser()
-  return user ? `travel_chat_history:${user}` : 'travel_chat_history'
-}
+// 聊天记录统一走 chatSession 多会话存储（travel_chat_sessions:{username}），多账号隔离；旧单条历史在首载时迁移
 
 /*
  * ==================== 键盘 & 视口适配 ====================
@@ -109,35 +106,46 @@ const md = new MarkdownIt({
 const goBack = () => { if (window.history.length <= 1) router.push('/'); else router.back() }
 const generateUniqueId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 
-/* ==================== 消息存储 ==================== */
+/* ==================== 消息存储（统一走 chatSession 多会话） ==================== */
+const stripLeadingNulls = (content) => typeof content === 'string' ? content.replace(/^(null\s*)+/i, '') : content || ''
+
 const loadMessagesFromStorage = async () => {
   if (!(await checkLogin())) return false
   try {
-    // 【修复】迁移旧全局聊天记录到当前账号专属空间
+    // 迁移旧单条历史（travel_chat_history*）到多会话存储的当前会话
     const user = getCurrentUser()
+    let migrated = false
     if (user) {
-      const oldRaw = localStorage.getItem('travel_chat_history')
+      const oldKey = `travel_chat_history:${user}`
+      const oldRaw = localStorage.getItem(oldKey) || localStorage.getItem('travel_chat_history')
       if (oldRaw) {
-        const newKey = STORAGE_KEY()
-        if (!localStorage.getItem(newKey)) {
-          localStorage.setItem(newKey, oldRaw)  // 复制到账号空间
+        let parsed = null
+        try { parsed = JSON.parse(oldRaw) } catch (e) { parsed = null }
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // 旧历史合并成独立会话保留，不当作当前会话覆盖
+          createNewSession()
+          saveCurrentSessionMessages(parsed)
+          messages.value = parsed
+          migrated = true
+          showToast({ message: t('chat.historyRestored'), position: 'top' })
         }
-        localStorage.removeItem('travel_chat_history')  // 清除旧数据
+        localStorage.removeItem(oldKey)
+        localStorage.removeItem('travel_chat_history')
+        if (migrated) return true
       }
     }
-    const saved = localStorage.getItem(STORAGE_KEY())
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      if (Array.isArray(parsed) && parsed.length > 0) { messages.value = parsed; showToast({ message: t('chat.historyRestored'), position: 'top' }); return true }
+    const saved = getCurrentSessionMessages()
+    if (saved && saved.length > 1) {
+      messages.value = saved.map((m) => (m.type === 'ai' ? { ...m, content: stripLeadingNulls(m.content) } : m))
+      return true
     }
-    showToast({ message: t('chat.noHistory'), position: 'top' })
-  } catch (e) { localStorage.removeItem(STORAGE_KEY()); showToast({ message: t('chat.loadFailed'), position: 'top' }) }
+  } catch (e) { showToast({ message: t('chat.loadFailed'), position: 'top' }) }
   return false
 }
 
 const saveMessagesToStorage = () => {
   if (!getToken()) return
-  try { localStorage.setItem(STORAGE_KEY(), JSON.stringify(messages.value)) } catch (e) { showToast(t('chat.storageFull')) }
+  try { saveCurrentSessionMessages(messages.value) } catch (e) { showToast(t('chat.storageFull')) }
 }
 
 const checkLogin = async () => {
@@ -154,9 +162,78 @@ const clearChat = async () => {
   if (!(await checkLogin())) return
   try {
     await showConfirmDialog({ title: t('chat.clearChat'), message: t('chat.clearChatMsg'), confirmButtonText: t('chat.clearConfirm'), cancelButtonText: t('common.cancel') })
-    messages.value = [{ id: 1, type: 'system', content: t('chat.greeting') }]
-    localStorage.removeItem(STORAGE_KEY()); showToast(t('chat.conversationCleared')); await nextTick(); scrollToBottom(true)
+    clearCurrentSession()
+    messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
+    showToast(t('chat.conversationCleared')); await nextTick(); scrollToBottom(true)
   } catch { /* 取消 */ }
+}
+
+/* ==================== 历史对话列表（豆包式历史会话入口） ==================== */
+const showHistory = ref(false)
+const conversations = ref([])
+const loadConversations = () => { conversations.value = getAllSessions() }
+const openHistory = () => { saveMessagesToStorage(); loadConversations(); showHistory.value = true }
+
+const convPreview = (c) => {
+  if (!c.messages || !c.messages.length) return t('chat.historyEmptyConversation')
+  const msgs = [...c.messages].reverse()
+  const a = msgs.find((x) => x.type === 'ai' && x.content)
+  if (a) return a.content.slice(0, 50) + (a.content.length > 50 ? '...' : '')
+  const u = msgs.find((x) => x.type === 'user' && x.content)
+  return u ? u.content.slice(0, 50) + (u.content.length > 50 ? '...' : '') : t('chat.historyEmptyConversation')
+}
+
+const convTime = (ts) => {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  if (mins < 1) return t('chat.timeJustNow')
+  if (mins < 60) return t('chat.timeMinAgo', { n: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('chat.timeHourAgo', { n: hours })
+  const days = Math.floor(hours / 24)
+  if (days < 7) return t('chat.timeDayAgo', { n: days })
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+}
+
+const pickConversation = (conv) => {
+  saveMessagesToStorage()
+  const restored = switchToSession(conv.id)
+  if (restored) {
+    messages.value = restored.map((m) => (m.type === 'ai' ? { ...m, content: stripLeadingNulls(m.content) } : m))
+  } else {
+    messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
+  }
+  showQuickBar.value = messages.value.length > 1
+  showHistory.value = false
+  nextTick(); nextTick(); scrollToBottom(true)
+  showToast({ message: t('chat.historyRestored'), position: 'top' })
+}
+
+const removeConversation = async (id) => {
+  try {
+    await showConfirmDialog({
+      title: t('chat.deleteConversationTitle'),
+      message: t('chat.deleteConversationMsg'),
+      confirmButtonText: t('chat.deleteConfirm'),
+      cancelButtonText: t('common.cancel'),
+    })
+    const wasCurrent = getCurrentSessionId() === id
+    deleteSession(id)
+    loadConversations()
+    if (wasCurrent) {
+      messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greeting') }]
+      showQuickBar.value = false
+    }
+    showToast({ message: t('chat.deleteConversationDone'), position: 'top' })
+  } catch (e) { /* 用户取消 */ }
+}
+
+const startNewFromHistory = () => {
+  saveMessagesToStorage(); createNewSession()
+  messages.value = [{ id: genMsgId(), type: 'system', content: t('chat.greetingNew') }]
+  showHistory.value = false
+  showToast({ message: t('chat.newConversationStarted'), position: 'top' })
 }
 
 /* ==================== Markdown 预处理 ==================== */
@@ -320,6 +397,9 @@ const sendMessage = async () => {
   sendDebounce = true
   sendDebounceTimer = setTimeout(() => { sendDebounce = false }, 500)
 
+  // 【历史对话】确保存在当前会话，否则首次对话无法持久化
+  if (!getCurrentSessionId()) createNewSession()
+
   isSending.value = true; isThinking.value = true; showQuickBar.value = false
 
   messages.value.push({ id: generateUniqueId(), type: 'user', content: text })
@@ -391,6 +471,7 @@ onDeactivated(() => {
   isReconnecting.value = false
   // BUGID 修复：切走中断 SSE 后复位所有 streaming 标记，避免 AI 气泡永久流式
   messages.value.forEach(m => { if (m.isStreaming) m.isStreaming = false })
+  saveMessagesToStorage()
 })
 
 /* 【性能优化】Tab切回：恢复页面高度计算、滚动到底部 */
@@ -450,7 +531,7 @@ watch(
         </div>
       </template>
       <template #right>
-        <van-icon name="replay" size="20" color="#fff" class="nav-btn" role="button" :aria-label="t('chat.restoreHistory')" @click="loadMessagesFromStorage" />
+        <van-icon name="clock-o" size="20" color="#fff" class="nav-btn" role="button" :aria-label="t('chat.history')" @click="openHistory" />
         <van-icon name="delete-o" size="20" color="#fff" class="nav-btn" role="button" :aria-label="t('chat.clearChat')" @click="clearChat" />
       </template>
     </van-nav-bar>
@@ -561,6 +642,37 @@ watch(
         <span class="voice-pulse" />{{ t('chat.listening') }}
       </div>
     </div>
+
+    <!-- ======== 历史对话列表弹层 ======== -->
+    <van-popup v-model:show="showHistory" position="bottom" :style="{ height: '82%', maxHeight: '82vh' }" round safe-area-inset-bottom close-on-click-overlay>
+      <div class="history-view">
+        <div class="history-header">
+          <span class="history-title">{{ t('chat.history') }}</span>
+          <van-icon name="cross" size="20" color="#64748B" role="button" :aria-label="t('chat.close')" @click="showHistory = false" />
+        </div>
+        <div class="history-body">
+          <div v-if="conversations.length === 0" class="history-empty">
+            <div class="history-empty-icon">🕘</div>
+            <div class="history-empty-text">{{ t('chat.noHistory') }}</div>
+          </div>
+          <div v-else class="history-list">
+            <div v-for="conv in conversations" :key="conv.id" class="history-item" @click="pickConversation(conv)">
+              <div class="hi-main">
+                <div class="hi-title">{{ conv.title || t('chat.newConversation') }}</div>
+                <div class="hi-preview">{{ convPreview(conv) }}</div>
+              </div>
+              <div class="hi-right">
+                <span class="hi-time">{{ convTime(conv.updatedAt) }}</span>
+                <van-icon name="delete-o" size="18" color="#EF4444" class="hi-del" role="button" :aria-label="t('chat.deleteConversationTitle')" @click.stop="removeConversation(conv.id)" />
+              </div>
+            </div>
+          </div>
+          <button class="history-new-btn" @click="startNewFromHistory">
+            <van-icon name="add-o" size="18" />{{ t('chat.newConversation') }}
+          </button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -613,6 +725,27 @@ watch(
   isolation: isolate;
 }
 .chat-inner { max-width: 500px; margin: 0 auto; width: 100%; }
+
+/* ==================== 历史对话列表视图 ==================== */
+.history-view { display:flex; flex-direction:column; height:100%; }
+.history-header { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:rgba(255,255,255,0.5); backdrop-filter:blur(18px) saturate(170%); -webkit-backdrop-filter:blur(18px) saturate(170%); border-bottom:0.5px solid rgba(0,0,0,0.05); }
+.history-title { font-size:17px; font-weight:700; color:#1E293B; }
+.history-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 14px 20px; }
+.history-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 0; gap:12px; color:#94A3B8; }
+.history-empty-icon { font-size:40px; }
+.history-empty-text { font-size:14px; }
+.history-list { display:flex; flex-direction:column; gap:10px; }
+.history-item { display:flex; align-items:center; gap:10px; padding:12px 14px; background:rgba(255,255,255,0.8); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:16px; border:1px solid rgba(139,92,246,0.08); box-shadow:0 2px 10px rgba(0,0,0,0.03); cursor:pointer; transition:transform .15s; }
+.history-item:active { transform:scale(.98); }
+.hi-main { flex:1; min-width:0; }
+.hi-title { font-size:14px; font-weight:600; color:#1E293B; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hi-preview { font-size:12px; color:#94A3B8; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hi-right { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+.hi-time { font-size:11px; color:#A8B2C0; }
+.hi-del { padding:4px; border-radius:50%; }
+.hi-del:active { background:rgba(239,68,68,0.1); }
+.history-new-btn { display:flex; align-items:center; justify-content:center; gap:6px; margin:16px auto 0; padding:11px 26px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; border:none; border-radius:24px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 4px 14px rgba(139,92,246,0.3); }
+.history-new-btn:active { transform:scale(.96); }
 
 /* ==================== 引导页 ==================== */
 .chat-guide {

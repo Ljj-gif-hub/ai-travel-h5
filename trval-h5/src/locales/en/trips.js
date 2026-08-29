@@ -65,6 +65,24 @@ export default {
   locationFailed: 'Failed to locate',
   myLocation: 'My location',
 
+  // ===== Nearby trips (reachable cities + popular routes) =====
+  tourSurround: 'Nearby Trips',
+  tourSurroundDesc: 'Hidden gems reachable by high-speed rail',
+  popularRoutes: 'Popular Routes',
+  filterRail: 'Rail Trip',
+  filterDriving: 'Self-drive',
+  hours: '{n}h',
+  allDay: 'All Day',
+  viewDestinations: 'View {n} destinations',
+  locToDep: 'Back to origin',
+  heat: 'Heat {n}',
+  hotSpot: 'Hot Spot',
+  routeCities: '{n} cities',
+  citySheetTitle: 'From {dep} → destinations',
+  departCity: 'Departure City',
+  emptyTour: 'No nearby trip data yet',
+  tourLoadFailed: 'Failed to load nearby trips',
+
   // ===== Trip templates (new feature) =====
   tripTemplates: 'Trip Templates',
   templateSlogan: 'Copy a curated itinerary in one tap',

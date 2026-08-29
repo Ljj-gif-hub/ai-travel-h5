@@ -10,6 +10,7 @@ import { showToast } from 'vant'
 import { agentPlanStream } from '../api/agent'
 import { planApi } from '../api/index.js'
 import { getToken } from '../utils/auth'
+import { spotCoord } from '../utils/spot-geocoder'
 // MAPFAIL-1 修复：AMap 不可用时回退 Leaflet（本地打包 + OSM 瓦片，离线由 SW 缓存）
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -24,7 +25,7 @@ const originCity = ref(route.query.origin || t('map.departure'))
 const tripDays = ref(Number(route.query.days) || 3)
 const tripPeople = ref(Number(route.query.people) || 2)
 const phase = ref('generating')
-const activeTab = ref('plan') // plan | hotel
+const activeTab = ref('itinerary') // itinerary | inspiration
 const activeDay = ref(0) // 当前查看的天索引
 const agentProgress = ref(0)
 const agentStep = ref(t('map.connectingAgent'))
@@ -91,14 +92,225 @@ const totalCost = computed(() => {
   }
   return s
 })
-// 抽屉拉到最底部（收起）时隐藏调整胶囊
-const showAdjustBar = computed(() => phase.value === 'completed' && !!planData.value && drawerPct.value > 40)
+// ====== 地图覆盖层（抽屉收起时显示）与行程标题 ======
+const OVERLAY_MAX_PCT = 30 // 抽屉位置高于此值（展开）→ 隐藏地图覆盖层与顶部标题
+const showMapOverlay = computed(() => phase.value === 'completed' && !!planData.value && drawerPct.value <= OVERLAY_MAX_PCT)
+// 顶部标题：仅当"已完成态且抽屉展开"（标题已移入抽屉）才隐藏；生成中/收起/兜底态都显示
+const showTopTitle = computed(() => !(phase.value === 'completed' && !!planData.value && drawerPct.value > OVERLAY_MAX_PCT))
 
-// ====== 简略预览：抽屉收起时展示行程/住宿/天数摘要（携程同款） ======
-const PREVIEW_MAX_PCT = 36 // 抽屉位置低于此值（接近收起）时显示简略预览
-const showCollapsedPreview = computed(() =>
-  phase.value === 'completed' && !!planData.value && drawerPct.value <= PREVIEW_MAX_PCT
-)
+// 标题副题：取整程最有代表性的前 2 个真实景点（跳过"稍作休整/自由活动"等废话与空项），要精简且重点
+const FILLER_TITLE_WORDS = ['休整','休息','休憩','自由活动','自由安排','闲逛','漫步','回酒店','放松','调整']
+function isFillerTitle(name) {
+  if (!name) return true
+  const low = String(name).toLowerCase()
+  return FILLER_TITLE_WORDS.some(w => low.includes(w))
+}
+// 景点名只保留主体，去掉后面的注记（如"（免费）"“（5A级）”"【需预约】"）
+function cleanSpotName(name) {
+  if (!name) return ''
+  return String(name)
+    .replace(/【[^】]*】/g, '')
+    .replace(/（[^）]*）/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+function topHighlights() {
+  const names = []
+  for (const dp of planData.value?.dayPlans || []) {
+    for (const s of dp.timeSlots || []) {
+      const n = cleanSpotName(s.attraction)
+      if (n && !isFillerTitle(n) && !names.includes(n)) names.push(n)
+      if (names.length === 2) return names
+    }
+  }
+  return names
+}
+// 默认标题（优美）：{目的地}{天数}天 · {主题词} · {前2真实景点}；去废话、去"稍作休整"
+const DEST_THEME = {
+  三亚:'海岛慢享', 大理:'苍山洱海', 丽江:'雪山古城', 昆明:'春城花事', 桂林:'山水甲天下',
+  张家界:'奇峰秘境', 厦门:'鹭岛漫游', 深圳:'向海而生', 广州:'食在广州', 成都:'巴适慢游',
+  重庆:'山城烟火', 西安:'古都风华', 北京:'皇城古韵', 上海:'魔都风采', 杭州:'江南画意',
+  苏州:'园林雅韵', 南京:'金陵风韵', 青岛:'碧海红瓦', 长沙:'星城烟火', 武汉:'江城烟火',
+}
+function defaultTripTitle() {
+  const dest = planData.value?.destination || destCity.value
+  const days = planData.value?.days || tripDays.value
+  const hs = topHighlights()
+  const theme = DEST_THEME[dest] || (days >= 6 ? '深度漫游' : days >= 4 ? '悠享畅游' : '周末微度假')
+  const hl = hs.length ? hs.slice(0, 2).join('+') : ''
+  const base = `${dest}${days}天 · ${theme}`
+  return hl ? `${base} · ${hl}` : base
+}
+// 标题可编辑：用户可覆盖默认标题（空则回退到自动生成）；可取消、可保存，状态机清晰
+const customTitle = ref('')
+const editingTitle = ref(false)
+const titleDraft = ref('')
+const defaultTitle = computed(defaultTripTitle)
+const displayTitle = computed(() => customTitle.value || defaultTitle.value)
+function startEditTitle() { titleDraft.value = displayTitle.value; editingTitle.value = true }
+function saveEditTitle() {
+  const v = titleDraft.value.trim()
+  customTitle.value = v
+  if (planData.value) planData.value.title = v // 随保存行程带出
+  editingTitle.value = false
+}
+function cancelEditTitle() { titleDraft.value = displayTitle.value; editingTitle.value = false }
+function onTitleBlur() { if (editingTitle.value) saveEditTitle() }
+
+// 筛选胶囊：一期仅视觉呈现（切换选中态+提示），TODO 二期接真实过滤
+const filterChips = [
+  { key: 'spots',    labelKey: 'map.filterSpots',    hintKey: 'map.filterSpotsHint' },
+  { key: 'hotels',   labelKey: 'map.filterHotels',   hintKey: 'map.filterHotelsHint' },
+  { key: 'food',     labelKey: 'map.filterFood',     hintKey: 'map.filterFoodHint' },
+  { key: 'shopping', labelKey: 'map.filterShopping', hintKey: 'map.filterShoppingHint' },
+]
+const activeFilter = ref('')
+// 数据无类别字段，按内容关键字启发式归类（景点/美食/购物/住宿，默认景点）。只取名称+活动，避免 tips 里"推荐美食"等噪声误判
+const FOOD_KW = ['餐厅','美食街','美食','火锅','烤肉','烧烤','串串','米粉','面馆','海鲜','咖啡','奶茶','茶楼','菜馆','菜','小吃','夜市','大排档','甜品','烘焙','农家菜','饭','煎饼','饺子']
+const SHOP_KW = ['购物','商场','商城','免税','步行街','百货','商圈','奥特莱斯','旗舰店','商业街','购物中心','市集','商贸','银泰']
+const HOTEL_KW = ['酒店','民宿','客栈','宾馆','住宿','旅馆','度假村','青旅']
+function categoryOf(item) {
+  const src = ((item.attraction || '') + (item.activity || '')).toLowerCase()
+  const has = kws => kws.some(k => src.includes(k.toLowerCase()))
+  if (has(HOTEL_KW)) return 'hotels'
+  if (has(SHOP_KW)) return 'shopping'
+  if (has(FOOD_KW)) return 'food'
+  return 'spots'
+}
+/** 景点名 → 类别（所有天共用） */
+const slotCats = computed(() => {
+  const m = {}
+  for (const dp of planData.value?.dayPlans || []) for (const s of dp.timeSlots || []) if (s.attraction) m[s.attraction] = categoryOf(s)
+  return m
+})
+/** 某类别在整份行程里的条目数：美食=含当天用餐项，住宿=含住宿推荐 */
+function countOfCategory(cat) {
+  let n = 0
+  for (const dp of planData.value?.dayPlans || []) for (const s of dp.timeSlots || []) if (categoryOf(s) === cat) n++
+  if (cat === 'food') n += (planData.value?.dayPlans || []).reduce((a, dp) => a + (dp.meals?.length || 0), 0)
+  if (cat === 'hotels') n += (hotelList.value || []).length
+  return n
+}
+/** 实际生效的过滤类别：选了但行程里没有该类（或重新生成后已变空）→ 视为未选，避免整图/整列表全暗 */
+const effFilter = computed(() => {
+  if (!activeFilter.value) return ''
+  return countOfCategory(activeFilter.value) > 0 ? activeFilter.value : ''
+})
+const slotCat = s => (s ? (slotCats.value[s.attraction] || 'spots') : 'spots')
+/** 单个行程卡的过滤类：命中→高亮，未命中→压暗 */
+const filterClassOf = s => {
+  if (!effFilter.value) return ''
+  return slotCat(s) === effFilter.value ? 'filter-hl' : 'filter-dim'
+}
+// 非景点条目固定所属类别：用餐→food、住宿→hotels
+const foodFilterClass = () => effFilter.value ? (effFilter.value === 'food' ? 'filter-hl' : 'filter-dim') : ''
+const hotelFilterClass = () => effFilter.value ? (effFilter.value === 'hotels' ? 'filter-hl' : 'filter-dim') : ''
+const noteFilterClass = computed(() => !effFilter.value || !noteSpot.value ? '' : (slotCat(noteSpot.value) === effFilter.value ? 'filter-hl' : 'filter-dim'))
+function onFilter(key) {
+  if (activeFilter.value === key) { activeFilter.value = ''; return }
+  if (countOfCategory(key) <= 0) { showToast(t('map.filterEmpty')); return }
+  activeFilter.value = key
+}
+/** 把当前过滤状态同步到地图钉标：命中类别高亮、其余压暗 */
+function applyFilterToMap() {
+  const f = effFilter.value
+  for (const name of Object.keys(markerEls.value)) {
+    const el = markerEls.value[name]
+    if (!el) continue
+    const cat = slotCats.value[name] || 'spots'
+    el.classList.toggle('filter-dim', !!f && cat !== f)
+    el.classList.toggle('filter-hl', !!f && cat === f)
+  }
+}
+watch(effFilter, applyFilterToMap)
+
+// 选中景点便签卡：优先 activeSpot，否则默认第一天第一个景点
+const slotByName = computed(() => {
+  const map = {}
+  for (const dp of planData.value?.dayPlans || []) for (const s of dp.timeSlots || []) if (s.attraction && !map[s.attraction]) map[s.attraction] = s
+  return map
+})
+const firstSpot = computed(() => planData.value?.dayPlans?.[0]?.timeSlots?.[0] || null)
+const noteSpot = computed(() => slotByName.value[activeSpot.value] || firstSpot.value)
+const noteImgStyle = computed(() => {
+  const urls = noteSpot.value && attractionImages.value[noteSpot.value.attraction]
+  const u = urls && urls[0]
+  return u ? { backgroundImage: `url(${u})` } : {}
+})
+
+// ====== 行程详情：所有天连续滚动，天数胶囊做滚动定位锚点 ======
+const dayEls = {}       // 各天区块 DOM（v-for 函数 ref 填充）
+const bodyEl = ref(null) // 行程滚动容器
+/** 吸顶头部底缘 = 判定线：某天顶部越过它即算"当前天"。实测吸顶头高，避免硬编码 90/100 这类拍脑袋值 */
+let stickyHeadH = -1
+function revealLine() {
+  // 抽屉收起时 .body 被 display:none，offsetHeight=0 不可用 → 不缓存 0，落到兜底值，等可见后再实测
+  if (stickyHeadH < 0) {
+    const head = bodyEl.value && bodyEl.value.querySelector('.sticky-head')
+    const h = head ? head.offsetHeight : 0
+    if (h > 0) stickyHeadH = h
+  }
+  return (stickyHeadH > 0 ? stickyHeadH : 96) + 4
+}
+let pendingDayIdx = -1   // 点 Day 后的程序化滚动锁定：滚动监测在用户手动滚动前不接管，避免把胶囊抢回前一天
+const REVEAL_SLACK = 8   // 滚动落点再往上多留 8px：标题稳稳露在吸顶头下方，给平滑滚动的残差留余地
+const REVEAL_DRIFT = 26  // 「当前天」判定留 26px 容差：自然滚动差几像素也不突兀
+/** 用户开始手动滚动（触摸拖动/滚轮）→ 交还滚动监测，这才允许胶囊跟随真实阅读位置 */
+function releaseDayLock() { pendingDayIdx = -1 }
+/** 点天数胶囊：滚动到该天；抽屉收起则先上滑展示再滚 */
+function scrollToDay(idx) {
+  activeDay.value = idx
+  pendingDayIdx = idx
+  const doScroll = () => {
+    const body = bodyEl.value
+    const el = dayEls[idx]
+    if (!body || !el) return
+    const reveal = revealLine()
+    const bodyTop = body.getBoundingClientRect().top
+    const dist = el.getBoundingClientRect().top - bodyTop - (reveal - REVEAL_SLACK)  // 该天距落点（判定线上方 8px）的距离
+    const maxScroll = body.scrollHeight - body.clientHeight            // 最后一段内容不足以把当天顶到落点线时绷到底
+    const target = Math.max(0, Math.min(maxScroll, body.scrollTop + dist))
+    body.scrollTo({ top: target, behavior: 'smooth' })
+  }
+  if (drawerPct.value <= OVERLAY_MAX_PCT) { snapTo(MID); setTimeout(doScroll, 500) }
+  else doScroll()
+}
+/** 点天数胶囊（收起条）——同上，滚动定位 */
+function pickDay(idx) { scrollToDay(idx) }
+/** 滚动时同步高亮当前到达的天（取最靠上、已越过顶部判定线的那天） */
+function onBodyScroll() {
+  const body = bodyEl.value
+  if (!body || !planData.value?.dayPlans) return
+  // 点 Day 后的程序化滚动期间不接管：胶囊维持用户点的天，直到用户手动滚动（touchmove/wheel 释放锁）
+  if (pendingDayIdx >= 0) return
+  const bodyTop = body.getBoundingClientRect().top
+  const reveal = revealLine()
+  const windowLine = reveal + REVEAL_DRIFT
+  let cur = 0
+  planData.value.dayPlans.forEach((_, idx) => {
+    const el = dayEls[idx]
+    if (el && el.getBoundingClientRect().top - bodyTop <= windowLine) cur = idx
+  })
+  // 滚到底后没有内容再支撑判定线，直接认最后一阅为当前天
+  if (body.scrollHeight - body.scrollTop - body.clientHeight < 8) cur = planData.value.dayPlans.length - 1
+  if (activeDay.value !== cur) activeDay.value = cur
+}
+/** 天数标题：去掉"第N天："前缀；若是"稍作休整/自由活动"等废话，则回退为该天真实景点简介 */
+function dayTitleOf(idx) {
+  const dp = planData.value?.dayPlans?.[idx]
+  if (!dp) return ''
+  const d = dp.day
+  const raw = String(dp.dayTitle || '').replace(`第${d}天：`, '').replace(`第${d}天:`, '').replace(`第${d}天`, '').trim()
+  if (raw && !isFillerTitle(raw)) return cleanSpotName(raw)
+  const hls = []
+  for (const s of dp.timeSlots || []) {
+    const n = cleanSpotName(s.attraction)
+    if (n && !isFillerTitle(n) && !hls.includes(n)) hls.push(n)
+    if (hls.length === 2) break
+  }
+  return hls.join('+')
+}
 const spotCount = computed(() => {
   if (!planData.value) return 0
   const set = new Set()
@@ -110,17 +322,8 @@ const itinPreview = computed(() => {
   const days = planData.value.days || tripDays.value
   return `${destCity.value} · ${days}${t('common.days')}${Math.max(days - 1, 0)}${t('common.night')} · ${spotCount.value}${t('map.spotUnit')}`
 })
-const hotelPreview = computed(() => {
-  if (!hotelList.value.length) return t('map.noHotels')
-  const first = hotelList.value[0]
-  const extra = hotelList.value.length > 1 ? t('map.hotelMore', { n: hotelList.value.length }) : ''
-  const price = first.pricePerNight ? t('map.hotelPriceFrom', { price: first.pricePerNight }) : ''
-  return `${first.name}${extra}${price}`
-})
-function expandFromPreview() { snapTo(MID) }
-
 // ====== 可拖拽抽屉（仅手柄区域可拖拽，内容区自由滚动） ======
-const MIN = 26, MID = 55, MAX = 92
+const MIN = 13, MID = 55, MAX = 97
 const drawerPct = ref(MID)
 const isDragging = ref(false)
 let handleTouchId = null, hStartY = 0, hStartPct = 0, hDragOn = false
@@ -212,7 +415,8 @@ function fireDrawerZoom(pct) {
   // 识别当前真实缩放（含用户手动缩放过的高级别），只做相对增量
   const currentZoom = mapInstance.getZoom()
   const deltaPct = pct - lastPct
-  const deltaZoom = (deltaPct / (MAX_PCT - MIN_PCT)) * ZOOM_RANGE
+  // 缩放方向与抽屉相反：抽屉上滑（pct↑）→ 地图缩小；抽屉下滑（pct↓）→ 地图放大
+  const deltaZoom = -((deltaPct / (MAX_PCT - MIN_PCT)) * ZOOM_RANGE)
   const target = currentZoom + deltaZoom
   lastPct = pct
   animateMapZoom(target, SNAP_DURATION_MS)
@@ -226,9 +430,74 @@ watch(drawerPct, (val) => {
 
 // ====== 地图 ======
 let mapInstance = null
+// 当前地图瓦片坐标系：高德=gcj02，Leaflet/OSM 兜底=wgs84。定位器按此把各数据源坐标统一归一化。
+let activeMapCrs = 'gcj02'
 let markerInstances = [] // 已添加的地图标记实例（重新生成时清除）
 const markerByName = {}  // 景点名 → AMap.Marker 实例（扇形展开用）
 const markerPrimary = new Set() // 同地点合并后的代表景点名；declutter 只按代表名排布，避免把已合并的同一图标重新堆开
+// 路线连线（从哪到哪）：按行程顺序连接各景点，直观展示当日/全程行进路线
+let routeLine = null // AMap.Polyline 实例
+/** 按行程顺序收集去重后的景点坐标（先到先得），作为路线折线点 */
+function routePoints() {
+  const pts = [], seen = new Set()
+  for (const dp of planData.value?.dayPlans || []) for (const s of dp.timeSlots || []) {
+    if (!s.attraction) continue
+    const p = markerPositions.value[s.attraction]
+    if (p && !seen.has(s.attraction)) { seen.add(s.attraction); pts.push([p.lng, p.lat]) }
+  }
+  return pts
+}
+/** 绘制路线：优先用高德驾车路算（多站点按顺序分段搜索，贴合真实道路）；任一腿失败则回退为景点直连折线。 */
+function drawRoute() {
+  if (!mapInstance || !window.AMap) return
+  if (routeLine) { try { routeLine.setMap(null) } catch {} ; routeLine = null }
+  const pts = routePoints()
+  if (pts.length < 2) return
+  const lnglats = pts.map(p => new window.AMap.LngLat(p[0], p[1]))
+  // 兜底：景点直连折线（保证一定能看到"从哪到哪"）
+  const doStraight = () => {
+    if (routeLine) { try { routeLine.setMap(null) } catch {} ; routeLine = null }
+    routeLine = new window.AMap.Polyline({ path: lnglats, strokeColor: '#2E7CFF', strokeWeight: 6, strokeOpacity: .9, strokeStyle: 'solid', lineJoin: 'round', lineCap: 'round', zIndex: 40, showDir: true })
+    routeLine.setMap(mapInstance)
+  }
+  const drawPolyline = (flat) => {
+    if (!flat || flat.length < 2) { doStraight(); return }
+    if (routeLine) { try { routeLine.setMap(null) } catch {} ; routeLine = null }
+    routeLine = new window.AMap.Polyline({ path: flat, strokeColor: '#2E7CFF', strokeWeight: 6, strokeOpacity: .85, lineJoin: 'round', lineCap: 'round', zIndex: 40, showDir: true, borderWeight: 2 })
+    routeLine.setMap(mapInstance)
+  }
+  window.AMap.plugin('AMap.Driving', () => {
+    let driving
+    try { driving = new window.AMap.Driving({ policy: window.AMap.DrivingPolicy.LEAST_TIME }) }
+    catch (e) { doStraight(); return }
+    const legs = []
+    let failed = false, pending = lnglats.length - 1
+    const finish = () => {
+      if (pending > 0) return
+      if (failed) { doStraight(); return }
+      const ordered = legs.sort((a, b) => a.i - b.i)
+      drawPolyline(ordered.reduce((acc, leg) => acc.concat(leg.path), []))
+    }
+    // 分段顺序搜索：origin → 第1段 → … → destination；每段用真实道路 polyline
+    const searchLeg = (i) => {
+      if (i >= lnglats.length - 1) { finish(); return }
+      try {
+        driving.search(lnglats[i], lnglats[i + 1], (status, result) => {
+          const steps = result?.routes?.[0]?.steps
+          if (status === 'complete' && Array.isArray(steps) && steps.length) {
+            const path = []
+            steps.forEach(st => { if (Array.isArray(st.path)) path.push(...st.path) })
+            if (path.length) legs.push({ i, path })
+            else failed = true
+          } else failed = true
+          pending--
+          searchLeg(i + 1)
+        })
+      } catch (e) { failed = true; pending--; searchLeg(i + 1) }
+    }
+    searchLeg(0)
+  })
+}
 const cityCoords = {
   北京:[39.915,116.404],上海:[31.23,121.474],成都:[30.573,104.067],杭州:[30.274,120.155],
   大理:[25.607,100.233],三亚:[18.253,109.504],西安:[34.263,108.948],重庆:[29.565,106.551],
@@ -239,10 +508,13 @@ const cityCoords = {
 }
 async function getCenter(c) {
   for (const [k, v] of Object.entries(cityCoords)) { if (c.includes(k)) return { lat: v[0], lng: v[1] } }
-  // 高德地理编码兜底
+  // 高德地理编码兜底（只认与目标城市相关的命中，避免 mock 固定城市造成错位）
   try {
     const r = await fetch(`/api/map/suggestion?keyword=${encodeURIComponent(c)}`).then(r => r.json())
-    if (r.code === 0 && r.data?.[0]) return { lat: r.data[0].latitude, lng: r.data[0].longitude }
+    if (r.code === 0 && Array.isArray(r.data)) {
+      const hit = r.data.find(d => suggestionMatches(c, d))
+      if (hit && isFinite(+hit.lat) && isFinite(+hit.lng)) return { lat: +hit.lat, lng: +hit.lng }
+    }
   } catch {}
   // 最终兜底：中国大陆中心
   return { lat: 35.86, lng: 104.19 }
@@ -265,6 +537,7 @@ async function initMap() {
 }
 
 async function initAmapMap() {
+  activeMapCrs = 'gcj02' // 高德瓦片 = GCJ-02，定位器据此归一化
   const center = await getCenter(destCity.value)
   const el = document.getElementById('agent-bmap'); if (!el) return
   mapInstance = new window.AMap.Map('agent-bmap', {
@@ -303,6 +576,7 @@ const loadLeaflet = () => {
 
 /** MAPFAIL-1 修复：Leaflet 兜底地图（瓦片 + 城市标签；标记/缩放等 AMap 专属逻辑在 window.AMap 缺失时自动降级为 no-op） */
 async function initLeafletMap(Lf) {
+  activeMapCrs = 'wgs84' // OSM 瓦片 = WGS-84
   const center = await getCenter(destCity.value)
   if (mapInstance) {
     try { if (typeof mapInstance.destroy === 'function') mapInstance.destroy() } catch (e) {}
@@ -325,23 +599,23 @@ async function initLeafletMap(Lf) {
   Lf.marker([center.lat, center.lng], { icon, interactive: false, zIndexOffset: 1000 }).addTo(mapInstance)
 }
 
-/** 地理编码：把景点名解析为真实坐标（带 city 参数提高准确度；兜底用城市中心附近小偏移） */
-async function geocodeName(name) {
-  try {
-    // 传 city 让高德限定在城市内搜索，避免"西湖"这类歧义词搜到别处
-    const r = await fetch(`/api/map/suggestion?keyword=${encodeURIComponent(name)}&city=${encodeURIComponent(destCity.value)}`).then(r => r.json())
-    if (r.code === 0 && r.data && r.data[0] && r.data[0].lat != null && r.data[0].lng != null) {
-      return { lat: r.data[0].lat, lng: r.data[0].lng }
-    }
-  } catch {}
-  const center = await getCenter(destCity.value)
-  return { lat: center.lat + (Math.random() - .5) * .02, lng: center.lng + (Math.random() - .5) * .02 }
+/** 地理编码：把景点名解析为真实坐标。
+ *  委托通用定位器 spot-geocoder（高德客户端→后端→精选库，统一归一化到地图坐标系并做城市校验），
+ *  全部 miss 才用"目的地中心 + 按名散开"兜底，并标记 approx 表示"位置为近似估算"。 */
+async function geocodeName(name, center) {
+  const hit = await spotCoord(name, destCity.value, activeMapCrs, center)
+  if (hit) return { lat: hit.lat, lng: hit.lng, approx: false }
+  const seed = nameSeed(name || 'spot')
+  const ang = (seed % 360) * Math.PI / 180
+  const dist = 0.012 + (seed % 100) / 100 * 0.021
+  return { lat: center.lat + Math.sin(ang) * dist, lng: center.lng + Math.cos(ang) * dist, approx: true }
 }
 
 /** 同地点合并阈值（米）：坐标距离小于该值的推荐视为同一个地点，合并为一个定位图标。
  *  例：LLM 常把"武侯祠（含锦里古街）"和"锦里古街"同时推荐出来，两点紧邻，地图上应只显示一个 pin。 */
 const SAME_PLACE_M = 150
-/** 按坐标相近程度把景点分组成"同一地点"，每组保持行程出现顺序（names[0] 为最早出现者，即标签最上一行） */
+/** 按坐标相近程度把景点分组成"同一地点"，每组保持行程出现顺序（names[0] 为最早出现者，即标签最上一行）。
+ *  携带 approx：仅当整组都来自"近似估算兜底"时标记为近似（避免把真实 POI 误标为近似）。 */
 function groupBySamePlace(markers) {
   const groups = []
   for (const m of markers) {
@@ -351,9 +625,10 @@ function groupBySamePlace(markers) {
       const dx = (g.lng - m.lng) * 111000 * Math.cos(g.lat * Math.PI / 180)
       if (Math.sqrt(dx * dx + dy * dy) < SAME_PLACE_M) { host = g; break }
     }
-    if (host) host.names.push(m.name)
-    else groups.push({ lat: m.lat, lng: m.lng, names: [m.name] })
+    if (host) { host.names.push(m.name); if (m.approx) host.approxCount++ }
+    else groups.push({ lat: m.lat, lng: m.lng, names: [m.name], approxCount: m.approx ? 1 : 0 })
   }
+  groups.forEach(g => { g.approx = g.approxCount === g.names.length })
   return groups
 }
 /** 转义 HTML，防止景点名里的特殊字符破坏标签 DOM */
@@ -361,22 +636,45 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
 }
 
+/** 景点名稳定的 seed（JS 字符串哈希），用于把"无坐标兜底"的景点按名字散开在同一城市，避免全部堆在市中心 */
+function nameSeed(name) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return h
+}
+
+/** 联想结果是否与查询景点名相关。
+ *  高德有 key 时返回真实 POI（名称命中）；无 key 时后端返回固定城市 mock（北京/上海…），
+ *  名称不命中则拒绝，防止把三亚的景点全部定位到北京。 */
+function suggestionMatches(name, s) {
+  if (!s || !s.name) return false
+  const a = String(name || '').toLowerCase().trim()
+  const b = String(s.name).toLowerCase().trim()
+  if (!a || !b) return false
+  if (b.includes(a) || a.includes(b)) return true
+  const addr = String(s.address || '').toLowerCase()
+  return a.length >= 2 && addr.includes(a)
+}
+
 async function addMarkers(names) {
   if (!mapInstance || !window.AMap) return
-  // 并行地理编码真实坐标，避免全部随机堆在市中心
+  // 并行地理编码真实坐标，避免全部随机堆在市中心。
+  // 先解析一次目的地中心（供定位器城市 bbox 校验 + 兜底散点），再对每个"纯净"景区名并行编码。
+  const center = await getCenter(destCity.value)
   const markers = await Promise.all(names.map(async (name) => {
-    const c = await geocodeName(name)
-    return { name, lat: c.lat, lng: c.lng }
+    const c = await geocodeName(cleanSpotName(name), center)
+    return { name, lat: c.lat, lng: c.lng, approx: !!c.approx }
   }))
   // 同一地点去重：相邻的推荐合并为一个定位图标，避免地图上出现重复定位针
   const groups = groupBySamePlace(markers)
   groups.forEach(group => {
     // MAPRACE-1 修复：await geocodeName 后地图实例可能已随切换目的地被销毁/重建，add 前再次校验
     if (!mapInstance || !window.AMap) return
-    // 标准定位针图标（teardrop pin）+ 干净文字气泡
+    // 标准定位针图标（teardrop pin）+ 干净文字气泡；近似估算的加 ≈ 角标 + 淡色虚线边框
     const el = document.createElement('div')
-    el.className = 'spot-marker'
+    el.className = 'spot-marker' + (group.approx ? ' approx' : '')
     el.innerHTML =
+      (group.approx ? '<span class="spot-marker-approx" title="位置为近似估算">≈</span>' : '') +
       '<span class="spot-marker-name"></span>' +
       '<svg class="spot-marker-pin" viewBox="0 0 24 36" width="18" height="27" aria-hidden="true">' +
         '<path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#7C3AED" stroke="#fff" stroke-width="1.6"/>' +
@@ -393,6 +691,8 @@ async function addMarkers(names) {
       zIndex: 60,
     })
     mapInstance.add(mk)
+    // 点击定位针 → 高亮该组代表景点（写 activeSpot，驱动便签卡；不自动上滑避免争抢缩放）
+    mk.on('click', () => highlightMarker(group.names[0]))
     markerInstances.push(mk)
     // 组内所有名字都指向同一个图标（点击任意行程卡片都能定位/高亮它）
     group.names.forEach(name => {
@@ -404,6 +704,17 @@ async function addMarkers(names) {
   })
   // 地图渲染稳定后执行展开（防重叠）
   setTimeout(declutterMarkers, 350)
+  // 缩放到覆盖全部景点（行程横跨多个方位时避免只看到市中心一小块）
+  fitToMarkers()
+  // 新增钉标后同步当前过滤态（高亮命中类别 / 压暗未命中）+ 重画「从哪到哪」路线
+  applyFilterToMap()
+  drawRoute()
+}
+
+/** 视图缩放到全部景点：行程常横跨一个城市多个方位（如三亚的天涯海角→亚龙湾约 30km），缩到能同时看到 */
+function fitToMarkers() {
+  if (!mapInstance || !window.AMap || !markerInstances.length) return
+  try { mapInstance.setFitView(markerInstances, false, [80, 40, 40, 80], 15) } catch (e) {}
 }
 
 /** 上下排列：重叠的景点标记竖向堆叠（不挤成一团），全部可见可点 */
@@ -499,18 +810,43 @@ function matchLocalImage(name, map) {
 }
 
 async function loadImages(dayPlans) {
-  // 优先用预拉取的本地静态图（同源、必然能加载）。
-  // 不再调 /scene/image：线上百度 AK 为空，恒返回不可达的 picsum 占位图 → 卡片背景空白。
+  // 优先用预拉取的本地静态图（同源、必然能加载），作为 slot0（可靠兜底）。
+  // 再调后端 /api/map/attraction-images 聚合高德 POI 真实照片，最多 3 张。
+  // 不复用 /scene/image：线上百度 AK 为空，恒返回不可达的 picsum 占位图。
   if (attractionImageMap === null) {
     try { const r = await fetch('/attraction-images.json').then(res => res.json()); attractionImageMap = r || {} } catch { attractionImageMap = {} }
   }
   const names = new Set()
   for (const dp of dayPlans) for (const s of (dp.timeSlots||[])) { if (s.attraction) names.add(s.attraction) }
+  if (!names.size) return
+
+  // 本地静态图 → slot0
   for (const name of names) {
     const local = matchLocalImage(name, attractionImageMap)
-    if (local) attractionImages.value[name] = local
-    // 未命中静态图 → 不设图，卡片显示占位 SVG
+    attractionImages.value[name] = local ? [local] : []
   }
+
+  // 后端高德真实图片（合入，最多 3 张，去重；本地图保底不被覆盖）
+  const city = planData.value?.destination || destCity.value || ''
+  try {
+    const qs = new URLSearchParams()
+    if (city) qs.set('city', city)
+    qs.set('names', [...names].join(','))
+    const r = await fetch(`/api/map/attraction-images?${qs.toString()}`)
+    const body = await r.json()
+    const imap = body && body.code === 0 ? (body.data || {}) : {}
+    for (const name of names) {
+      const urls = imap[name] || []
+      const arr = attractionImages.value[name] || []
+      for (const u of urls) { if (arr.length >= 3) break; if (!arr.includes(u)) arr.push(u) }
+      attractionImages.value[name] = arr
+    }
+  } catch { /* 后端不可达则仅保留本地/占位 */ }
+}
+
+/** 单个景点当前的图片列表（最多 3 张） */
+function imagesOf(name) {
+  return attractionImages.value[name] || []
 }
 
 // ====== 记忆层标识：长期偏好(user_id) + 会话上下文(session_id) ======
@@ -537,11 +873,39 @@ function getSessionId() {
 /** 提交调整需求：带新需求重新生成行程 */
 function submitAdjust() {
   const text = adjustText.value.trim()
-  if (!text) { showToast(t('map.enterAdjust')); return }
+  if (!text) { showToast(t('map.askAIEmpty')); return }
   adjustText.value = ''
   phase.value = 'generating'
   startGeneration(text)
 }
+
+// ====== 问AI栏「按住说话」：Web Speech API 语音转文字，识别后填入并自动提交（复用 components.* 文案） ======
+const voiceRecording = ref(false)
+let voiceReco = null
+function voiceStart() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) { showToast(t('components.voiceUnsupportedBrowser')); return }
+  try {
+    if (voiceReco) { try { voiceReco.abort() } catch {} }
+    voiceReco = new SR()
+    voiceReco.lang = 'zh-CN'
+    voiceReco.continuous = false
+    voiceReco.interimResults = false
+    voiceReco.onresult = (e) => {
+      let text = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) text += e.results[i][0].transcript }
+      text = text.trim()
+      voiceRecording.value = false
+      if (text) { adjustText.value = text; submitAdjust() }
+      else showToast(t('components.noVoiceContent'))
+    }
+    voiceReco.onerror = () => { voiceRecording.value = false; showToast(t('components.recognitionFailedRetry')) }
+    voiceReco.onend = () => { voiceRecording.value = false }
+    voiceReco.start()
+    voiceRecording.value = true
+  } catch (e) { voiceRecording.value = false; showToast(t('components.voiceStartFailed')) }
+}
+function voiceStop() { if (voiceReco) { try { voiceReco.stop() } catch {} } }
 
 async function startGeneration(adjustment = '') {
   // SSERACE-1 修复：新起 SSE 前先中止旧流（agentPlanStream 返回中止函数），避免旧流回调污染新方案（submitAdjust 复用此入口一并覆盖）
@@ -558,7 +922,10 @@ async function startGeneration(adjustment = '') {
   markerEls.value = {}
   markerPrimary.clear()
   activeSpot.value = ''
+  activeFilter.value = ''
+  if (routeLine) { try { routeLine.setMap(null) } catch {} ; routeLine = null }
   planData.value = null
+  customTitle.value = '' // 新行程重置用户自定义标题
   const steps = stepList.value
   steps.forEach(s => s.status = 'wait')
   agentLogs.value = []
@@ -695,6 +1062,7 @@ async function loadSavedPlan(planId) {
         const names = []
         ;(planData.value.dayPlans || []).forEach(dp => (dp.timeSlots || []).forEach(s => { if (s.attraction && !names.includes(s.attraction)) names.push(s.attraction) }))
         addMarkers(names)
+        loadImages(planData.value.dayPlans || [])
       }
     })
   } catch (e) {
@@ -719,9 +1087,10 @@ function destroyMap() {
   markerInstances = []
   for (const k of Object.keys(markerByName)) delete markerByName[k]
   markerPrimary.clear()
+  if (routeLine) { try { routeLine.setMap(null) } catch {} ; routeLine = null }
 }
 
-onBeforeUnmount(() => { if (streamAbort) streamAbort(); cancelMapZoom(); if (declutterTimer) clearTimeout(declutterTimer); destroyMap() })
+onBeforeUnmount(() => { if (streamAbort) streamAbort(); if (voiceReco) { try { voiceReco.abort() } catch {} } cancelMapZoom(); if (declutterTimer) clearTimeout(declutterTimer); destroyMap() })
 /** 回退到上一个界面（无历史时兜底回 /trips，避免空白页） */
 function goBackToPrev() {
   if (window.history.length <= 1) router.replace('/trips')
@@ -746,13 +1115,38 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
       </div>
     </div>
 
+    <!-- 地图覆盖层：抽屉收起时（State A）显示左上筛选胶囊 + 底部选中景点便签卡；容器 pointer-events:none 放行地图手势 -->
+    <transition name="ov">
+      <div class="map-overlay" v-show="showMapOverlay">
+        <div class="filter-chips">
+          <div v-for="c in filterChips" :key="c.key" class="chip" :class="{ on: activeFilter === c.key }" @click="onFilter(c.key)">
+            <span class="chip-label">{{ t(c.labelKey) }}</span>
+            <span class="chip-hint">{{ t(c.hintKey) }}</span>
+            <svg class="chip-arrow" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="#888" stroke-width="2"/></svg>
+          </div>
+        </div>
+        <div class="spot-note-card" :class="noteFilterClass" v-if="noteSpot" @click="goToSpot(noteSpot.attraction)">
+          <div class="snc-img" :class="{ plc: !noteImgStyle.backgroundImage }" :style="noteImgStyle">
+            <svg v-if="!noteImgStyle.backgroundImage" viewBox="0 0 200 130"><rect width="200" height="130" rx="10" fill="#ede9fe"/><circle cx="100" cy="55" r="30" fill="rgba(255,255,255,0.5)"/></svg>
+          </div>
+          <div class="snc-info">
+            <div class="snc-title">{{ noteSpot.attraction }}</div>
+            <div class="snc-meta">
+              <span>🕐 {{ noteSpot.hours || t('map.seeNotes') }}</span>
+              <span>⏱ {{ t('map.suggestPlay', { duration: noteSpot.duration }) }}</span>
+            </div>
+            <div class="snc-cost" v-if="noteSpot.cost">💰 {{ noteSpot.cost }}</div>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- 顶部 -->
     <div class="top">
       <div class="top-btn" @click="goBack">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
       </div>
-      <span class="top-title">{{ destCity }} · {{ tripDays }}{{ t('common.days') }}</span>
+      <span class="top-title" v-show="showTopTitle">{{ destCity }} · {{ tripDays }}{{ t('common.days') }}</span>
     </div>
 
     <!-- 悬浮保存：抽屉外，地图上方，生成完成后显示 -->
@@ -762,34 +1156,20 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 
     <!-- 可拖拽抽屉 -->
     <div class="drawer"
+      :class="{ collapsed: showMapOverlay }"
       :style="{transform:`translateY(${100-drawerPct}%)`,transition:isDragging?'none':'transform 0.5s cubic-bezier(0.34,1.56,0.64,1)'}">
       <div class="handle" @click="snapTo(drawerPct>50?MIN:MAX)"
         @touchstart.passive="onHandleTouchStart" @touchmove="onHandleTouchMove"
         @touchend="onHandleTouchEnd" @touchcancel="onHandleTouchEnd">
         <div class="bar"></div>
       </div>
-      <div class="body">
 
-        <!-- 简略预览：抽屉拉到底部（收起）时显示行程/住宿/天数摘要，点击或上滑展开（携程同款） -->
-        <transition name="cp">
-          <div class="collapsed-preview" v-if="showCollapsedPreview" @click="expandFromPreview"
-            @touchstart.passive="onHandleTouchStart" @touchmove="onHandleTouchMove"
-            @touchend="onHandleTouchEnd" @touchcancel="onHandleTouchEnd">
-            <div class="cp-row">
-              <span class="cp-ico">🗺️</span>
-              <span class="cp-txt">{{ itinPreview }}</span>
-              <span class="cp-arrow">{{ t('map.swipeUp') }}</span>
-            </div>
-            <div class="cp-row">
-              <span class="cp-ico">🏨</span>
-              <span class="cp-txt">{{ hotelPreview }}</span>
-            </div>
-            <div class="cp-days">
-              <span v-for="dp in planData.dayPlans" :key="dp.day" class="cp-day">D{{ dp.day }}</span>
-              <span class="cp-days-hint">{{ t('map.totalDays', { days: planData.days || tripDays }) }}</span>
-            </div>
-          </div>
-        </transition>
+      <!-- 底部天数胶囊条（State A 收起态）：地图上方那一行，点某天自动上滑展示 -->
+      <div class="day-pills collapsed" v-if="showMapOverlay">
+        <span v-for="(dp, idx) in planData.dayPlans" :key="dp.day" class="dpill" :class="{ on: activeDay === idx }" @click.stop="pickDay(idx)">{{ t('map.dayN', { day: dp.day }) }}</span>
+      </div>
+
+      <div class="body" ref="bodyEl" @scroll.passive="onBodyScroll" @touchmove.passive="releaseDayLock" @wheel.passive="releaseDayLock">
 
         <!-- 携程同款生成动画 -->
         <div v-if="phase==='generating'" class="gen">
@@ -831,74 +1211,128 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 
         <!-- 完成 -->
         <div v-else-if="phase==='completed'&&planData" class="done">
-          <!-- 双 Tab -->
-          <div class="tab-row">
-            <div class="tab" :class="{on:activeTab==='plan'}" @click="activeTab='plan'">📅 {{ t('map.itineraryTab') }}</div>
-            <div class="tab" :class="{on:activeTab==='hotel'}" @click="activeTab='hotel'">🏨 {{ t('map.hotelTab') }}</div>
+          <!-- 行程标题（State B，可编辑：铅笔进入编辑态；Enter/失焦保存，Esc/✕ 取消，双击标题也可编辑） -->
+          <div class="ih-title-row">
+            <input v-if="editingTitle" v-model="titleDraft" class="ih-title-input"
+                   :placeholder="defaultTitle" maxlength="30"
+                   @keyup.enter="saveEditTitle" @keyup.esc="cancelEditTitle" @blur="onTitleBlur" />
+            <span v-else class="ih-title" @dblclick="startEditTitle">{{ displayTitle }}</span>
+            <span v-if="!editingTitle" class="ih-edit" :title="t('map.editTitle')" @click="startEditTitle">✏️</span>
+            <span v-else class="ih-title-actions">
+              <span class="ih-btn cancel" :title="t('map.cancelEdit')" @mousedown.prevent="cancelEditTitle">✕</span>
+              <span class="ih-btn ok" :title="t('map.saveTitle')" @mousedown.prevent="saveEditTitle">✓</span>
+            </span>
+          </div>
+          <div class="ih-sub-row">
+            <span class="ih-date" :title="t('map.setDepartureDate')">📅 {{ t('map.setDepartureDate') }}</span>
+            <span class="ih-summary">{{ itinPreview }}</span>
           </div>
 
-          <!-- 行程 Tab -->
-          <template v-if="activeTab==='plan'">
-            <div class="day-tabs">
-              <div v-for="(dp, idx) in planData.dayPlans" :key="dp.day"
-                   class="day-tab" :class="{on:activeDay===idx}" @click="activeDay=idx"
-                   :style="{ animationDelay: (idx * 0.06) + 's' }">
-                <span class="dt-num">Day{{dp.day}}</span>
-                <span class="dt-title">{{dp.dayTitle?.replace('第'+dp.day+'天：','').replace('第'+dp.day+'天:','')}}</span>
+          <!-- 吸顶头部：双 Tab + 天数胶囊，滚动时一起保持在顶部不隐藏 -->
+          <div class="sticky-head">
+            <!-- 双 Tab（行程详情 / 旅行灵感） -->
+            <div class="tab-row">
+              <div class="tab" :class="{on:activeTab==='itinerary'}" @click="activeTab='itinerary'">📅 {{ t('map.itineraryDetailTab') }}</div>
+              <div class="tab" :class="{on:activeTab==='inspiration'}" @click="activeTab='inspiration'">💡 {{ t('map.inspirationTab') }}</div>
+            </div>
+            <div class="day-pills" v-if="activeTab==='itinerary'">
+              <span v-for="(dp, idx) in planData.dayPlans" :key="dp.day" class="dpill" :class="{ on: activeDay === idx }" @click="scrollToDay(idx)">{{ t('map.dayN', { day: dp.day }) }}</span>
+            </div>
+          </div>
+
+          <!-- 行程详情 Tab：所有天连续渲染，往下翻即可看完每一天；各天有独立标题分隔（同参考图） -->
+          <template v-if="activeTab==='itinerary'">
+
+            <div v-for="(dp, idx) in planData.dayPlans" :key="dp.day" :ref="el => dayEls[idx] = el" class="day-section">
+              <div class="day-heading">
+                <div class="day-heading-title">
+                  <span class="day-badge">{{ t('map.dayN', { day: dp.day }) }}</span>
+                  <span class="day-title" v-if="dayTitleOf(idx)">{{ dayTitleOf(idx) }}</span>
+                </div>
+                <span class="opt-chip">🧭 {{ t('map.optimizeChip') }}</span>
+              </div>
+
+              <!-- 第1天：住宿推荐置顶（对齐参考图：酒店卡位于第一天内容上方） -->
+              <template v-if="idx === 0 && hotelList.length">
+                <div class="hotels-section">
+                  <div v-for="(h, hi) in hotelList" :key="hi" class="hotel-card" :class="hotelFilterClass()">
+                    <div class="hotel-img-plc">
+                      <svg viewBox="0 0 200 140"><rect width="200" height="140" rx="12" :fill="['#ede9fe','#fef3e8','#e8f4f8'][hi%3]"/><rect x="60" y="45" width="80" height="50" rx="6" fill="rgba(255,255,255,0.6)"/></svg>
+                    </div>
+                    <div class="hotel-info">
+                      <div class="hotel-name">{{h.name}}</div>
+                      <div class="hotel-meta">📍 {{h.district}} · ⭐{{h.rating}}</div>
+                      <div class="hotel-desc" v-if="h.highlights">{{h.highlights}}</div>
+                      <div class="hotel-price-row">
+                        <span class="hotel-price">¥{{h.pricePerNight?.toLocaleString()}}</span><span class="hotel-unit">/{{ t('common.night') }}</span>
+                        <span class="hotel-total">{{ t('map.totalNights', { n: tripDays }) }} ¥{{Number(h.pricePerNight||0)>0 ? (h.pricePerNight*tripDays).toLocaleString() : '--'}}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <div class="day-content tl">
+                <div v-for="(slot, si) in dp.timeSlots" :key="si" class="tl-item">
+                  <div class="spot-card"
+                       :class="[{ active: activeSpot === slot.attraction }, filterClassOf(slot)]"
+                       @click="goToSpot(slot.attraction)"
+                       :style="{ animationDelay: (si * 0.04) + 's' }">
+                  <div class="spot-header">
+                    <span class="spot-num">{{si+1}}</span>
+                    <div class="spot-title-row">
+                      <span class="spot-title">{{slot.attraction}}</span>
+                      <span v-if="si<=1" class="spot-badges">
+                        <span class="hot-badge" v-if="si===0">🔥 {{ t('map.hotBadge10') }}</span>
+                        <span class="level-badge" v-if="si===0">5A</span>
+                        <span class="rank-badge">🏆 {{ t('map.mustVisitRank') }}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="spot-hours" v-if="slot.hours||slot.tips">
+                    <span class="hours-icon">🕐</span>
+                    <span>{{slot.hours||t('map.seeNotes')}}</span>
+                  </div>
+                  <div class="spot-imgs">
+                    <template v-for="(img, ii) in imagesOf(slot.attraction)" :key="'i'+ii">
+                      <div class="spot-img" :style="{backgroundImage:'url('+img+')'}"></div>
+                    </template>
+                    <template v-for="n in (3 - imagesOf(slot.attraction).length)" :key="'p'+n">
+                      <div class="spot-img spot-img-plc">
+                        <svg viewBox="0 0 400 240"><rect width="400" height="240" :fill="['#e8f4f8','#fef3e8','#ede9fe'][n-1]"/><circle cx="200" cy="100" r="50" fill="rgba(255,255,255,0.5)"/></svg>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="spot-intro">{{slot.activity}}</div>
+                  <div class="spot-intro spot-tip-inline" v-if="slot.tips" v-text="slot.tips"></div>
+                  <div class="spot-transport">
+                    <span v-if="slot.transport">🚗 {{slot.transport}}</span>
+                    <span>⏱ {{slot.duration}}</span>
+                    <span class="spot-cost">💰 {{slot.cost}}</span>
+                  </div>
+                  </div>
+                  <span class="tl-node"></span>
+                </div>
+                <div class="tl-item" v-if="dp.meals?.length">
+                  <span class="tl-node tl-food"></span>
+                  <div class="meals-bar" :class="foodFilterClass()">
+                    <span class="meals-tag">🍽</span>
+                    <span v-for="(m, mi) in dp.meals" :key="m" class="meal" :style="{ animationDelay: (mi * 0.04) + 's' }">{{m}}</span>
+                  </div>
+                </div>
               </div>
             </div>
-
-            <transition name="day-switch" mode="out-in">
-              <div v-if="planData.dayPlans[activeDay]" :key="activeDay" class="day-content">
-              <div v-for="(slot, si) in planData.dayPlans[activeDay].timeSlots" :key="si" class="spot-card"
-                   :class="{ active: activeSpot === slot.attraction }"
-                   @click="goToSpot(slot.attraction)"
-                   :style="{ animationDelay: (si * 0.06) + 's' }">
-                <div class="spot-header">
-                  <span class="spot-num">{{si+1}}</span>
-                  <div class="spot-title-row">
-                    <span class="spot-title">{{slot.attraction}}</span>
-                    <span v-if="si<=1" class="spot-badges">
-                      <span class="hot-badge" v-if="si===0">🔥 {{ t('map.hotBadge10') }}</span>
-                      <span class="level-badge" v-if="si===0">5A</span>
-                      <span class="rank-badge">🏆 {{ t('map.mustVisitRank') }}</span>
-                    </span>
-                  </div>
-                </div>
-                <div class="spot-hours" v-if="slot.hours||slot.tips">
-                  <span class="hours-icon">🕐</span>
-                  <span>{{slot.hours||t('map.seeNotes')}}</span>
-                </div>
-                <div class="spot-imgs">
-                  <div class="spot-img" v-if="attractionImages[slot.attraction]"
-                       :style="{backgroundImage:'url('+attractionImages[slot.attraction]+')'}"></div>
-                  <div class="spot-img spot-img-plc" v-else>
-                    <svg viewBox="0 0 400 240"><rect width="400" height="240" fill="#e8f4f8"/><circle cx="200" cy="100" r="50" fill="rgba(255,255,255,0.5)"/></svg>
-                  </div>
-                  <div class="spot-img spot-img-plc">
-                    <svg viewBox="0 0 400 240"><rect width="400" height="240" fill="#fef3e8"/><circle cx="200" cy="100" r="50" fill="rgba(255,255,255,0.5)"/></svg>
-                  </div>
-                </div>
-                <div class="spot-intro">{{slot.activity}}</div>
-                <div class="spot-intro spot-tip-inline" v-if="slot.tips" v-text="slot.tips"></div>
-                <div class="spot-transport">
-                  <span v-if="slot.transport">🚗 {{slot.transport}}</span>
-                  <span>⏱ {{slot.duration}}</span>
-                  <span class="spot-cost">💰 {{slot.cost}}</span>
-                </div>
-              </div>
-                <div class="meals-bar" v-if="planData.dayPlans[activeDay].meals?.length">
-                  <span class="meals-tag">🍽</span>
-                  <span v-for="(m, mi) in planData.dayPlans[activeDay].meals" :key="m" class="meal" :style="{ animationDelay: (mi * 0.06) + 's' }">{{m}}</span>
-                </div>
-              </div>
-            </transition>
           </template>
 
-          <!-- 住宿 Tab -->
-          <template v-if="activeTab==='hotel'">
+          <!-- 旅行灵感 Tab -->
+          <template v-if="activeTab==='inspiration'">
+            <div class="insp-overview" v-if="planData.overview">{{ planData.overview }}</div>
+            <div class="tips-list" v-if="planData.tips && planData.tips.length">
+              <div v-for="(tip, ti) in planData.tips" :key="ti" class="tip-item">💡 {{ tip }}</div>
+            </div>
             <div class="hotels-section">
-              <div v-for="(h, hi) in hotelList" :key="hi" class="hotel-card">
+              <h3 class="stay-title">🏨 {{ t('map.stayAndBudget') }}</h3>
+              <div v-for="(h, hi) in hotelList" :key="hi" class="hotel-card" :class="hotelFilterClass()">
                 <div class="hotel-img-plc">
                   <svg viewBox="0 0 200 140"><rect width="200" height="140" rx="12" :fill="['#ede9fe','#fef3e8','#e8f4f8'][hi%3]"/><rect x="60" y="45" width="80" height="50" rx="6" fill="rgba(255,255,255,0.6)"/></svg>
                 </div>
@@ -924,14 +1358,20 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
           </template>
         </div>
       </div>
+
     </div>
 
-    <!-- 调整行程：固定在视口底部，不随抽屉/页面滑动；抽屉拉到底部时滑出隐藏 -->
-    <transition name="adjust-fade">
-      <div class="bottom-bar" v-if="showAdjustBar">
-        <div class="adjust-bar">
-          <input v-model="adjustText" :placeholder="t('map.adjustPlaceholder')" @keyup.enter="submitAdjust" />
-          <div class="adjust-btn" @click="submitAdjust">{{ t('map.adjust') }}</div>
+    <!-- 问AI栏：固定视口底部悬浮胶囊，抽屉展开时显示、收起态滑出（恢复"问AI/按住说话"可用） -->
+    <transition name="ask-fade">
+      <div class="ask-bar" v-if="phase==='completed' && planData && !showMapOverlay">
+        <div class="ask-inner">
+          <input v-model="adjustText" :placeholder="t('map.askAIHold')" @keyup.enter="submitAdjust" />
+          <div class="ask-mic" :class="{ recording: voiceRecording }" :title="t('map.askAIHold')"
+               @touchstart.prevent="voiceStart" @touchend.prevent="voiceStop" @touchcancel.prevent="voiceStop"
+               @mousedown.prevent="voiceStart" @mouseup.prevent="voiceStop" @mouseleave.prevent="voiceStop">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div class="ask-fab" @click="submitAdjust" :title="t('map.askAIHold')">＋</div>
         </div>
       </div>
     </transition>
@@ -964,28 +1404,115 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .top-title { flex:1; text-align:center; font-size:17px; font-weight:600; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
 
 /* 抽屉 */
-.drawer { position:absolute; bottom:0; left:0; right:0; z-index:20; height:88%; background:rgba(245,245,247,0.97); backdrop-filter:blur(20px); border-radius:20px 20px 0 0; display:flex; flex-direction:column; box-shadow:0 -6px 30px rgba(0,0,0,0.12); will-change:transform; }
+.drawer { position:absolute; bottom:0; left:0; right:0; z-index:20; height:96%; background:rgba(245,245,247,0.97);backdrop-filter:blur(20px); border-radius:20px 20px 0 0; display:flex; flex-direction:column; box-shadow:0 -6px 30px rgba(0,0,0,0.12); will-change:transform; }
 .handle { height:36px; min-height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:none; }
 .bar { width:36px; height:5px; background:#d1d5db; border-radius:3px; transition:transform .2s cubic-bezier(.34,1.56,.64,1), background .2s; }
 .handle:active .bar { transform:scaleX(1.5); background:#a5b4fc; }
-.body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 16px 120px; }
+.body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 16px 84px; }
+/* 收起态（State A）：抽屉只露手柄+天数胶囊条，隐藏滚动内容与问AI栏 */
+.drawer.collapsed .body { display:none; }
 
-/* 简略预览：抽屉收起时的行程/住宿/天数摘要（携程同款） */
-.collapsed-preview { padding:9px 0 10px; cursor:pointer; touch-action:none; }
-.cp-row { display:flex; align-items:center; gap:7px; font-size:12.5px; color:#333; line-height:1.45; }
-.cp-row + .cp-row { margin-top:5px; }
-.cp-ico { font-size:14px; }
-.cp-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cp-arrow { flex-shrink:0; color:#8b5cf6; font-size:11px; font-weight:600; }
-.cp-days { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
-.cp-day { padding:2px 9px; border-radius:8px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:10.5px; font-weight:600; }
-.cp-days-hint { margin-left:auto; font-size:11px; color:#999; }
+/* 地图覆盖层（State A）：容器穿透放行地图手势，仅胶囊/便签卡捕获点击 */
+.map-overlay { position:absolute; inset:0; z-index:12; pointer-events:none; }
+.ov-enter-active, .ov-leave-active { transition:opacity .25s ease; }
+.ov-enter-from, .ov-leave-to { opacity:0; }
 
-/* 摘要卡出现/消失动画：淡入 + 从下方上滑 */
-.cp-enter-active { transition: opacity .3s ease, transform .3s ease; }
-.cp-leave-active { transition: opacity .2s ease, transform .2s ease; }
-.cp-enter-from { opacity: 0; transform: translateY(18px); }
-.cp-leave-to { opacity: 0; transform: translateY(18px); }
+/* 左上筛选胶囊 */
+.filter-chips { position:absolute; top:calc(env(safe-area-inset-top) + 66px); left:16px; display:flex; flex-direction:column; gap:9px; pointer-events:auto; }
+.chip { display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:20px; background:rgba(255,255,255,0.92); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); box-shadow:0 2px 10px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.6); cursor:pointer; transition:all .2s; }
+.chip:active { transform:scale(.95); }
+.chip.on { background:linear-gradient(135deg,#8b5cf6,#6366f1); border-color:transparent; box-shadow:0 4px 14px rgba(99,102,241,.35); }
+.chip-label { font-size:13px; font-weight:600; color:#333; }
+.chip.on .chip-label { color:#fff; }
+.chip-hint { font-size:10.5px; color:#888; background:rgba(0,0,0,0.05); padding:1px 7px; border-radius:8px; }
+.chip.on .chip-hint { color:#fff; background:rgba(255,255,255,0.25); }
+.chip-arrow { transition:transform .2s; }
+.chip.on .chip-arrow { transform:rotate(180deg); filter:invert(1); }
+
+/* 底部选中景点便签卡 */
+.spot-note-card { position:absolute; left:16px; right:16px; bottom:calc(13vh + 16px);pointer-events:auto; display:flex; gap:11px; padding:10px; border-radius:16px; background:rgba(255,255,255,0.95); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 8px 26px rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.6); cursor:pointer; }
+.spot-note-card:active { transform:scale(.98); }
+.snc-img { width:78px; height:64px; border-radius:10px; background-size:cover; background-position:center; flex-shrink:0; overflow:hidden; }
+.snc-img.plc { display:flex; align-items:center; }
+.snc-img.plc svg { width:100%; height:100%; }
+.snc-info { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+.snc-title { font-size:15px; font-weight:700; color:#1a1a2e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.snc-meta { display:flex; gap:10px; font-size:11.5px; color:#888; margin-top:4px; }
+.snc-cost { font-size:12px; color:#10b981; font-weight:600; margin-top:4px; }
+
+/* 天数胶囊（收起条 + 展开行共用） */
+.day-pills { display:flex; gap:8px; padding:0 0 12px; overflow-x:auto; scrollbar-width:none; }
+.day-pills::-webkit-scrollbar { display:none; }
+.day-pills.collapsed { padding:7px 16px 10px; background:#fff; border-top:1px solid #eef0f4; touch-action:none; }
+.dpill { flex-shrink:0; padding:6px 15px; border-radius:14px; background:#fff; border:1px solid #eef0f4; color:#666; font-size:12.5px; font-weight:600; cursor:pointer; transition:all .2s; }
+.dpill:active { transform:scale(.94); }
+.dpill.on { background:#1a1a2e; color:#fff; border-color:#1a1a2e; }
+
+/* 行程详情：所有天连续滚动阅读 —— 双 Tab + 天数胶囊一起吸顶，各天区块用分隔线区分 */
+.sticky-head { position:sticky; top:0; z-index:6; background:#f5f5f7; margin:0 -16px; padding:0 16px; border-bottom:1px solid #ececf0; box-shadow:0 1px 6px rgba(0,0,0,0.03); }
+.sticky-head .tab-row { margin-bottom:6px; }
+.sticky-head .day-pills { margin:0; padding:0 0 10px; border:none; box-shadow:none; }
+.day-section { scroll-margin-top:100px; margin-bottom:4px; }
+.day-section + .day-section { border-top:1px dashed #e3e3e8; margin-top:6px; padding-top:16px; }
+.day-content .spot-card:last-child { margin-bottom:2px; }
+
+/* 携程时间线：左侧竖线 + 圆形节点，卡片在竖线右侧 */
+.tl { position:relative; padding-left:26px; }
+.tl::before { content:''; position:absolute; left:9px; top:6px; bottom:16px; width:2px; background:linear-gradient(180deg,#d8d8e2,#e3e3e8); border-radius:2px; }
+.tl-item { position:relative; margin-bottom:12px; }
+.tl-item:last-child { margin-bottom:2px; }
+.tl-node { position:absolute; left:-25px; top:14px; width:12px; height:12px; border-radius:50%; background:#fff; border:3px solid #8b5cf6; box-shadow:0 1px 4px rgba(139,92,246,0.35); z-index:1; }
+.tl-food { border-color:#f59e0b; box-shadow:0 1px 4px rgba(245,158,11,0.35); }
+.tl .spot-card { margin-bottom:0; }
+.tl .spot-card.active ~ .tl-node, .tl .spot-card.filter-hl ~ .tl-node { background:#8b5cf6; border-color:#8b5cf6; }
+.tl .spot-card.filter-dim ~ .tl-node { opacity:.38; }
+.tl-item:has(.meals-bar.filter-hl) .tl-node { background:#f59e0b; border-color:#f59e0b; }
+.tl-item:has(.meals-bar.filter-dim) .tl-node { opacity:.38; }
+
+/* 行程标题行（State B） */
+.ih-title-row { display:flex; align-items:flex-start; gap:8px; padding:0 0 6px; }
+.ih-title { flex:1; min-width:0; font-size:19px; font-weight:800; color:#1a1a2e; line-height:1.35; word-break:break-word; }
+.ih-title-input { flex:1; min-width:0; border:1px solid rgba(139,92,246,0.4); outline:none; background:#fff; border-radius:8px; padding:6px 10px; font-size:16px; font-weight:700; color:#1a1a2e; box-sizing:border-box; }
+.ih-title-input:focus { border-color:#8b5cf6; box-shadow:0 0 0 2px rgba(139,92,246,0.15); }
+.ih-edit { flex-shrink:0; font-size:16px; cursor:pointer; padding-top:2px; transition:transform .2s; }
+.ih-edit:hover { transform:scale(1.12); }
+.ih-title-actions { flex-shrink:0; display:flex; gap:6px; padding-top:2px; }
+.ih-btn { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; cursor:pointer; user-select:none; -webkit-user-select:none; transition:transform .15s; }
+.ih-btn:active { transform:scale(.9); }
+.ih-btn.cancel { background:#f1f3f5; color:#888; }
+.ih-btn.ok { background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; box-shadow:0 2px 8px rgba(139,92,246,0.3); }
+.ih-sub-row { display:flex; align-items:flex-start; gap:10px; padding-bottom:12px; }
+.ih-date { font-size:12px; color:#8b5cf6; font-weight:600; flex-shrink:0; padding-top:1px; }
+.ih-summary { font-size:12px; color:#888; line-height:1.5; word-break:break-word; }
+
+/* 天数标题 + 顺路优化 chip（State B）—— 携程式：Day 徽标 + 主题标题占一整行 */
+.day-heading { display:flex; flex-direction:column; gap:8px; padding:2px 0 12px; }
+.day-heading-title { display:flex; align-items:center; gap:10px; min-width:0; }
+.day-badge { flex-shrink:0; padding:5px 12px; border-radius:14px; font-size:13px; font-weight:800; color:#fff; background:linear-gradient(135deg,#8b5cf6,#6366f1); box-shadow:0 2px 8px rgba(139,92,246,0.25); }
+.day-title { font-size:15px; font-weight:700; color:#1a1a2e; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.opt-chip { align-self:flex-start; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600; background:rgba(139,92,246,0.1); color:#7c3aed; }
+
+/* 旅行灵感 */
+.insp-overview { font-size:13px; color:#555; line-height:1.8; background:#fff; border-radius:14px; padding:14px; margin-bottom:12px; }
+.tips-list { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+.tip-item { font-size:13px; color:#666; line-height:1.7; background:#fff; border-radius:12px; padding:10px 12px; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+.stay-title { margin:0 0 10px; font-size:15px; font-weight:700; color:#1a1a2e; }
+
+/* 问AI栏（State B 常态，抽屉内钉底） */
+/* 问AI栏：固定视口底部的悬浮胶囊，抽屉展开时显示、收起时滑出 */
+.ask-bar { position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:center; padding:8px 14px calc(env(safe-area-inset-bottom) + 10px); pointer-events:none; }
+.ask-inner { pointer-events:auto; flex:1; max-width:320px; display:flex; align-items:center; gap:7px; background:rgba(255,255,255,0.95); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border-radius:24px; padding:6px 6px 6px 14px; box-shadow:0 8px 26px rgba(0,0,0,0.18); border:1px solid rgba(255,255,255,0.7); }
+.ask-inner:focus-within { box-shadow:0 8px 26px rgba(0,0,0,0.22), 0 0 0 2px rgba(139,92,246,.25); }
+.ask-bar input { flex:1; min-width:0; appearance:none; -webkit-appearance:none; border:none !important; outline:none; background:transparent !important; box-shadow:none; margin:0; padding:0; height:32px; font-size:13px; color:#333; box-sizing:border-box; }
+.ask-bar input::placeholder { color:#a5a5aa; }
+.ask-mic { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#8b5cf6; background:rgba(139,92,246,0.1); cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
+.ask-mic:active, .ask-mic.recording { background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; }
+.ask-mic.recording { animation:voicePulse 1.5s ease-in-out infinite; }
+.ask-fab { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:19px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:transform .2s; }
+.ask-fab:active { transform:scale(.92); }
+.ask-fade-enter-active, .ask-fade-leave-active { transition:opacity .3s ease, transform .3s ease; }
+.ask-fade-enter-from, .ask-fade-leave-to { opacity:0; transform:translateY(120%); }
+@keyframes voicePulse { 0%,100%{box-shadow:0 0 0 4px rgba(139,92,246,.15)} 50%{box-shadow:0 0 0 10px rgba(139,92,246,0)} }
 
 /* 生成动画 — 携程同款 Shimmer 骨架屏 */
 .gen { padding:0; }
@@ -1024,7 +1551,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .stop-btn { display:block; margin:16px auto; padding:10px 40px; border:1px solid #e2e8f0; border-radius:22px; background:#fff; color:#94a3b8; font-size:13px; cursor:pointer; }
 
 /* 完成 */
-.done { padding:12px 0 160px; animation:fadeUp .45s ease-out both; }
+.done { padding:12px 0 12px; animation:fadeUp .45s ease-out both; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
 
 /* 旧版 markdown 保存行程兜底 */
@@ -1038,16 +1565,9 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .tab { flex:1; text-align:center; padding:10px; border-radius:16px; font-size:14px; font-weight:500; color:#888; cursor:pointer; transition:all .25s cubic-bezier(.34,1.56,.64,1); }
 .tab:active { transform:scale(.95); }
 .tab.on { background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-weight:600; box-shadow:0 2px 8px rgba(139,92,246,0.3); }
-
-/* 天数标签栏 */
-.day-tabs { display:flex; gap:8px; padding:0 0 12px; overflow-x:auto; scrollbar-width:none; }
-.day-tabs::-webkit-scrollbar { display:none; }
-.day-tab { flex-shrink:0; padding:8px 14px; border-radius:14px; background:#fff; cursor:pointer; text-align:center; min-width:72px; transition:all .25s; animation:cardIn .4s ease both; }
-.day-tab:active { transform:scale(.94); }
-.day-tab.on { background:#1a1a2e; }
-.day-tab.on .dt-num, .day-tab.on .dt-title { color:#fff; }
-.dt-num { display:block; font-size:12px; font-weight:600; color:#8b5cf6; }
-.dt-title { display:block; font-size:10px; color:#888; margin-top:2px; white-space:nowrap; }
+/* 双模块严丝合缝：只保留外侧圆角，朝中间的那一侧直角，避免两个圆角对夹出缝隙 */
+.tab:first-child.on { border-radius:16px 0 0 16px; }
+.tab:last-child.on { border-radius:0 16px 16px 0; }
 
 /* 景点卡片 */
 .spot-card { background:#fff; border-radius:16px; margin-bottom:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.04); animation:cardIn .45s ease both; cursor:pointer; }
@@ -1066,7 +1586,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .hours-icon { font-size:14px; }
 
 .spot-imgs { display:flex; gap:6px; padding:10px 14px 0; }
-.spot-img { flex:1; height:130px; border-radius:10px; background-size:cover; background-position:center; }
+.spot-img { flex:1; min-width:0; height:110px; border-radius:10px; background-size:cover; background-position:center; box-shadow:inset 0 0 0 1px rgba(0,0,0,0.04); }
 .spot-img-plc { overflow:hidden; }
 .spot-img-plc svg { width:100%; height:100%; }
 
@@ -1104,18 +1624,6 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .budget-row.total span, .budget-row.total b { color:#fff; }
 .budget-row b { font-size:14px; color:#1a1a2e; }
 
-/* 底部：独立悬浮的调整胶囊（窄、高、离底悬浮） */
-.bottom-bar { position:fixed; bottom:0; left:0; right:0; z-index:30; display:flex; justify-content:center; padding:8px 14px calc(env(safe-area-inset-bottom) + 26px); background:transparent; pointer-events:none; }
-.adjust-bar { pointer-events:auto; flex:1; max-width:280px; display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.9); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-radius:26px; padding:7px 6px 7px 16px; box-sizing:border-box; box-shadow:0 8px 26px rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.6); overflow:hidden; transition:box-shadow .2s; }
-.adjust-bar:focus-within { box-shadow:0 8px 26px rgba(0,0,0,0.2), 0 0 0 2px rgba(139,92,246,.25); }
-.adjust-bar input { flex:1; min-width:0; appearance:none; -webkit-appearance:none; border:none !important; outline:none; background:transparent !important; background-color:transparent !important; box-shadow:none; margin:0; padding:0; height:30px; line-height:30px; font-size:13px; color:#333; box-sizing:border-box; }
-.adjust-bar input::placeholder { color:#a5a5aa; }
-.adjust-btn { height:32px; padding:0 14px; border-radius:17px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:12px; font-weight:600; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:transform .2s, opacity .2s; }
-.adjust-btn:active { transform:scale(.94); opacity:.85; }
-
-/* 胶囊滑出/滑入动画（抽屉拉到底部时隐藏） */
-.adjust-fade-enter-active, .adjust-fade-leave-active { transition:opacity .3s ease, transform .3s ease; }
-.adjust-fade-enter-from, .adjust-fade-leave-to { opacity:0; transform:translateY(100%); }
 /* 悬浮保存按钮：地图上方（抽屉外），顶部栏下方右侧，紧凑醒目 */
 .save-float { position:absolute; top:calc(env(safe-area-inset-top) + 56px); right:16px; z-index:15; display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:16px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; font-size:12px; font-weight:600; line-height:1; box-shadow:0 3px 12px rgba(16,185,129,.4); cursor:pointer; animation:floatIn .4s ease; }
 .save-float:active { transform:scale(.93); }
@@ -1129,10 +1637,6 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 /* 徽章轻弹出（一次性） */
 .spot-badges span { animation:badgeIn .4s ease both; }
 @keyframes badgeIn { from{opacity:0;transform:scale(.85)} to{opacity:1;transform:scale(1)} }
-
-/* 选中日签轻放大（一次性） */
-.day-tab.on { animation:tabGrow .35s ease; }
-@keyframes tabGrow { from{transform:scale(.94)} to{transform:scale(1)} }
 
 /* 美食标签轻弹出（一次性） */
 .meal { animation:mealPop .35s ease both; }
@@ -1150,6 +1654,15 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .day-switch-enter-active, .day-switch-leave-active { transition:opacity .28s ease, transform .28s ease; }
 .day-switch-enter-from { opacity:0; transform:translateY(14px); }
 .day-switch-leave-to { opacity:0; transform:translateY(-10px); }
+
+/* 筛选：高亮命中类别 / 压暗未命中（行程卡 / 用餐 / 住宿 / 便签卡；地图钉标见全局样式） */
+.spot-card.filter-dim, .hotel-card.filter-dim, .meals-bar.filter-dim, .spot-note-card.filter-dim { opacity:.38; filter:grayscale(.55); }
+.spot-card.filter-hl { box-shadow:0 0 0 2px rgba(124,58,237,.55), 0 8px 20px rgba(124,58,237,.15); }
+.spot-card.filter-hl .spot-title { color:#7c3aed; }
+.hotel-card.filter-hl { box-shadow:0 0 0 2px rgba(124,58,237,.45); }
+.hotel-card.filter-hl .hotel-name { color:#7c3aed; }
+.meals-bar.filter-hl { background:rgba(139,92,246,.16); }
+.spot-note-card.filter-hl { box-shadow:0 0 0 2px rgba(124,58,237,.5), 0 8px 26px rgba(124,58,237,.18); }
 </style>
 
 <!-- 地图标记样式：AMap 的 content 是 JS 动态插入地图容器，不在组件 scoped 作用域内，必须用全局样式 -->
@@ -1161,4 +1674,12 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .spot-marker.active .spot-marker-name { color:#7c3aed; font-weight:700; }
 .city-marker { padding:5px 12px; border-radius:10px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; font-size:12px; font-weight:600; box-shadow:0 3px 10px rgba(99,102,241,0.35); white-space:nowrap; }
 @keyframes markerPop { from{opacity:0;transform:scale(.6) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+/* 筛选（地图钉标）：命中类别高亮描边、未命中压暗 */
+.spot-marker.filter-dim { opacity:.35; }
+.spot-marker.filter-hl .spot-marker-pin { filter:drop-shadow(0 0 7px rgba(124,58,237,.95)); }
+.spot-marker.filter-hl .spot-marker-name { color:#7c3aed; font-weight:700; }
+/* 位置为近似估算（地理编码全部 miss，散点兜底）：淡色虚线描边 + ≈ 角标，避免误认为精确定位 */
+.spot-marker.approx .spot-marker-name { color:#9ca3af; border:1px dashed rgba(156,163,175,0.8); }
+.spot-marker.approx .spot-marker-pin { opacity:.7; }
+.spot-marker-approx { position:absolute; top:-4px; left:-4px; width:16px; height:16px; border-radius:8px; background:#f59e0b; color:#fff; font-size:11px; font-weight:700; line-height:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.25); z-index:2; }
 </style>

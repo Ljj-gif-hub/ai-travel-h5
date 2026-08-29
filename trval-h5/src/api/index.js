@@ -435,7 +435,7 @@ export const chatApi = {
 
 export const mapApi = {
   getSuggestion: (keyword) => request(`/map/suggestion?keyword=${encodeURIComponent(keyword)}`),
-  geocode: (address) => request(`/map/geocode?address=${encodeURIComponent(address)}`),
+  geocode: (address, city) => request(`/map/geocode?address=${encodeURIComponent(address)}${city ? '&city=' + encodeURIComponent(city) : ''}`),
 };
 
 export const recommendApi = {

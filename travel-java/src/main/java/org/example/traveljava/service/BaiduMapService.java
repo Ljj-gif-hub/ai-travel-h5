@@ -86,7 +86,7 @@ public class BaiduMapService implements MapService {
     public String getCoordinateSystem() { return "bd09"; }
 
     @Override
-    public double[] geocode(String address) {
+    public double[] geocode(String address, String city) {
         if (ak == null || ak.isBlank() || address == null || address.isBlank()) return null;
         try {
             // AMAP-1 修复：用 toUri() 传 URI 对象，避免 toUriString() + getForObject(String) 二次编码（%→%25）
@@ -103,6 +103,15 @@ public class BaiduMapService implements MapService {
             }
         } catch (Exception e) { log.warn("百度地理编码失败: {}", address); }
         return null;
+    }
+
+    /**
+     * 获取景点图片：百度地图 AK 线上为空，无法拉取真实 POI 照片，返回空列表。
+     * 前端将回落到本地静态图 /attraction-images.json 兜底。
+     */
+    @Override
+    public List<String> fetchAttractionPhotos(String scenicName, String city) {
+        return new ArrayList<>();
     }
 
     /** 简单内存缓存条目，包含数据与过期时间戳 */

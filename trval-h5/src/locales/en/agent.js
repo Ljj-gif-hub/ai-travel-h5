@@ -5,6 +5,8 @@
 export default {
   title: 'AI Trip Assistant',
   aiAgentPlanning: 'AI Agent Planning',
+  backToNew: 'New version',
+  backToOld: 'Old version',
   quickFill: 'Quick Fill',
   origin: 'Departure',
   selectOrigin: 'Select departure',
@@ -38,6 +40,28 @@ export default {
   cabinClass: 'Cabin Class',
   pace: 'Pace',
   schedule: 'Schedule',
+  // Next stop / icon row
+  nextStop: 'Where to next?',
+  manualCreate: 'Create manually',
+  // Traveler count popup
+  travelerCount: 'Travelers',
+  elderly: 'Seniors',
+  elderlyRange: '60+',
+  adult: 'Adults',
+  adultRange: '18-59',
+  children: 'Children',
+  childrenRange: 'Under 18',
+  // Composed sentence (icon selections joined into one line)
+  sentenceDestination: 'Heading to {dest}.',
+  sentenceMembers: 'Party: {people}.',
+  peopleAdult: '{n} adult(s)',
+  peopleChild: '{n} child(ren)',
+  peopleElderly: '{n} senior(s)',
+  sentenceTime: 'Trip: {months}, {days}.',
+  sentencePrefs: 'Preferences: {prefs}.',
+  sentenceBudget: 'Budget: {amount}/person.',
+  voiceHint: 'Hold to talk',
+  voiceComingSoon: 'Voice input coming soon',
   // Generation progress
   locating: 'Locating…',
   stopGenerate: 'Stop Generating',

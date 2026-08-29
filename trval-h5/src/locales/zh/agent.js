@@ -5,6 +5,8 @@
 export default {
   title: 'AI 行程助手',
   aiAgentPlanning: 'AI Agent 智能规划',
+  backToNew: '回新版',
+  backToOld: '回旧版',
   quickFill: '一键填充',
   origin: '出发地',
   selectOrigin: '请选择出发地',
@@ -38,6 +40,28 @@ export default {
   cabinClass: '飞机舱位',
   pace: '行程节奏',
   schedule: '时间安排',
+  // 下一站 / 图标行
+  nextStop: '下一站想去哪?',
+  manualCreate: '手动创建线路',
+  // 人数弹窗
+  travelerCount: '旅行人数',
+  elderly: '老人',
+  elderlyRange: '60岁及以上',
+  adult: '成人',
+  adultRange: '18-59岁',
+  children: '儿童',
+  childrenRange: '18岁以下',
+  // 组合句子（图标选择后拼成一句话）
+  sentenceDestination: '我准备前往{dest}。',
+  sentenceMembers: '同行成员有{people}。',
+  peopleAdult: '{n}成人',
+  peopleChild: '{n}儿童',
+  peopleElderly: '{n}老人',
+  sentenceTime: '旅行时间是{months}，{days}。',
+  sentencePrefs: '旅行偏好是{prefs}。',
+  sentenceBudget: '人均预算{amount}元。',
+  voiceHint: '按住说话',
+  voiceComingSoon: '语音输入即将上线',
   // 生成进度
   locating: '正在定位...',
   stopGenerate: '停止生成',

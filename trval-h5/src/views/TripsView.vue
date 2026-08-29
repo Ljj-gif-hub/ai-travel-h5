@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast, showConfirmDialog } from 'vant'
 import { getToken } from '../utils/auth'
 import { planApi, templateApi } from '../api'
-import { getHotDestinations, getNearbyAttractions } from '../api/destination'
+import { getHotDestinations, getSurroundTour } from '../api/destination'
 import EmptyState from '../components/EmptyState.vue'
 import AIChatDialog from '../components/AIChatDialog.vue'
 import LazyImage from '../components/LazyImage.vue'
@@ -101,18 +101,25 @@ const startCarousel = () => {
 }
 const stopCarousel = () => { if (carouselTimer) { clearInterval(carouselTimer); carouselTimer = null } }
 
-const showNearbyMap = ref(false)
+const showNearbyMap = ref(false) // 周边游全屏弹层
 const nearbyMapInstance = ref(null)
 const nearbyMapProvider = ref(null)
 const userLocation = ref(null)
 const locatingUser = ref(false)
 const locationError = ref('')
-const nearbyAttractions = ref([])
-const loadingNearby = ref(false)
-const nearbyRadius = ref(5000)
 
-const radiusOptions = [
-  { label: '3km', value: 3000 }, { label: '5km', value: 5000 }, { label: '10km', value: 10000 },
+/* ==================== 周边游（从出发城市可到达城市 + 热门路线） ==================== */
+const surroundData = ref(null)        // /api/map/surround-tour 返回
+const activeTourTab = ref('surround') // 'surround' | 'routes'
+const activeDeparture = ref('')       // 起点，默认取 defaultDeparture
+const tourLoading = ref(false)
+const showCitySheet = ref(false)
+const selectedCity = ref(null)
+const showDeparturePicker = ref(false)
+const transitMode = ref('rail')       // 铁路游 / 自驾游（筛选（视觉态））
+const durationFilter = ref(3)         // 时长筛选（小时，0=全天）
+const durationOptions = [
+  { h: 1, label: '1小时' }, { h: 3, label: '3小时' }, { h: 6, label: '6小时' }, { h: 0, label: '全天' },
 ]
 
 const locateUser = () => new Promise((resolve) => {
@@ -125,14 +132,65 @@ const locateUser = () => new Promise((resolve) => {
   )
 })
 
-const loadNearbyAttractions = async () => {
-  if (!userLocation.value) return
-  loadingNearby.value = true
+/** 加载周边游数据（一次缓存，切换出发城市不再请求） */
+const loadSurroundTour = async () => {
+  if (surroundData.value) return
+  tourLoading.value = true
   try {
-    const res = await getNearbyAttractions(userLocation.value.lat, userLocation.value.lng, nearbyRadius.value)
-    if (res.code === 0) nearbyAttractions.value = (res.data || []).filter(a => a.lat && a.lng)
-  } catch (e) {} finally { loadingNearby.value = false }
+    const res = await getSurroundTour()
+    if (res.code === 0 && res.data) {
+      surroundData.value = res.data
+      activeDeparture.value = res.data.defaultDeparture || res.data.departureCities?.[0]?.name || ''
+    }
+  } catch (e) { showToast(t('trips.tourLoadFailed')) }
+  finally { tourLoading.value = false }
 }
+
+/** 当前出发城市可到达的城市全集 */
+const surroundCities = computed(() => surroundData.value?.surround?.[activeDeparture.value] || [])
+/** 按时长筛选后的城市（供地图钉 / 底部计数 / 城市列表） */
+const filteredCities = computed(() => {
+  const dur = durationFilter.value
+  if (!dur) return surroundCities.value
+  const maxMin = dur * 60
+  return surroundCities.value.filter(c => c.transitMin && c.transitMin <= maxMin)
+})
+/** 出发城市坐标点 */
+const departurePoint = computed(() =>
+  surroundData.value?.departureCities?.find(d => d.name === activeDeparture.value) || null)
+
+/** 钉上短时长文案：'高铁14分钟 起' -> '14分钟' */
+const transitShort = (c) => (c?.transitLabel || '').replace(/高铁|动车| 起|起/g, '')
+
+/** 城市卡片轮播图：城市封面 + 热门景点图 */
+const resolveCityImages = (c) => {
+  if (!c) return []
+  const arr = [getCityImage(c.name)]
+  ;(c.hotSpots || []).forEach(n => { const u = getCityImage(n); if (u) arr.push(u) })
+  return arr
+}
+
+/** 路线卡片轮播封面 */
+const routeCoverImages = (route) => (route?.covers || []).map(n => getCityImage(n)).filter(Boolean)
+
+const openCitySheet = (city) => { selectedCity.value = city; showCitySheet.value = true }
+const closeCitySheet = () => { showCitySheet.value = false }
+const viewAllDestinations = () => { if (filteredCities.value.length) openCitySheet(filteredCities.value[0]) }
+const selectDeparture = (name) => { if (!name) return; activeDeparture.value = name; showDeparturePicker.value = false; refreshCityPins() }
+const setTransitMode = (m) => { transitMode.value = m }
+/** 时长筛选切换，完成后重绘钉 */
+const setDurationFilter = (h) => { durationFilter.value = h; refreshCityPins() }
+/** 点击遍历时长档位（1/3/6/全天 循环） */
+const cycleDuration = () => {
+  const cur = durationFilter.value
+  const idx = durationOptions.findIndex(o => o.h === cur)
+  const next = durationOptions[(idx + 1) % durationOptions.length]
+  setDurationFilter(next.h)
+}
+/** 图片加载失败兜底：隐藏让位占位图标 */
+const onCoverErr = (e) => { const img = e.target; if (img) img.style.display = 'none' }
+/** 点击城市卡 → 进入城市详情页 */
+const goCityDetail = (c) => { if (!c?.name) return; showCitySheet.value = false; goDestinationDetail(c.name) }
 
 const loadAmapForNearby = () => new Promise((resolve) => {
   if (window.AMap) { resolve(true); return }
@@ -144,9 +202,24 @@ const loadAmapForNearby = () => new Promise((resolve) => {
   document.head.appendChild(script)
 })
 
-const openNearbyMap = async () => { showNearbyMap.value = true; await nextTick(); await locateAndLoadNearby() }
+const openNearbyMap = async () => {
+  showNearbyMap.value = true
+  await nextTick()
+  await loadSurroundTour()
+  await nextTick()
+  await initSurroundMap()
+  // 弹层滑入动画约 0.3s，动画结束容器尺寸才稳定；补一次 resize+重定位，避免底部抽屉变矮后地图渲染不全
+  setTimeout(() => {
+    try {
+      if (!nearbyMapInstance.value) return
+      if (nearbyMapProvider.value === 'amap' && typeof nearbyMapInstance.value.resize === 'function') nearbyMapInstance.value.resize()
+      else if (nearbyMapProvider.value === 'leaflet') nearbyMapInstance.value.invalidateSize()
+      if (nearbyMapProvider.value === 'amap') fitAmapView(); else fitLeafletView()
+    } catch (e) {}
+  }, 350)
+}
 const closeNearbyMap = () => {
-  showNearbyMap.value = false
+  showNearbyMap.value = false; showCitySheet.value = false; showDeparturePicker.value = false
   // MAPLEAK-2 修复：Leaflet 实例只有 remove() 无 destroy()，双判断销毁防泄漏
   if (nearbyMapInstance.value) {
     try { if (typeof nearbyMapInstance.value.destroy === 'function') nearbyMapInstance.value.destroy() } catch (e) {}
@@ -156,109 +229,108 @@ const closeNearbyMap = () => {
 }
 const goMap = () => { openNearbyMap() }
 
-const initNearbyMap = async () => {
-  const container = document.getElementById('nearby-map-container'); if (!container) return
-  // L-TRIPS-2 修复：非安全上下文 geolocation 缺失时 userLocation 为 null，先判空避免下游读 .lng/.lat 崩溃
-  if (!userLocation.value) { showToast(t('trips.geolocationUnsupported')); return }
+/** 城市钉（AMap 自定义 content） */
+const addAmapCityMarkers = (map) => {
+  const markers = []
+  filteredCities.value.forEach(c => {
+    if (!c.lat || !c.lng) return
+    const el = document.createElement('div')
+    el.className = 'city-pin'
+    el.innerHTML = `<span class="city-pin-city">${c.name}</span><span class="city-pin-time">${transitShort(c)}</span>`
+    const mk = new window.AMap.Marker({ position: [Number(c.lng), Number(c.lat)], content: el, offset: new window.AMap.Pixel(-30, -18), zIndex: 30 })
+    mk.on('click', () => openCitySheet(c))
+    map.add(mk)
+    markers.push(mk)
+  })
+  return markers
+}
+
+/** 城市钉（Leaflet 兜底） */
+const addLeafletCityMarkers = (map) => {
+  const markers = []
+  filteredCities.value.forEach(c => {
+    if (!c.lat || !c.lng) return
+    const mk = window.L.circleMarker([Number(c.lat), Number(c.lng)], { radius: 8, fillColor: '#8B5CF6', color: '#fff', weight: 2, fillOpacity: 0.95 })
+      .addTo(map).bindTooltip(`${c.name} · ${transitShort(c)}`, { permanent: true, direction: 'top', className: 'tour-leaflet-label' })
+    mk.on('click', () => openCitySheet(c))
+    markers.push(mk)
+  })
+  return markers
+}
+
+let departureMarker = null
+let cityMarkers = []
+
+const clearCityMarkers = () => {
+  if (nearbyMapProvider.value === 'amap' && nearbyMapInstance.value && window.AMap) {
+    cityMarkers.forEach(m => { try { m.setMap(null) } catch (e) {} })
+    if (departureMarker) { try { departureMarker.setMap(null) } catch (e) {}; departureMarker = null }
+  } else if (nearbyMapProvider.value === 'leaflet' && nearbyMapInstance.value && window.L) {
+    cityMarkers.forEach(m => { try { nearbyMapInstance.value.removeLayer(m) } catch (e) {} })
+    if (departureMarker) { try { nearbyMapInstance.value.removeLayer(departureMarker) } catch (e) {}; departureMarker = null }
+  }
+  cityMarkers = []
+}
+
+/** 重绘出发城市 + 城市钉（出发城市/时长筛选切换后调用） */
+const refreshCityPins = async () => {
+  if (!nearbyMapInstance.value) return
+  clearCityMarkers()
+  const dept = departurePoint.value
+  if (nearbyMapProvider.value === 'amap') {
+    if (dept) departureMarker = new window.AMap.Marker({ position: [dept.lng, dept.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(26, 26), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="10" fill="#6366F1" stroke="#fff" stroke-width="3"/><circle cx="13" cy="13" r="3.5" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(26, 26) }), title: activeDeparture.value, zIndex: 100 }).addTo(nearbyMapInstance.value)
+    cityMarkers = addAmapCityMarkers(nearbyMapInstance.value)
+    fitAmapView()
+  } else {
+    if (dept) departureMarker = window.L.circleMarker([dept.lat, dept.lng], { radius: 10, fillColor: '#6366F1', color: '#fff', weight: 3, fillOpacity: 1 }).addTo(nearbyMapInstance.value).bindTooltip(activeDeparture.value, { permanent: true, direction: 'right' })
+    cityMarkers = addLeafletCityMarkers(nearbyMapInstance.value)
+    fitLeafletView()
+  }
+}
+
+const fitAmapView = () => {
+  try {
+    // 不用 setFitView（会把横跨半个中国的全部城市都框进来→全国视野）；
+    // 固定以出发城市为中心、zoom 6 的区域视野，才符合"周边游"截图（出发城市居中 + 附近城市环绕）
+    const dept = departurePoint.value
+    if (dept) nearbyMapInstance.value.setZoomAndCenter(6, [dept.lng, dept.lat])
+  } catch (e) {}
+}
+const fitLeafletView = () => {
+  try {
+    const dept = departurePoint.value
+    if (dept) nearbyMapInstance.value.setView([dept.lat, dept.lng], 6)
+  } catch (e) {}
+}
+
+/** 初始化周边游地图（AMap 或 Leaflet 兜底），中心默认出发城市 */
+const initSurroundMap = async () => {
+  const container = document.getElementById('tour-map-container'); if (!container) return
+  const dept = departurePoint.value || { lat: 39.904, lng: 116.407 }
   const loaded = await loadAmapForNearby()
   if (loaded && window.AMap) {
     nearbyMapProvider.value = 'amap'
-    const map = new window.AMap.Map('nearby-map-container', { center: [userLocation.value.lng, userLocation.value.lat], zoom: 14, viewMode: '2D', resizeEnable: true })
+    const map = new window.AMap.Map('tour-map-container', { center: [dept.lng, dept.lat], zoom: 6, viewMode: '2D', resizeEnable: true })
     nearbyMapInstance.value = map
-    new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), title: t('trips.myLocation'), zIndex: 100 }).addTo(map)
-    addNearbyMarkers(map)
+    refreshCityPins()
   } else {
     nearbyMapProvider.value = 'leaflet'
     const L = window.L; if (!L) { const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css); const s = document.createElement('script'); s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; await new Promise(r => { s.onload = r; s.onerror = r; document.head.appendChild(s) }) }
-    const map = L.map('nearby-map-container', { center: [userLocation.value.lat, userLocation.value.lng], zoom: 14, zoomControl: true, attributionControl: false })
+    const map = L.map('tour-map-container', { center: [dept.lat, dept.lng], zoom: 6, zoomControl: true, attributionControl: false })
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
-    L.circleMarker([userLocation.value.lat, userLocation.value.lng], { radius: 8, fillColor: '#3B82F6', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map).bindTooltip(t('trips.myLocation'), { permanent: true, direction: 'right' })
-    nearbyMapInstance.value = map; addNearbyMarkers(map)
+    nearbyMapInstance.value = map
+    refreshCityPins()
   }
 }
 
-const addNearbyMarkers = (map) => {
-  nearbyAttractions.value.forEach(attr => {
-    if (!attr.lat || !attr.lng) return
-    if (nearbyMapProvider.value === 'amap') {
-      new window.AMap.Marker({ position: [Number(attr.lng), Number(attr.lat)], title: attr.name }).addTo(map)
-      new window.AMap.Text({ text: attr.name?.length > 6 ? attr.name.slice(0, 6) + '..' : attr.name, position: [Number(attr.lng), Number(attr.lat)], offset: [0, -22], style: { 'font-size': '11px', color: '#fff', 'background-color': '#8B5CF6', border: 'none', 'border-radius': '4px', padding: '1px 6px' } }).addTo(map)
-    } else if (nearbyMapProvider.value === 'leaflet' && window.L) {
-      window.L.circleMarker([Number(attr.lat), Number(attr.lng)], { radius: 6, fillColor: '#8B5CF6', color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map).bindTooltip(attr.name, { permanent: true, direction: 'top', className: 'nearby-leaflet-label' })
-    }
-  })
+/** 重新居中到出发城市 */
+const resetSurroundView = () => {
+  if (!nearbyMapInstance.value) return
+  if (nearbyMapProvider.value === 'amap') fitAmapView()
+  else if (nearbyMapProvider.value === 'leaflet') fitLeafletView()
 }
 
-const locateAndLoadNearby = async () => { await locateUser(); await loadNearbyAttractions(); await nextTick(); await initNearbyMap() }
-
-const changeRadius = async (radius) => {
-  nearbyRadius.value = radius; await loadNearbyAttractions()
-  if (nearbyMapInstance.value) {
-    // MAPLEAK-4 修复：leaflet 分支同样清空旧 radius 的标记，避免新旧标记叠加
-    if (nearbyMapProvider.value === 'amap') {
-      nearbyMapInstance.value.clearMap()
-      new window.AMap.Marker({ position: [userLocation.value.lng, userLocation.value.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(20, 20), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#3B82F6" stroke="#fff" stroke-width="2"/><circle cx="10" cy="10" r="3" fill="#fff"/></svg>'), imageSize: new window.AMap.Size(20, 20) }), zIndex: 100 }).addTo(nearbyMapInstance.value)
-    } else if (nearbyMapProvider.value === 'leaflet') {
-      // 移除旧 CircleMarker（含用户定位点），保留瓦片层
-      nearbyMapInstance.value.eachLayer((layer) => {
-        if (layer instanceof window.L.CircleMarker) { try { nearbyMapInstance.value.removeLayer(layer) } catch (e) {} }
-      })
-      // 重加用户定位点
-      window.L.circleMarker([userLocation.value.lat, userLocation.value.lng], { radius: 8, fillColor: '#3B82F6', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(nearbyMapInstance.value).bindTooltip(t('trips.myLocation'), { permanent: true, direction: 'right' })
-    }
-    addNearbyMarkers(nearbyMapInstance.value)
-  }
-}
-
-const relocate = async () => { await locateUser(); if (nearbyMapInstance.value && userLocation.value) { if (nearbyMapProvider.value === 'amap') nearbyMapInstance.value.setCenter([userLocation.value.lng, userLocation.value.lat]); else if (nearbyMapProvider.value === 'leaflet') nearbyMapInstance.value.setView([userLocation.value.lat, userLocation.value.lng], 14) }; await loadNearbyAttractions() }
-
-const goAttractionDetail = async (attr) => {
-  if (!attr?.name) return
-  // 周边景点卡：destination-detail 是"城市详情页"，须用真实城市名而非景点名。
-  // 有坐标时先逆地理取所在城市再进入（天气/图片/景点列表才正常），失败兜底用景点名；
-  // 图片沿用该景点的推荐图（不带则用城市图），标题显示景点名
-  const img = attr.imageUrl || ''
-  if (attr.lat && attr.lng) {
-    try {
-      const resp = await fetch(`/api/city/location?lat=${attr.lat}&lng=${attr.lng}`)
-      const json = await resp.json()
-      if (json.code === 0 && json.data?.city) { goDestinationDetail(json.data.city, img, attr.name); return }
-    } catch (e) { /* 逆地理失败，走下方兜底 */ }
-  }
-  goDestinationDetail(attr.name, img, attr.name)
-}
-
-const miniMapReady = ref(false); let miniMapInstance = null
-
-const initMiniNearbyMap = async () => {
-  await nextTick(); const container = document.getElementById('nearby-mini-map'); if (!container || miniMapInstance) return
-  await locateUser(); const center = userLocation.value || { lat: 39.915, lng: 116.404 }
-  loadNearbyAttractions()
-  const loaded = await loadAmapForNearby()
-  // 异步加载 AMap 期间容器可能被 v-if 卸载/重建，重新检查，避免 Map container div not exist
-  if (!document.getElementById('nearby-mini-map') || miniMapInstance) return
-  if (loaded && window.AMap) {
-    try {
-      miniMapInstance = new window.AMap.Map('nearby-mini-map', { center: [center.lng, center.lat], zoom: 13, viewMode: '2D', resizeEnable: false, dragEnable: true, zoomEnable: true, scrollWheel: true, doubleClickZoom: false, touchZoom: true, keyboard: false })
-      new window.AMap.Marker({ position: [center.lng, center.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(14, 14), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><circle cx="7" cy="7" r="5" fill="#3B82F6" stroke="#fff" stroke-width="2"/></svg>'), imageSize: new window.AMap.Size(14, 14) }), offset: new window.AMap.Pixel(-7, -7), zIndex: 10 }).addTo(miniMapInstance)
-      miniMapReady.value = true; nearbyMapProvider.value = 'amap'
-    } catch (e) { console.warn('迷你地图初始化失败:', e); miniMapInstance = null }
-  }
-}
-
-const updateMiniMapMarkers = () => {
-  if (!miniMapInstance || !nearbyMapProvider.value || nearbyAttractions.value.length === 0) return
-  if (nearbyMapProvider.value === 'amap') {
-    miniMapInstance.clearMap()
-    const center = userLocation.value || { lat: 39.915, lng: 116.404 }
-    new window.AMap.Marker({ position: [center.lng, center.lat], icon: new window.AMap.Icon({ size: new window.AMap.Size(14, 14), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><circle cx="7" cy="7" r="5" fill="#3B82F6" stroke="#fff" stroke-width="2"/></svg>'), imageSize: new window.AMap.Size(14, 14) }), offset: new window.AMap.Pixel(-7, -7), zIndex: 10 }).addTo(miniMapInstance)
-    nearbyAttractions.value.slice(0, 8).forEach(a => {
-      if (!a.lat || !a.lng) return
-      new window.AMap.Marker({ position: [Number(a.lng), Number(a.lat)], icon: new window.AMap.Icon({ size: new window.AMap.Size(12, 12), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="4" fill="#8B5CF6" stroke="#fff" stroke-width="1.5"/></svg>'), imageSize: new window.AMap.Size(12, 12) }), offset: new window.AMap.Pixel(-6, -6), title: a.name }).addTo(miniMapInstance)
-    })
-  }
-}
-watch(nearbyAttractions, () => { nextTick(() => updateMiniMapMarkers()) })
+/* 周边游空态入口卡片改版后不再需要迷你地图（附近景点半径POI功能已移除） */
 
 const tabs = [
   { key: 'all', title: '全部' }, { key: 'upcoming', title: '待出行' }, { key: 'doing', title: '进行中' }, { key: 'done', title: '已完成' }, { key: 'draft', title: '草稿' },
@@ -391,7 +463,7 @@ let dataLoaded = false
 onMounted(() => {
   loadCityImageMap(); loadTemplates()
   if (getToken()) {
-    loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages()
+    loadTrips(); loadCityGuides(); loadHotDestinations(); loadCarouselImages()
     dataLoaded = true
   }
 })
@@ -400,8 +472,8 @@ onActivated(() => {
   loadCityImageMap(); loadTemplates()
   if (!getToken()) return
   if (!dataLoaded) {
-    // 首次未加载（含游客先开页→别处登录→返回）→ 补全首次加载，保证轮播图/迷你地图可用
-    loadTrips(); loadCityGuides(); loadHotDestinations(); initMiniNearbyMap(); loadCarouselImages()
+    // 首次未加载（含游客先开页→别处登录→返回）→ 补全首次加载，保证轮播图可用
+    loadTrips(); loadCityGuides(); loadHotDestinations(); loadCarouselImages()
     dataLoaded = true
   } else if (carouselImages.value.length === 0) {
     // 数据已加载但轮播图缺失（首屏请求失败）→ 补加载，避免 startCarousel 对空数组取模
@@ -413,9 +485,6 @@ onActivated(() => {
 
 onDeactivated(() => {
   isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel()
-  // MAPLEAK-3 修复：销毁迷你地图时清实例并复位 miniMapReady，否则 keep-alive 切回后重建逻辑失效（白屏）
-  if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null }
-  miniMapReady.value = false
   dataLoaded = false // L-TRIPS-1 修复：离开后复位，返回时重新加载
 })
 
@@ -427,7 +496,6 @@ onUnmounted(() => {
     try { if (typeof nearbyMapInstance.value.remove === 'function') nearbyMapInstance.value.remove() } catch (e) {}
     nearbyMapInstance.value = null
   }
-  if (miniMapInstance) { try { miniMapInstance.destroy() } catch (e) {}; miniMapInstance = null }
 })
 </script>
 
@@ -499,43 +567,124 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="nearby-card card-macaron">
-            <div id="nearby-mini-map" class="nearby-mini-map-box" />
-            <div v-if="!miniMapReady" class="nearby-mini-placeholder"><van-loading size="20" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
-            <div class="nearby-overlay">
-              <div class="nearby-top">
-                <div class="nearby-title-row"><van-icon name="location-o" size="20" color="#fff" /><span class="nearby-title">{{ t('trips.nearbyMap') }}</span></div>
-                <span class="nearby-link" @click.stop="goMap">{{ t('trips.exploreNearby') }}</span>
-              </div>
+          <div class="nearby-card card-macaron" @click="goMap">
+            <div v-if="carouselImages.length" class="nearby-card-bg">
+              <div v-for="(img, idx) in carouselImages.slice(0, 4)" :key="idx" class="nearby-card-img" :class="{ active: (currentCarouselIndex % 4) === idx }" :style="{ backgroundImage: `url(${img})` }" />
+            </div>
+            <div class="nearby-card-mask" />
+            <div class="nearby-card-body">
+              <div class="nearby-card-tag"><van-icon name="location-o" size="16" color="#fff" />{{ t('trips.tourSurround') }}</div>
+              <div class="nearby-card-desc">{{ t('trips.tourSurroundDesc') }}</div>
+              <span class="nearby-card-go">{{ t('trips.exploreNearby') }}</span>
             </div>
           </div>
         </div>
 
-        <van-popup v-model:show="showNearbyMap" position="bottom" :style="{ height:'100%', width:'100%' }" closeable close-icon="cross" @closed="closeNearbyMap">
-          <div class="nearby-full-page">
-            <div class="nearby-topbar"><van-icon name="arrow-left" size="20" @click="closeNearbyMap" /><span class="nearby-topbar-title">{{ t('trips.nearby') }}</span><span v-if="userLocation" class="nearby-loc-text">📍 {{ userLocation.lat.toFixed(2) }}, {{ userLocation.lng.toFixed(2) }}</span></div>
-            <div class="nearby-map-wrap">
-              <div v-if="locatingUser" class="nearby-locating"><van-loading size="24" color="#8B5CF6" /><span>{{ locationError || t('trips.locating') }}</span></div>
-              <div id="nearby-map-container" class="nearby-map-box"></div>
-              <div class="nearby-map-controls">
-                <button class="nearby-ctrl-btn" @click="relocate" :disabled="locatingUser"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
-                <button class="nearby-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="var(--text-secondary)" /></button>
-              </div>
+        <van-popup v-model:show="showNearbyMap" position="bottom" class="tour-fullscreen" @closed="closeNearbyMap">
+          <div class="tour-page">
+            <div class="tour-topbar">
+              <van-icon name="arrow-left" size="20" @click="closeNearbyMap" />
+              <span class="tour-topbar-title">{{ t('trips.tourSurround') }}</span>
+              <van-icon name="cross" size="20" color="var(--text-secondary)" @click="closeNearbyMap" />
             </div>
-            <div class="nearby-bottom-panel">
-              <div class="nearby-radius-bar"><span class="nearby-radius-label">{{ t('trips.searchRadius') }}</span><div class="nearby-radius-options"><button v-for="r in radiusOptions" :key="r.value" class="nearby-radius-btn" :class="{ active: nearbyRadius === r.value }" @click="changeRadius(r.value)">{{ r.label }}</button></div></div>
-              <div v-if="loadingNearby" class="nearby-loading-row"><van-loading size="18" color="#8B5CF6" /><span>{{ t('trips.searchingNearby') }}</span></div>
-              <div v-else class="nearby-attraction-list">
-                <div class="nearby-list-head"><span>{{ t('trips.nearbyAttractions') }}</span><span class="nearby-count" v-if="nearbyAttractions.length">{{ t('trips.count', { count: nearbyAttractions.length }) }}</span></div>
-                <div v-if="nearbyAttractions.length === 0 && !loadingNearby" class="nearby-empty"><van-icon name="location-o" size="32" color="#CBD5E1" /><span>{{ t('trips.noNearbyAttractions') }}</span></div>
-                <div v-else class="nearby-scroll-list">
-                  <div v-for="(attr, i) in nearbyAttractions" :key="i" class="nearby-attr-card" @click="goAttractionDetail(attr)">
-                    <div class="nearby-attr-index">{{ i + 1 }}</div>
-                    <div class="nearby-attr-info"><div class="nearby-attr-name">{{ attr.name }}</div><div class="nearby-attr-addr" v-if="attr.address"><van-icon name="location-o" size="11" /> {{ attr.address }}</div><div class="nearby-attr-rating" v-if="attr.rating"><span>⭐ {{ Number(attr.rating).toFixed(1) }}</span></div></div>
-                    <van-icon name="arrow" size="14" color="#CBD5E1" />
-                  </div>
+
+            <div class="tour-tabs">
+              <span class="tour-tab" :class="{ active: activeTourTab === 'surround' }" @click="activeTourTab = 'surround'">{{ t('trips.tourSurround') }}</span>
+              <span class="tour-tab" :class="{ active: activeTourTab === 'routes' }" @click="activeTourTab = 'routes'">{{ t('trips.popularRoutes') }}</span>
+            </div>
+
+            <!-- 周边游 Tab：筛选条 + 地图 + 底部查看目的地 -->
+            <template v-if="activeTourTab === 'surround'">
+              <div class="tour-filter-bar">
+                <span class="filter-chip" @click="setTransitMode(transitMode === 'rail' ? 'driving' : 'rail')">
+                  <van-icon name="success" v-if="transitMode === 'rail'" size="12" color="#8B5CF6" />{{ t('trips.filterRail') }}<van-icon name="arrow-down" size="10" />
+                </span>
+                <span class="filter-chip" @click="showDeparturePicker = true">{{ activeDeparture }}<van-icon name="arrow-down" size="10" /></span>
+                <span class="filter-chip" @click="cycleDuration">
+                  {{ durationFilter ? t('trips.hours', { n: durationFilter }) : t('trips.allDay') }}<van-icon name="arrow-down" size="10" />
+                </span>
+              </div>
+
+              <div class="tour-map-wrap">
+                <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
+                <div id="tour-map-container" class="tour-map-box"></div>
+                <div class="tour-map-controls">
+                  <button class="tour-ctrl-btn" @click="resetSurroundView" :title="t('trips.locToDep')"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
+                  <button class="tour-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="var(--text-secondary)" /></button>
                 </div>
               </div>
+
+              <div class="tour-bottom-bar" @click="viewAllDestinations">
+                <span>{{ t('trips.viewDestinations', { n: filteredCities.length }) }}</span>
+                <van-icon name="arrow-up" size="14" color="#fff" />
+              </div>
+            </template>
+
+            <!-- 热门路线 Tab -->
+            <template v-else>
+              <div class="tour-routes-list">
+                <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
+                <template v-else>
+                  <div v-for="route in surroundData?.routes || []" :key="route.id" class="route-card">
+                    <van-swipe class="route-cover" :autoplay="0" :show-indicators="routeCoverImages(route).length > 1" indicator-color="#fff">
+                      <van-swipe-item v-for="(img, i) in routeCoverImages(route)" :key="i">
+                        <img :src="img" class="route-cover-img" loading="lazy" @error="onCoverErr" />
+                      </van-swipe-item>
+                      <van-swipe-item v-if="!routeCoverImages(route).length"><div class="route-cover-fallback"><van-icon name="photo-o" size="26" color="rgba(255,255,255,0.85)" /></div></van-swipe-item>
+                    </van-swipe>
+                    <div class="route-body">
+                      <div class="route-name">{{ route.name }}</div>
+                      <div class="route-meta">{{ route.km }} · {{ t('trips.totalDays', { days: route.days }) }} · {{ t('trips.routeCities', { n: route.cityCount }) }}</div>
+                      <div class="route-tags"><span v-for="c in route.cities" :key="c" class="route-tag">{{ c }}</span></div>
+                      <div class="route-tagline" v-if="route.tagline">{{ route.tagline }}</div>
+                    </div>
+                  </div>
+                  <div v-if="!surroundData?.routes?.length" class="tour-empty"><van-icon name="location-o" size="30" color="#CBD5E1" /><span>{{ t('trips.emptyTour') }}</span></div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </van-popup>
+
+        <!-- 城市底部弹层（出发地 → 可到达城市列表） -->
+        <van-popup v-model:show="showCitySheet" position="bottom" :style="{ height:'72%' }" round closeable close-icon="cross" @closed="closeCitySheet">
+          <div class="city-sheet">
+            <div class="city-sheet-head">
+              <span class="city-sheet-title">{{ t('trips.citySheetTitle', { dep: activeDeparture }) }}</span>
+              <span class="city-sheet-count">{{ t('trips.viewDestinations', { n: filteredCities.length }) }}</span>
+            </div>
+            <div class="city-sheet-list">
+              <div v-for="c in filteredCities" :key="c.name" class="city-card" @click="goCityDetail(c)">
+                <van-swipe class="city-card-swipe" :autoplay="0" :show-indicators="resolveCityImages(c).length > 1" indicator-color="#fff">
+                  <van-swipe-item v-for="(img, i) in resolveCityImages(c)" :key="i">
+                    <img :src="img" class="city-card-img" loading="lazy" @error="onCoverErr" />
+                  </van-swipe-item>
+                  <van-swipe-item v-if="!resolveCityImages(c).length"><div class="city-card-img-fallback"><van-icon name="photo-o" size="38" color="#fff" /></div></van-swipe-item>
+                </van-swipe>
+                <div class="city-card-shade" />
+                <div class="city-card-body">
+                  <div class="city-card-top">
+                    <span class="city-card-name">{{ c.name }}</span>
+                    <span class="heat-badge"><van-icon name="fire-o" size="12" color="#FF5A5F" />{{ t('trips.heat', { n: c.heat }) }}</span>
+                  </div>
+                  <div class="city-card-tags"><span v-for="tag in c.tags" :key="tag" class="city-card-tag">{{ tag }}</span></div>
+                  <div class="city-card-meta">
+                    <span class="transit-tag">{{ c.transitLabel }}</span>
+                    <span class="price-tag">{{ c.price }}</span>
+                  </div>
+                  <div class="city-card-desc" v-if="c.description">{{ t('trips.hotSpot') }} · {{ c.description }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </van-popup>
+
+        <!-- 出发城市选择弹层 -->
+        <van-popup v-model:show="showDeparturePicker" position="bottom" round :style="{ height:'auto' }" closeable close-icon="cross">
+          <div class="depart-picker">
+            <div class="depart-picker-title">{{ t('trips.departCity') }}</div>
+            <div v-for="d in surroundData?.departureCities || []" :key="d.name" class="depart-picker-item" :class="{ active: d.name === activeDeparture }" @click="selectDeparture(d.name)">
+              <span>{{ d.name }}</span><van-icon name="success" v-if="d.name === activeDeparture" color="#8B5CF6" />
             </div>
           </div>
         </van-popup>
@@ -646,6 +795,14 @@ onUnmounted(() => {
 
 .nearby-card { position:relative; z-index:1; overflow:hidden; height:200px; margin-bottom:14px; cursor:pointer; border-radius:20px; background:#e8e4f0; box-shadow:0 4px 18px rgba(0,0,0,0.06); transition:transform 0.25s, box-shadow 0.25s; }
 .nearby-card:active { transform:scale(0.985); box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+.nearby-card-bg { position:absolute; inset:0; }
+.nearby-card-img { position:absolute; inset:0; background-size:cover; background-position:center; opacity:0; transition:opacity 1.2s ease-in-out; }
+.nearby-card-img.active { opacity:1; }
+.nearby-card-mask { position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.05) 45%, rgba(0,0,0,0.5) 90%); }
+.nearby-card-body { position:relative; z-index:2; height:100%; display:flex; flex-direction:column; justify-content:flex-end; padding:16px; }
+.nearby-card-tag { display:flex; align-items:center; gap:6px; font-size:18px; font-weight:700; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
+.nearby-card-desc { font-size:12px; color:rgba(255,255,255,0.88); margin-top:4px; }
+.nearby-card-go { align-self:flex-start; margin-top:10px; font-size:12px; font-weight:600; color:#fff; padding:7px 16px; background:rgba(139,92,246,0.85); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,0.15); cursor:pointer; }
 .nearby-mini-map-box { position:absolute; inset:0; z-index:1; }
 .nearby-mini-placeholder { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; font-size:13px; color:#8B5CF6; background:linear-gradient(135deg, rgba(245,243,250,0.95), rgba(237,233,240,0.95)); }
 .nearby-overlay { position:absolute; inset:0; z-index:2; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; padding:14px 18px; }
@@ -814,6 +971,82 @@ onUnmounted(() => {
 .fab-pop-leave-to   { opacity: 0; transform: scale(0.5) translateY(30px); }
 @keyframes pulseGlow { 0%,100% { box-shadow:0 8px 28px rgba(139,92,246,0.4); } 50% { box-shadow:0 12px 36px rgba(139,92,246,0.6); } }
 
+/* ==================== 周边游（tour） ==================== */
+/* 底部抽屉：不是撑满整屏，留出顶部间隙；dvh 让顶栏不跑到地址栏后面 */
+.tour-fullscreen { width:100%; height:84vh; height:84dvh; max-height:84dvh; border-radius:20px 20px 0 0; overflow:hidden; box-shadow:0 -8px 30px rgba(0,0,0,0.14); }
+.tour-page { display:flex; flex-direction:column; height:100%; width:100%; max-height:100%; overflow:hidden; background:var(--bg-page,#f5f3fa); }
+.tour-topbar { flex-shrink:0; display:flex; align-items:center; gap:12px; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top, 0px)); background:#fff; border-bottom:1px solid #f0edf5; }
+.tour-topbar-title { font-size:17px; font-weight:700; color:var(--text-primary); flex:1; }
+.tour-tabs { flex-shrink:0; display:flex; gap:8px; padding:12px 16px 4px; background:#fff; }
+.tour-tab { flex:1; text-align:center; padding:9px 0; border-radius:20px; font-size:14px; font-weight:600; color:var(--text-secondary); background:#f4f2fb; cursor:pointer; transition:all 0.2s; }
+.tour-tab.active { color:#fff; background:linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow:0 4px 12px rgba(139,92,246,0.25); }
+.tour-filter-bar { flex-shrink:0; display:flex; gap:8px; padding:12px 16px; background:#fff; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.filter-chip { display:flex; align-items:center; gap:4px; padding:7px 13px; border-radius:16px; font-size:12px; font-weight:500; color:#475569; background:#f4f2fb; border:1px solid #ECE9F5; white-space:nowrap; cursor:pointer; flex-shrink:0; }
+.filter-chip:active { background:#ECE9F5; }
+.tour-map-wrap { flex:1; position:relative; min-height:0; }
+.tour-map-loading { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:var(--bg-card-solid,#fff); font-size:13px; color:var(--text-secondary); }
+.tour-map-box { width:100%; height:100%; }
+.tour-map-controls { position:absolute; right:12px; top:12px; z-index:20; display:flex; flex-direction:column; gap:8px; }
+.tour-ctrl-btn { width:38px; height:38px; border-radius:50%; border:none; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.tour-ctrl-btn:active { transform:scale(0.92); }
+.tour-bottom-bar { flex-shrink:0; margin:0 16px 16px; display:flex; align-items:center; justify-content:center; gap:6px; padding:13px 0; border-radius:22px; background:linear-gradient(135deg, #8B5CF6, #6366F1); color:#fff; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(139,92,246,0.35); }
+.tour-bottom-bar:active { transform:scale(0.98); }
+
+/* 热门路线 */
+.tour-routes-list { flex:1; overflow-y:auto; padding:12px 16px 24px; -webkit-overflow-scrolling:touch; }
+.route-card { border-radius:16px; overflow:hidden; margin-bottom:14px; background:linear-gradient(160deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.6); border:1px solid rgba(255,255,255,0.65); box-shadow:inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 12px rgba(0,0,0,0.04); }
+.route-cover { position:relative; height:120px; }
+.route-cover-img { width:100%; height:120px; object-fit:cover; display:block; }
+.route-cover-fallback { height:120px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, #8B5CF6, #6366F1); }
+.route-body { padding:12px 14px; }
+.route-name { font-size:15px; font-weight:700; color:var(--text-primary); }
+.route-meta { font-size:12px; color:#8B5CF6; margin-top:4px; font-weight:500; }
+.route-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.route-tag { font-size:11px; color:var(--text-secondary); background:rgba(139,92,246,0.08); padding:2px 9px; border-radius:8px; }
+.route-tagline { font-size:12px; color:var(--text-secondary); margin-top:8px; line-height:1.5; }
+.tour-empty { display:flex; flex-direction:column; align-items:center; gap:10px; padding:50px 20px; font-size:13px; color:var(--text-hint); }
+
+/* 城市底部弹层 */
+.city-sheet { height:100%; display:flex; flex-direction:column; }
+.city-sheet-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:14px 44px 14px 18px; }
+.city-sheet-title { font-size:16px; font-weight:700; color:var(--text-primary); }
+.city-sheet-count { font-size:12px; color:#8B5CF6; font-weight:500; }
+.city-sheet-list { flex:1; overflow-y:auto; padding:0 16px 24px; -webkit-overflow-scrolling:touch; }
+.city-card { position:relative; border-radius:16px; overflow:hidden; margin-bottom:14px; }
+.city-card-swipe { position:relative; height:150px; }
+.city-card-img { width:100%; height:150px; object-fit:cover; display:block; }
+.city-card-img-fallback { width:100%; height:150px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, #8B5CF6, #6366F1); }
+.city-card-shade { position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.02) 45%, rgba(0,0,0,0.55) 100%); pointer-events:none; }
+.city-card-body { position:absolute; left:0; right:0; bottom:0; padding:26px 14px 12px; z-index:2; }
+.city-card-top { display:flex; align-items:center; justify-content:space-between; }
+.city-card-name { font-size:18px; font-weight:700; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
+.heat-badge { display:flex; align-items:center; gap:3px; font-size:12px; font-weight:700; color:#FF5A5F; background:rgba(255,255,255,0.92); padding:3px 9px; border-radius:12px; }
+.city-card-tags { display:flex; gap:6px; margin-top:6px; }
+.city-card-tag { font-size:10px; color:#fff; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:8px; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+.city-card-meta { display:flex; align-items:center; gap:8px; margin-top:8px; }
+.transit-tag { font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg, #8B5CF6, #6366F1); padding:3px 10px; border-radius:12px; }
+.price-tag { font-size:12px; font-weight:700; color:#fff; background:rgba(255,255,255,0.22); padding:3px 10px; border-radius:12px; }
+.city-card-desc { font-size:12px; color:rgba(255,255,255,0.92); margin-top:8px; line-height:1.5; }
+
+/* 出发城市选择 */
+.depart-picker { padding:48px 16px 20px; }
+.depart-picker-title { font-size:16px; font-weight:700; color:var(--text-primary); text-align:center; margin-bottom:8px; }
+.depart-picker-item { display:flex; align-items:center; justify-content:space-between; padding:14px 12px; border-radius:12px; font-size:15px; color:var(--text-primary); cursor:pointer; }
+.depart-picker-item:active { background:#faf5ff; }
+.depart-picker-item.active { color:#8B5CF6; font-weight:700; }
+
+/* 周边游深色模式 */
+html[data-theme='dark'] .tour-page { background:var(--bg-page); }
+html[data-theme='dark'] .tour-topbar,
+html[data-theme='dark'] .tour-tabs,
+html[data-theme='dark'] .tour-filter-bar { background:var(--bg-card-solid); border-color:var(--glass-border); }
+html[data-theme='dark'] .tour-tab { background:var(--bg-card); color:var(--text-secondary); }
+html[data-theme='dark'] .filter-chip { color:var(--text-secondary); background:var(--bg-card); border-color:var(--glass-border); }
+html[data-theme='dark'] .tour-map-loading,
+html[data-theme='dark'] .tour-ctrl-btn { background:var(--bg-card-solid); }
+html[data-theme='dark'] .route-card { background:var(--bg-card-solid); border-color:var(--glass-border); }
+html[data-theme='dark'] .route-tag { color:var(--text-secondary); }
+
 @media screen and (max-width:360px) {
   .hero-glass-btn { padding:9px 18px; bottom:16px; }
   .guide-card { width:105px; }
@@ -840,4 +1073,11 @@ html[data-theme='dark'] .nearby-locating { background: var(--bg-card-solid); }
 html[data-theme='dark'] .nearby-ctrl-btn { background: var(--bg-card-solid); }
 html[data-theme='dark'] .more-item { color: var(--text-secondary); }
 html[data-theme='dark'] .more-item:active { background: var(--bg-card); }
+
+/* ==================== 周边游地图钉（注入 AMap/Leaflet DOM，须为全局样式） ==================== */
+.city-pin { display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 9px; border-radius:16px; background:#fff; color:var(--text-primary); box-shadow:0 2px 10px rgba(0,0,0,0.18); border:1px solid #ECE9F5; font-size:11px; font-weight:600; line-height:1.1; white-space:nowrap; cursor:pointer; }
+.city-pin-city { color:var(--text-primary); }
+.city-pin-time { color:#8B5CF6; font-weight:700; }
+.tour-leaflet-label { background:#8B5CF6 !important; border:none !important; border-radius:6px !important; padding:2px 8px !important; font-size:10px !important; color:#fff !important; font-weight:600 !important; box-shadow:0 1px 4px rgba(0,0,0,0.2) !important; }
+html[data-theme='dark'] .city-pin { background:var(--bg-card-solid); border-color:var(--glass-border); }
 </style>
