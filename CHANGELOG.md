@@ -1,6 +1,31 @@
 # 智能旅游助手 — 更新日志
 
-> 当前版本：**v2.2.0** · 行程页详情跳转修复 + 图片系统加固 + 部署密钥加固
+> 当前版本：**v2.3.0** · 周边游 + 坐标修复 + 景点多图 + agent-map 行程增强
+
+---
+
+## v2.3.0 (2026-08-30) — 周边游 + 坐标修复 + 景点多图 + agent-map 行程增强
+
+### 🏖 周边游（Surrounding Tour）
+- 新增 `/api/map/surround-tour` 接口，返回「出发城市 → 周边目的地」推荐，含热度/交通时长/价格/热门景点/标签等卡片字段
+- 种子数据 `NearbyTourService`：出发城市 深圳/北京；深圳周边（香港/广州/惠州…），北京周边（天津/承德…），附线路卡 RouteCard
+- 新增 DTO：`SurroundTourVO` / `SurroundCityDTO` / `RouteCardDTO` / `CityPointDTO`
+
+### 🗺 POI 坐标修复（同名异地 + 坐标系）
+- AMap 地理编码由 `/geocode/geo` 切换为 `/v3/place/text`（InputTips），**携带 `city` 参数消歧**——修复「故宫」同名多地（北京/西安/沈阳…）匹配到错误城市的根因
+- 新增 `GeocodeResultDTO` 携带 **`crs`**（gcj02/wgs84/bd09），前端做 **CRS 归一** + 城市 bbox 包围盒，纠正 POI 错位（坐标系混用 + 城市无关匹配）
+- 新增 `cityOkay` 门：同景点跨城坐标 > **100km** 阈值直接拒绝，避免"同名异地"误配
+- `CoordinateUtil` 重构：`isInChina` 公开 + 新增 `distanceMeters`（haversine），`outOfChina` 改为 `!isInChina`
+
+### 🖼 景点多图（每景点 3 张真实图）
+- 新增 `/api/map/attraction-images` 批量接口：按景点名聚合返回**最多 3 张** AMap 实拍图（`place/text` + `extensions=all` → POI `photos`），本地静态图作 slot 0 兜底
+- Caffeine 缓存（`attractionImageCache` 24h TTL + 接口级缓存），防止渲染重复打 AMap 令牌桶
+- 前端行程卡片图片槽位 **1 → 3**，不足补占位 SVG；Day 头条（第 N 天）视觉增强
+
+### 🎫 其他
+- agent-map 行程区 Tab 无缝修复：两个胶囊模块共享边界改为**侧向圆角**（`0 16 16 0` / `16 0 0 16`），消除背靠背圆角撑开的透镜形白隙
+
+**部署**：已上线 `http://8.148.223.54`，线上 AMap 真实 key 验证 —— `故宫+北京` → `{"lat":39.917839,"lng":116.397029,"crs":"gcj02"}`（坐标命中）+ `attraction-images` 返回 3 张真实图。
 
 ---
 

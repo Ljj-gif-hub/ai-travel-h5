@@ -101,6 +101,14 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.5 — 2026-08-30）
+
+### 🗺️ agent-map 行程增强：周边游 + 坐标修复 + 景点多图
+- **周边游**：后端 `/api/map/surround-tour`（出发城市→周边目的地推荐，深圳/北京种子数据），前端周边推荐卡片
+- **坐标修复**：AMap 地理编码改 InputTips（传 `city` 消歧），返回 `crs` 坐标系；前端 CRS 归一 + 城市 bbox；`cityOkay` 100km 门拒绝同名异地
+- **景点多图**：`/api/map/attraction-images` 批量返回每景点最多 3 张 AMap 实拍图，行程卡片槽位 1→3，本地静态图兜底
+- **Tab 无缝**：行程区相邻胶囊模块改侧向圆角，消除共享边界白隙
+
 ## 🆕 最近更新（v4.4 — 2026-08-06）
 
 ### 🔒 安全加固（第 1 步）
