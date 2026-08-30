@@ -360,6 +360,19 @@ const hasTrips = computed(() => trips.value.length > 0)
 
 const cityGuides = ref([])
 
+// 【景点推荐兜底】后端 /map/city-attractions 对多数城市返回空时的本地真实景点库（景点名均为真实地名）
+// 每个景点的图走 getAttractionImage(city, {name}) -> 本地景点图 / 城市图，必出图
+const FALLBACK_GUIDES = [
+  { city: '北京', attractions: ['故宫', '八达岭长城', '颐和园', '天坛'] },
+  { city: '成都', attractions: ['宽窄巷子', '锦里', '都江堰', '大熊猫繁育研究基地'] },
+  { city: '杭州', attractions: ['西湖', '灵隐寺', '雷峰塔', '西溪湿地'] },
+  { city: '重庆', attractions: ['洪崖洞', '磁器口古镇', '解放碑', '李子坝'] },
+  { city: '西安', attractions: ['兵马俑', '大雁塔', '华清宫', '回民街'] },
+  { city: '张家界', attractions: ['张家界国家森林公园', '天门山', '大峡谷玻璃桥', '黄龙洞'] },
+  { city: '桂林', attractions: ['漓江', '象鼻山', '阳朔西街', '龙脊梯田'] },
+  { city: '上海', attractions: ['外滩', '东方明珠', '豫园', '武康路'] },
+]
+
 const loadCityGuides = async () => {
   if (!userLocation.value) await locateUser()
   if (!userLocation.value) { cityGuides.value = []; return }
@@ -378,6 +391,10 @@ const loadCityGuides = async () => {
     const results = await Promise.allSettled(cities.map(c => import('../api/destination').then(m => m.getCityAttractions(c))))
     cityGuides.value = results.map((r, i) => ({ city: cities[i], label: cities[i] === currentCity ? t('trips.currentCityLabel') : t('trips.hotRecommendLabel'), attractions: (r.status === 'fulfilled' && r.value?.code === 0) ? (r.value.data || []).slice(0, 4).map(a => ({ name: a.name, address: a.address || '', rating: a.rating || null, imageUrl: a.imageUrl || '' })) : [] })).filter(g => g.attractions.length > 0)
   } catch (e) { cityGuides.value = [] }
+  // 【景点推荐兜底】后端全空时改用本地真实景点库，保证板块可见
+  if (cityGuides.value.length === 0) {
+    cityGuides.value = FALLBACK_GUIDES.map(g => ({ city: g.city, label: t('trips.recommendLabel'), attractions: g.attractions.map(name => ({ name, address: '', rating: null, imageUrl: '' })) }))
+  }
 }
 
 const hotDestinations = ref([])
@@ -388,8 +405,10 @@ const getAttractions = (plan) => { if (!plan.planData?.dayPlans) return []; cons
 const cardTitle = (plan) => { const dest = plan.destination || t('trips.unknown'); const days = plan.days || 1; return t('trips.dayTrip', { dest, days }) }
 const cardRoute = (plan) => { if (!plan.planData?.dayPlans) return ''; const lines = plan.planData.dayPlans.slice(0, 3).map(day => { const spots = []; day.timeSlots?.forEach(slot => { if (slot.attraction) spots.push(slot.attraction) }); return spots.length > 0 ? `Day${day.day||'?'} ${spots.join(' → ')}` : '' }).filter(Boolean); return lines.join(' | ') + (plan.planData.dayPlans.length > 3 ? ' …' : '') }
 const cardMeta = (plan) => { const days = plan.days || 0; const locationCount = getAttractions(plan).length; const parts = []; if (plan.travelDate) { const start = new Date(plan.travelDate); const end = new Date(start); end.setDate(end.getDate()+days-1); const fmt = d => t('trips.dateFormat', { month: d.getMonth()+1, day: d.getDate() }); parts.push(`${fmt(start)}-${fmt(end)}`) } else if (plan.createdAt) { parts.push(t('trips.dateFormat', { month: new Date(plan.createdAt).getMonth()+1, day: new Date(plan.createdAt).getDate() })) }; if (days>0) parts.push(t('trips.totalDays', { days })); if (locationCount>0) parts.push(t('trips.spotCount', { count: locationCount })); return parts.join('·') }
-// 【hero 改版】「我的线路」摘要卡：取最新一条已保存行程（无则展示空态引导）
+// 【hero 改版】「我的线路」摘要卡：取最新一条已保存行程（无则展示空态引导）；实时统计线路数
 const latestPlan = computed(() => tripPlans.value[0] || null)
+const routeCount = computed(() => tripPlans.value.length)
+const isLoggedIn = computed(() => !!getToken())
 const statusLabel = (s) => ({ upcoming: t('trips.statusUpcoming'), doing: t('trips.statusDoing'), done: t('trips.statusDone'), draft: t('trips.statusDraft') }[s] || s)
 const statusColor = (s) => ({ upcoming:'#8B5CF6', doing:'#3B82F6', done:'#34D399', draft:'#F59E0B' }[s] || 'var(--text-hint)')
 
@@ -398,6 +417,7 @@ const viewTrip = (plan) => { if (!plan?.destination) { showToast(t('trips.planDa
 const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = true }
 const goToAgentPlanner = () => { router.push('/agent-planner') }
 const goMyRoutes = () => { router.push('/my-routes') }
+const goLogin = () => { router.push('/login') }
 const onPlanSaved = () => { showAIChat.value = false; showToast(t('trips.planSaved')); router.push('/my-routes') }
 const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t('trips.deleteTrip'), message: t('trips.confirmDeleteMsg', { name: plan?.destination || t('trips.unknown') }) }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast(t('trips.deleted')); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
 /** 城市名规范化：去掉后缀"市"，与热门目的地/本地图库短名一致（三亚市→三亚），保证天气/图片/景点都能命中 */
@@ -538,11 +558,14 @@ onUnmounted(() => {
           <span class="plan-sec-link" @click="goMyRoutes">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
         </div>
 
-        <!-- 【hero 改版】截图2格局：AI 智能推荐 + 我的线路 两张并排卡（不再全图大卡） -->
+        <!-- 【hero 改版】截图2格局：左小（AI 开始规划）右大（我的线路），非对称 -->
         <div class="plan-grid">
           <div class="plan-card plan-card-ai entrance-item entrance-d1" @click="goToAgentPlanner">
             <span class="plan-card-label">{{ t('trips.heroBadge') }}</span>
-            <div class="plan-ai-icon"><van-icon name="apps-o" size="30" color="#7C3AED" /></div>
+            <div class="plan-ai-mid">
+              <span class="plan-ai-emoji">🤖</span>
+              <span class="plan-ai-title">{{ t('trips.aiPlanTitle') }}</span>
+            </div>
             <button class="plan-ai-btn" @click.stop="goToAgentPlanner">{{ t('trips.startPlanning') }}</button>
           </div>
 
@@ -551,9 +574,13 @@ onUnmounted(() => {
             <div v-else class="plan-route-bg plan-route-bg-fallback" />
             <div class="plan-route-shade" />
             <span class="plan-card-label plan-card-label-route">{{ t('trips.myRoutes') }}</span>
+            <span v-if="routeCount" class="plan-route-count">{{ t('trips.routesCount', { n: routeCount }) }}</span>
             <div class="plan-route-body">
-              <div class="plan-route-title">{{ latestPlan ? cardTitle(latestPlan) : t('trips.noRouteTitle') }}</div>
-              <div class="plan-route-meta">{{ latestPlan ? (cardMeta(latestPlan) || t('trips.noRouteHint')) : t('trips.noRouteHint') }}</div>
+              <div class="plan-route-title" v-if="latestPlan">{{ cardTitle(latestPlan) }}</div>
+              <div class="plan-route-title" v-else>{{ t('trips.noRouteTitle') }}</div>
+              <div class="plan-route-meta" v-if="latestPlan">{{ cardMeta(latestPlan) || t('trips.noRouteHint') }}</div>
+              <div class="plan-route-meta" v-else-if="isLoggedIn">{{ t('trips.noRouteHint') }}</div>
+              <div class="plan-route-meta" v-else>{{ t('trips.loginToViewRoutes') }}</div>
             </div>
           </div>
         </div>
@@ -775,24 +802,27 @@ onUnmounted(() => {
 .plan-sec-link { display:flex; align-items:center; gap:3px; font-size:13px; color:var(--text-secondary); font-weight:500; cursor:pointer; padding:4px 10px; border-radius:10px; background:rgba(139,92,246,0.06); transition:background 0.15s; }
 .plan-sec-link:active { background:rgba(139,92,246,0.14); }
 
-/* 【hero 改版】截图2格局：两张并排卡（AI 智能推荐 / 我的线路）+ 周边游地图入口行 */
-.plan-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:6px; }
+/* 【hero 改版】非对称：左小（AI 开始规划）右大（我的线路）+ 周边游地图入口行 */
+.plan-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-top:6px; align-items:stretch; }
 .plan-card { position:relative; overflow:hidden; border-radius:20px; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 16px rgba(0,0,0,0.05); transition:transform 0.25s, box-shadow 0.25s; }
 .plan-card:active { transform:scale(0.98); }
 
-.plan-card-ai { min-height:158px; padding:14px; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:10px; background:linear-gradient(160deg,#FAF8FF 0%,#EFEAFB 100%); border:1px solid #ECE9F5; }
+.plan-card-ai { min-height:152px; padding:13px; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:6px; background:linear-gradient(160deg,#FAF8FF 0%,#EFEAFB 100%); border:1px solid #ECE9F5; }
 .plan-card-label { display:inline-flex; align-items:center; padding:4px 9px; border-radius:9px; font-size:11px; font-weight:600; color:#7C3AED; background:rgba(139,92,246,0.10); }
-.plan-ai-icon { margin-top:8px; }
-.plan-ai-btn { margin-top:auto; padding:9px 20px; border:none; border-radius:18px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; font-size:13px; font-weight:600; cursor:pointer; box-shadow:0 6px 16px rgba(139,92,246,0.32); }
+.plan-ai-mid { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+.plan-ai-emoji { font-size:34px; line-height:1; filter:drop-shadow(0 3px 6px rgba(139,92,246,0.28)); }
+.plan-ai-title { font-size:13px; font-weight:700; color:var(--text-primary); }
+.plan-ai-btn { padding:7px 16px; border:none; border-radius:16px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(139,92,246,0.30); }
 .plan-ai-btn:active { transform:scale(0.96); }
 
-.plan-card-route { min-height:158px; background:#1e1b2e; }
+.plan-card-route { min-height:172px; background:#1e1b2e; }
 .plan-route-bg { position:absolute; inset:0; background-size:cover; background-position:center; }
 .plan-route-bg-fallback { background:linear-gradient(135deg,#667eea 0%,#764ba2 50%,#5b2d8e 100%); }
 .plan-route-shade { position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.58) 100%); }
 .plan-card-label-route { position:absolute; top:12px; left:12px; z-index:2; color:#fff; background:rgba(0,0,0,0.28); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
-.plan-route-body { position:absolute; left:12px; right:12px; bottom:12px; z-index:2; }
-.plan-route-title { font-size:14px; font-weight:700; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
+.plan-route-count { position:absolute; top:12px; right:12px; z-index:2; font-size:10px; color:#fff; padding:3px 8px; border-radius:9px; background:rgba(0,0,0,0.30); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.plan-route-body { position:absolute; left:14px; right:14px; bottom:12px; z-index:2; }
+.plan-route-title { font-size:15px; font-weight:700; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
 .plan-route-meta { margin-top:5px; font-size:11px; color:rgba(255,255,255,0.88); text-shadow:0 1px 3px rgba(0,0,0,0.35); }
 
 .map-entry-row { display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:15px 16px; border-radius:16px; background:linear-gradient(160deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.3) 100%), rgba(255,255,255,0.55); border:1px solid rgba(255,255,255,0.6); box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 10px rgba(0,0,0,0.03); cursor:pointer; }
@@ -874,9 +904,10 @@ onUnmounted(() => {
 .sec-guide-label { font-size:10px; color:#8B5CF6; background:rgba(139,92,246,0.08); padding:2px 8px; border-radius:8px; font-weight:500; margin-left:auto; margin-right:8px; }
 
 .guide-section { margin-bottom:18px; }
-.guide-card { flex-shrink:0; width:236px; background:linear-gradient(160deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.32) 100%),rgba(255,255,255,0.6); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:16px; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 4px 16px rgba(0,0,0,0.05); border:1px solid rgba(255,255,255,0.65); cursor:pointer; transition:transform 0.2s; }
+.guide-card { flex-shrink:0; width:176px; background:linear-gradient(160deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.32) 100%),rgba(255,255,255,0.6); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:16px; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 4px 16px rgba(0,0,0,0.05); border:1px solid rgba(255,255,255,0.65); cursor:pointer; transition:transform 0.2s; }
 .guide-card:hover { transform:translateY(-5px); }
-.guide-card-img-wrap { height:190px; position:relative; overflow:hidden; }
+/* 【2:3 竖版】景点展示区改为竖屏比例 */
+.guide-card-img-wrap { aspect-ratio:2/3; width:100%; position:relative; overflow:hidden; }
 .guide-card-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
 .guide-card-img-placeholder { position:absolute; inset:0; z-index:0; display:flex; align-items:center; justify-content:center; background:rgba(139,92,246,0.04); }
 .guide-card-tag { position:absolute; top:12px; left:12px; z-index:2; font-size:11px; font-weight:600; color:#fff; padding:4px 10px; border-radius:10px; background:rgba(0,0,0,0.35); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); letter-spacing:0.5px; }
@@ -1101,8 +1132,9 @@ html[data-theme='dark'] .map-entry-row { background:var(--bg-card-solid); border
   .plan-grid { gap:8px; }
   .plan-card { border-radius:16px; }
   .plan-card-ai, .plan-card-route { min-height:140px; }
-  .guide-card { width:210px; }
-  .guide-card-img-wrap { height:168px; }
+  .guide-card { width:164px; }
+  .guide-card-body { padding:10px 11px 12px; }
+  .guide-card-name { font-size:13px; }
 }
 </style>
 
