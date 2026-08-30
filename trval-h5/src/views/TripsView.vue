@@ -101,6 +101,19 @@ const startCarousel = () => {
 }
 const stopCarousel = () => { if (carouselTimer) { clearInterval(carouselTimer); carouselTimer = null } }
 
+/* 【AI 卡背景】特意选宏伟干净的纯自然风光（与线路卡 carouselImages 轮播图区分开，避免重合）。
+   固定 hash 路径直达本地图库，不依赖 city-images JSON，保证必出图。 */
+const AI_HERO_HASHES = ['895acb85a9be', 'ba9c1bc0df23', 'c06ee7552e4d', '1ca49d9ba37e'] // 华山 / 泰山 / 九寨沟 / 黄果树
+const aiHeroImages = computed(() => AI_HERO_HASHES.map(h => `/images/landmarks/${h}.jpg`))
+const aiHeroIndex = ref(0)
+let aiHeroTimer = null
+const startAiHero = () => {
+  if (aiHeroTimer) clearInterval(aiHeroTimer)
+  if (aiHeroImages.value.length < 2) return
+  aiHeroTimer = setInterval(() => { aiHeroIndex.value = (aiHeroIndex.value + 1) % aiHeroImages.value.length }, 5000)
+}
+const stopAiHero = () => { if (aiHeroTimer) { clearInterval(aiHeroTimer); aiHeroTimer = null } }
+
 const showNearbyMap = ref(false) // 周边游全屏弹层
 const nearbyMapInstance = ref(null)
 const nearbyMapProvider = ref(null)
@@ -495,16 +508,19 @@ const useTemplate = async (tmpl) => {
 let dataLoaded = false
 
 onMounted(() => {
-  loadCityImageMap(); loadTemplates()
+  loadCityImageMap(); loadTemplates(); startAiHero()
   if (getToken()) {
-    loadCityGuides(); loadHotDestinations(); loadCarouselImages()
+    // L-TRIPS-2：注册时同步拉取「我的线路」，让线路卡实时显示已保存数量与最新摘要
+    loadTrips(); loadCityGuides(); loadHotDestinations(); loadCarouselImages()
     dataLoaded = true
   }
 })
 
 onActivated(() => {
-  loadCityImageMap(); loadTemplates()
+  loadCityImageMap(); loadTemplates(); startAiHero()
   if (!getToken()) return
+  // 每次返回都刷新「我的线路」，保证数量/摘要实时更新（去别处建了新线路即点即更新）
+  loadTrips()
   if (!dataLoaded) {
     // 首次未加载（含游客先开页→别处登录→返回）→ 补全首次加载，保证轮播图可用
     loadCityGuides(); loadHotDestinations(); loadCarouselImages()
@@ -518,12 +534,12 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
-  isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel()
+  isLoading.value = false; loadError.value = false; showMoreMenu.value = false; stopCarousel(); stopAiHero()
   dataLoaded = false // L-TRIPS-1 修复：离开后复位，返回时重新加载
 })
 
 onUnmounted(() => {
-  stopCarousel()
+  stopCarousel(); stopAiHero()
   // MAPLEAK-2 修复：Leaflet 实例无 destroy()，双判断销毁防泄漏
   if (nearbyMapInstance.value) {
     try { if (typeof nearbyMapInstance.value.destroy === 'function') nearbyMapInstance.value.destroy() } catch (e) {}
@@ -561,9 +577,9 @@ onUnmounted(() => {
         <!-- 【hero 改版】截图2格局：左小（AI 开始规划）右大（我的线路），非对称 -->
         <div class="plan-grid">
           <div class="plan-card plan-card-ai entrance-item entrance-d1" @click="goToAgentPlanner">
-            <!-- 背景轮播：复用 carouselImages 交叉淡入 -->
-            <div v-if="carouselImages.length" class="plan-ai-bg">
-              <div v-for="(img, i) in carouselImages" :key="i" class="plan-ai-bg-item" :class="{ active: i === currentCarouselIndex }" :style="{ backgroundImage: `url(${img})` }" />
+            <!-- 【AI 卡背景】宏伟自然风光轮播（华山/泰山/九寨沟/黄果树），与线路卡轮播区分开 -->
+            <div v-if="aiHeroImages.length" class="plan-ai-bg">
+              <div v-for="(img, i) in aiHeroImages" :key="i" class="plan-ai-bg-item" :class="{ active: i === aiHeroIndex }" :style="{ backgroundImage: `url(${img})` }" />
             </div>
             <div v-else class="plan-ai-bg plan-ai-bg-fallback" />
             <div class="plan-ai-shade" />
@@ -817,7 +833,7 @@ onUnmounted(() => {
 .plan-ai-bg-fallback { background:linear-gradient(135deg,#8B5CF6,#6366F1); }
 .plan-ai-shade { position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.08) 48%, rgba(0,0,0,0.46) 100%); }
 .plan-card-label-ai { position:absolute; top:12px; left:12px; z-index:2; color:#fff; background:rgba(0,0,0,0.28); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
-.plan-ai-btn { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:2; padding:8px 20px; border:none; border-radius:18px; background:rgba(255,255,255,0.20); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); color:#fff; font-size:12px; font-weight:600; cursor:pointer; border:1px solid rgba(255,255,255,0.42); box-shadow:0 4px 14px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35); }
+.plan-ai-btn { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:2; padding:8px 20px; border:none; border-radius:18px; background:rgba(255,255,255,0.20); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); color:#fff; font-size:12px; font-weight:600; cursor:pointer; border:1px solid rgba(255,255,255,0.42); box-shadow:0 4px 14px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35); white-space:nowrap; }
 .plan-ai-btn:active { transform:translateX(-50%) scale(0.96); }
 
 .plan-card-route { min-height:172px; background:#1e1b2e; }
