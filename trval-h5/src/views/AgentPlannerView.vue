@@ -7,7 +7,7 @@
  * 组合：用户选择后，把配置拼成一句自然语言展示在输入区（含清空）
  * 后端：沿用 Agent SSE 流式（5 阶段），query 结构与旧版保持一致
  */
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast } from 'vant'
@@ -25,7 +25,7 @@ const clearOrigin = () => { origin.value = '' }
 const clearDestination = () => { destination.value = '' }
 
 const quickTags = ['北京', '曼谷', '普吉岛', '吉隆坡']
-const selectQuickTag = (tag) => { destination.value = tag }
+const selectQuickTag = (tag) => { destination.value = destination.value === tag ? '' : tag }
 
 // ====== 日期时间 ======
 const selectedDays = ref(null)
@@ -34,6 +34,13 @@ const showDatePopup = ref(false)
 const dayOptions = [1, 2, 3, 4, 5, 6, 7]
 const monthGroups = [[7, 8, 9], [10, 11, 12], [1, 2, 3], [4, 5, 6]]
 const selectDay = (d) => { selectedDays.value = selectedDays.value === d ? null : d }
+const dayMax = 30
+const incDay = () => { selectedDays.value = Math.min((selectedDays.value || 0) + 1, dayMax) }
+const decDay = () => { if (selectedDays.value) selectedDays.value = Math.max(selectedDays.value - 1, 1) }
+const dayInput = computed({
+  get: () => selectedDays.value ?? '',
+  set: (v) => { const n = parseInt(v, 10); selectedDays.value = Number.isNaN(n) ? null : Math.max(1, Math.min(n, dayMax)) }
+})
 const toggleMonth = (m) => {
   const i = selectedMonths.value.indexOf(m)
   if (i >= 0) { selectedMonths.value.splice(i, 1) } else { selectedMonths.value.push(m) }
@@ -52,23 +59,48 @@ const showTravelerPopup = ref(false)
 const travelerMax = 20
 const incTraveler = (k) => { if (travelers[k] < travelerMax) { travelers[k]++; travelerTouched.value = true } }
 const decTraveler = (k) => { if (travelers[k] > 0) { travelers[k]--; travelerTouched.value = true } }
+// 每个分类都可直接编辑，夹在 0–travelerMax
+const makeTravelerInput = (key) => computed({
+  get: () => travelers[key],
+  set: (v) => { const n = parseInt(v, 10); travelers[key] = Number.isNaN(n) ? 0 : Math.max(0, Math.min(n, travelerMax)); travelerTouched.value = true }
+})
+const adultInput = makeTravelerInput('adult')
+const childInput = makeTravelerInput('child')
+const seniorInput = makeTravelerInput('senior')
 const totalPeople = computed(() => travelers.adult + travelers.child + travelers.senior)
 const travelerDone = () => { showTravelerPopup.value = false }
 const hasTravelers = computed(() => travelerTouched.value || travelers.child > 0 || travelers.senior > 0)
 const travelerBadge = computed(() => hasTravelers.value ? `${totalPeople.value}${t('common.people')}` : '')
 
-// ====== 预算 ======
-const budget = ref(5000)
+// ====== 预算（人均 / 总预算） ======
+const budget = ref(0)            // 人均预算
+const totalBudget = ref(0)       // 总预算
 const showBudgetPopup = ref(false)
-const budgetOptions = [2000, 3000, 5000, 8000, 10000, 15000, 20000]
+const personBudgetOptions = [1000, 2000, 3000, 5000, 8000]         // 人均：较小预设
+const totalBudgetOptions = [10000, 20000, 30000, 50000, 100000]    // 总预算：较大预设
+const personBudgetMax = 10000
+const totalBudgetMax = 500000
+const fmtBudget = (v) => v >= 10000 ? (v / 10000).toFixed(1) + t('agent.unitWan') : v.toLocaleString()
 const selectBudget = (b) => { budget.value = budget.value === b ? 0 : b }
-const budgetDone = () => { showBudgetPopup.value = false }
-const budgetLabel = computed(() => {
-  if (budget.value >= 10000) return t('agent.budgetPerPersonWan', { amount: (budget.value / 10000).toFixed(1) })
-  return t('agent.budgetPerPerson', { amount: budget.value.toLocaleString() })
+const incBudget = () => { budget.value = Math.min((budget.value || 0) + 500, personBudgetMax) }
+const decBudget = () => { budget.value = Math.max(budget.value - 500, 0) }
+const budgetInput = computed({
+  get: () => budget.value || '',
+  set: (v) => { const n = parseInt(v, 10); budget.value = Number.isNaN(n) ? 0 : Math.max(0, Math.min(n, personBudgetMax)) }
 })
-const hasBudget = computed(() => !!budget.value)
-const budgetBadge = computed(() => hasBudget.value ? `${budget.value >= 10000 ? (budget.value / 10000).toFixed(1) + t('agent.unitWan') : budget.value.toLocaleString()}` : '')
+const selectTotalBudget = (b) => { totalBudget.value = totalBudget.value === b ? 0 : b }
+const incTotalBudget = () => { totalBudget.value = Math.min((totalBudget.value || 0) + 1000, totalBudgetMax) }
+const decTotalBudget = () => { totalBudget.value = Math.max(totalBudget.value - 1000, 0) }
+const totalBudgetInput = computed({
+  get: () => totalBudget.value || '',
+  set: (v) => { const n = parseInt(v, 10); totalBudget.value = Number.isNaN(n) ? 0 : Math.max(0, Math.min(n, totalBudgetMax)) }
+})
+const budgetDone = () => { showBudgetPopup.value = false }
+const hasBudget = computed(() => !!budget.value || !!totalBudget.value)
+const budgetBadge = computed(() => {
+  const v = budget.value || totalBudget.value
+  return v ? fmtBudget(v) : ''
+})
 
 // ====== 旅行偏好 ======
 const preferences = reactive({ companion: '', styles: [], hotelLevel: '', cabinClass: '', pace: '', schedule: '' })
@@ -108,12 +140,19 @@ const prefLabel = computed(() => {
   return parts.length ? parts.join(' · ') : t('agent.pleaseSelect')
 })
 
-// ====== 组合成一句话（参考截图） ======
-const summarySentence = computed(() => {
-  const parts = []
+// ====== 组合成一句（标签普通 + 值高亮） ======
+// t() 返回的是已插值字符串（{ph} 被替换掉），所以用哨兵字符把「值」包起来，
+// 渲染出最终字符串后按哨兵拆段：偶数下标=普通文案，奇数下标=用户选中的值（高亮）
+const HILITE = ''
+function spliceSegments(interpolated) {
+  return interpolated.split(HILITE).map((text, i) => ({ text, highlight: i % 2 === 1 && text !== '' }))
+}
+const summarySegments = computed(() => {
+  const segs = []
   // 目的地：我准备前往北京。
   if (destination.value.trim()) {
-    parts.push(t('agent.sentenceDestination', { dest: destination.value.trim() }))
+    const dest = destination.value.trim()
+    segs.push(...spliceSegments(t('agent.sentenceDestination', { dest: HILITE + dest + HILITE })))
   }
   // 成员：同行成员有2成人，3老人。
   if (hasTravelers.value) {
@@ -121,12 +160,12 @@ const summarySentence = computed(() => {
     if (travelers.adult) m.push(t('agent.peopleAdult', { n: travelers.adult }))
     if (travelers.child) m.push(t('agent.peopleChild', { n: travelers.child }))
     if (travelers.senior) m.push(t('agent.peopleElderly', { n: travelers.senior }))
-    if (m.length) parts.push(t('agent.sentenceMembers', { people: m.join('，') }))
+    if (m.length) segs.push(...spliceSegments(t('agent.sentenceMembers', { people: HILITE + m.join('，') + HILITE })))
   }
   // 时间：旅行时间是9月，3天。
   if (selectedDays.value) {
     const mon = selectedMonths.value.length ? selectedMonths.value.join('/') + t('agent.monthUnit') : ''
-    parts.push(t('agent.sentenceTime', { months: mon, days: selectedDays.value + t('common.days') }))
+    segs.push(...spliceSegments(t('agent.sentenceTime', { months: HILITE + mon + HILITE, days: HILITE + selectedDays.value + t('common.days') + HILITE })))
   }
   // 偏好：旅行偏好是…
   const p = []
@@ -136,10 +175,17 @@ const summarySentence = computed(() => {
   if (preferences.cabinClass) p.push(preferences.cabinClass)
   if (preferences.pace) p.push(preferences.pace)
   if (preferences.schedule) p.push(preferences.schedule)
-  if (p.length) parts.push(t('agent.sentencePrefs', { prefs: p.join('，') }))
+  if (p.length) segs.push(...spliceSegments(t('agent.sentencePrefs', { prefs: HILITE + p.join('，') + HILITE })))
   // 预算：人均预算5000元。
-  if (budget.value) parts.push(t('agent.sentenceBudget', { amount: budget.value >= 10000 ? (budget.value / 10000).toFixed(1) + t('agent.unitWan') : budget.value.toLocaleString() }))
-  return parts.join('')
+  if (budget.value) {
+    const amount = fmtBudget(budget.value)
+    segs.push(...spliceSegments(t('agent.sentenceBudget', { amount: HILITE + amount + HILITE })))
+  }
+  if (totalBudget.value) {
+    const amount = fmtBudget(totalBudget.value)
+    segs.push(...spliceSegments(t('agent.sentenceTotalBudget', { amount: HILITE + amount + HILITE })))
+  }
+  return segs
 })
 
 // 清空所有配置
@@ -148,11 +194,60 @@ const resetConfig = () => {
   travelers.adult = 2; travelers.child = 0; travelers.senior = 0
   travelerTouched.value = false
   selectedDays.value = null; selectedMonths.value = []
-  budget.value = 5000
+  budget.value = 0
+  totalBudget.value = 0
   preferences.companion = ''; preferences.styles = []; preferences.hotelLevel = ''; preferences.cabinClass = ''; preferences.pace = ''; preferences.schedule = ''
 }
 
-const canSubmit = computed(() => destination.value.trim() && (selectedDays.value || summarySentence.value))
+// ====== 配置持久化：跳选择页/离开本页再回来，不丢已选内容 ======
+const CONFIG_KEY = 'agent_trip_config'
+const saveConfig = () => {
+  const snapshot = {
+    origin: origin.value,
+    destination: destination.value,
+    selectedDays: selectedDays.value,
+    selectedMonths: [...selectedMonths.value],
+    budget: budget.value,
+    totalBudget: totalBudget.value,
+    travelers: { ...travelers },
+    travelerTouched: travelerTouched.value,
+    preferences: {
+      companion: preferences.companion,
+      styles: [...preferences.styles],
+      hotelLevel: preferences.hotelLevel,
+      cabinClass: preferences.cabinClass,
+      pace: preferences.pace,
+      schedule: preferences.schedule,
+    },
+  }
+  try { sessionStorage.setItem(CONFIG_KEY, JSON.stringify(snapshot)) } catch (e) {}
+}
+const loadConfig = () => {
+  try {
+    const raw = sessionStorage.getItem(CONFIG_KEY)
+    if (!raw) return
+    const s = JSON.parse(raw)
+    if (typeof s.origin === 'string') origin.value = s.origin
+    if (typeof s.destination === 'string') destination.value = s.destination
+    if (s.selectedDays) selectedDays.value = s.selectedDays
+    if (Array.isArray(s.selectedMonths)) selectedMonths.value = s.selectedMonths
+    if (typeof s.budget === 'number') budget.value = s.budget
+    if (typeof s.totalBudget === 'number') totalBudget.value = s.totalBudget
+    if (s.travelers) Object.assign(travelers, s.travelers)
+    if (typeof s.travelerTouched === 'boolean') travelerTouched.value = s.travelerTouched
+    if (s.preferences) {
+      preferences.companion = s.preferences.companion || ''
+      preferences.styles = Array.isArray(s.preferences.styles) ? s.preferences.styles : []
+      preferences.hotelLevel = s.preferences.hotelLevel || ''
+      preferences.cabinClass = s.preferences.cabinClass || ''
+      preferences.pace = s.preferences.pace || ''
+      preferences.schedule = s.preferences.schedule || ''
+    }
+  } catch (e) {}
+}
+watch([origin, destination, selectedDays, selectedMonths, budget, totalBudget, travelerTouched, travelers, preferences], saveConfig, { deep: true })
+
+const canSubmit = computed(() => destination.value.trim() && (selectedDays.value || summarySegments.value.length))
 const isGenerating = ref(false)
 
 // 把前端选项值（如'四钻/星高档型'）按前缀映射为后端枚举：经济型/舒适型/豪华型
@@ -172,6 +267,7 @@ function startPlanning() {
     origin: origin.value.trim(),
     days: selectedDays.value,
     budget: budget.value || 5000,
+    total_budget: totalBudget.value || 0,
     people: totalPeople.value,
     adults: travelers.adult,
     children: travelers.child,
@@ -217,6 +313,8 @@ const goOld = () => { router.push('/agent-planner-old') }
 
 // 挂载：从城市/景点选择页返回时读取结果
 onMounted(() => {
+  // 先恢复整份配置（人数/天数/预算/偏好/目的地），再让选择页带回来的值覆盖目的地与出发地
+  loadConfig()
   const city = sessionStorage.getItem('selected_origin_city')
   if (city) { origin.value = city; sessionStorage.removeItem('selected_origin_city') }
   const spot = sessionStorage.getItem('selected_destination_spot')
@@ -250,9 +348,9 @@ onMounted(() => {
 
         <!-- 输入展示区（点开目的地选择 / 点击清空） -->
         <div class="prompt-box" @click="openDestinationSelect">
-          <span v-if="summarySentence" class="prompt-text">{{ summarySentence }}</span>
+          <span v-if="summarySegments.length" class="prompt-text"><template v-for="(seg, i) in summarySegments" :key="i"><span :class="{ 'hl': seg.highlight }">{{ seg.text }}</span></template></span>
           <span v-else class="prompt-placeholder">{{ t('agent.whereToGo') }}</span>
-          <p v-if="summarySentence" class="prompt-clear" @click.stop="resetConfig">&times;</p>
+          <p v-if="summarySegments.length" class="prompt-clear" @click.stop="resetConfig">&times;</p>
         </div>
         <!-- 出发地 -->
         <div class="origin-line" @click="openOriginSelect">
@@ -299,7 +397,14 @@ onMounted(() => {
         <div class="popup-header">
           <button class="popup-close" @click="showDatePopup = false">&times;</button>
           <span class="popup-title">{{ t('agent.dateTitle') }}</span>
-          <span class="popup-tag active">{{ t('agent.flexibleTime') }}</span>
+          <div class="day-stepper">
+            <button class="step-btn" :class="{ disabled: !selectedDays || selectedDays <= 1 }" @click="decDay"><span class="step-minus">−</span></button>
+            <div class="num-field">
+              <input class="num-input" type="number" :min="1" :max="dayMax" v-model="dayInput" />
+              <span class="num-unit">{{ t('common.days') }}</span>
+            </div>
+            <button class="step-btn plus" :class="{ disabled: selectedDays >= dayMax }" @click="incDay"><span class="step-plus">＋</span></button>
+          </div>
         </div>
         <div class="popup-block">
           <div class="block-head"><span>{{ t('agent.daysLabel') }}</span><span class="block-hint">{{ t('agent.anyDays') }}</span></div>
@@ -331,7 +436,7 @@ onMounted(() => {
             <div class="traveler-info"><div class="t-name">{{ t('agent.elderly') }}</div><div class="t-range">{{ t('agent.elderlyRange') }}</div></div>
             <div class="stepper">
               <button class="step-btn" :class="{ disabled: travelers.senior === 0 }" @click="decTraveler('senior')"><span class="step-minus">−</span></button>
-              <span class="step-num">{{ travelers.senior }}</span>
+              <input class="num-input" type="number" :min="0" :max="travelerMax" v-model="seniorInput" />
               <button class="step-btn plus" @click="incTraveler('senior')"><span class="step-plus">＋</span></button>
             </div>
           </div>
@@ -339,7 +444,7 @@ onMounted(() => {
             <div class="traveler-info"><div class="t-name">{{ t('agent.adult') }}</div><div class="t-range">{{ t('agent.adultRange') }}</div></div>
             <div class="stepper">
               <button class="step-btn" :class="{ disabled: travelers.adult === 0 }" @click="decTraveler('adult')"><span class="step-minus">−</span></button>
-              <span class="step-num">{{ travelers.adult }}</span>
+              <input class="num-input" type="number" :min="0" :max="travelerMax" v-model="adultInput" />
               <button class="step-btn plus" @click="incTraveler('adult')"><span class="step-plus">＋</span></button>
             </div>
           </div>
@@ -347,7 +452,7 @@ onMounted(() => {
             <div class="traveler-info"><div class="t-name">{{ t('agent.children') }}</div><div class="t-range">{{ t('agent.childrenRange') }}</div></div>
             <div class="stepper">
               <button class="step-btn" :class="{ disabled: travelers.child === 0 }" @click="decTraveler('child')"><span class="step-minus">−</span></button>
-              <span class="step-num">{{ travelers.child }}</span>
+              <input class="num-input" type="number" :min="0" :max="travelerMax" v-model="childInput" />
               <button class="step-btn plus" @click="incTraveler('child')"><span class="step-plus">＋</span></button>
             </div>
           </div>
@@ -361,11 +466,42 @@ onMounted(() => {
       <div class="popup-root">
         <div class="popup-header">
           <button class="popup-close" @click="showBudgetPopup = false">&times;</button>
-          <span class="popup-title">{{ t('agent.perPersonBudget') }}</span>
+          <span class="popup-title">{{ t('agent.budgetTitle') }}</span>
         </div>
+        <!-- 人均预算 -->
         <div class="popup-block">
+          <div class="block-head">
+            <span>{{ t('agent.perPersonBudget') }}</span>
+            <div class="day-stepper">
+              <button class="step-btn" :class="{ disabled: budget <= 0 }" @click="decBudget"><span class="step-minus">−</span></button>
+              <div class="num-field">
+                <input class="num-input" type="number" :min="0" :max="personBudgetMax" v-model="budgetInput" />
+                <span class="num-unit">{{ t('common.yuan') }}</span>
+              </div>
+              <button class="step-btn plus" :class="{ disabled: budget >= personBudgetMax }" @click="incBudget"><span class="step-plus">＋</span></button>
+            </div>
+          </div>
           <div class="grid-4">
-            <button v-for="b in budgetOptions" :key="b" class="grid-btn" :class="{ active: budget === b }" @click="selectBudget(b)">
+            <button v-for="b in personBudgetOptions" :key="b" class="grid-btn" :class="{ active: budget === b }" @click="selectBudget(b)">
+              {{ b >= 10000 ? (b/10000).toFixed(1) + t('agent.unitWan') : b.toLocaleString() }}
+            </button>
+          </div>
+        </div>
+        <!-- 总预算 -->
+        <div class="popup-block">
+          <div class="block-head">
+            <span>{{ t('agent.totalBudget') }}</span>
+            <div class="day-stepper">
+              <button class="step-btn" :class="{ disabled: totalBudget <= 0 }" @click="decTotalBudget"><span class="step-minus">−</span></button>
+              <div class="num-field">
+                <input class="num-input" type="number" :min="0" :max="totalBudgetMax" v-model="totalBudgetInput" />
+                <span class="num-unit">{{ t('common.yuan') }}</span>
+              </div>
+              <button class="step-btn plus" :class="{ disabled: totalBudget >= totalBudgetMax }" @click="incTotalBudget"><span class="step-plus">＋</span></button>
+            </div>
+          </div>
+          <div class="grid-4">
+            <button v-for="b in totalBudgetOptions" :key="b" class="grid-btn" :class="{ active: totalBudget === b }" @click="selectTotalBudget(b)">
               {{ b >= 10000 ? (b/10000).toFixed(1) + t('agent.unitWan') : b.toLocaleString() }}
             </button>
           </div>
@@ -432,7 +568,8 @@ onMounted(() => {
 /* 输入展示区 */
 .prompt-box { position: relative; min-height: 52px; padding: 14px 16px; border-radius: 14px; background: rgba(255,255,255,0.5); border: 1px solid rgba(124,58,237,0.15); display: flex; align-items: flex-start; cursor: pointer; margin-bottom: 12px; }
 .prompt-placeholder { font-size: 15px; color: #cbd5e1; }
-.prompt-text { font-size: 14px; color: #7C3AED; line-height: 1.6; padding-right: 26px; word-break: break-word; }
+.prompt-text { font-size: 14px; color: #64748b; line-height: 1.6; padding-right: 26px; word-break: break-word; }
+.prompt-text .hl { color: #7C3AED; font-weight: 600; }
 .prompt-clear { position: absolute; top: 8px; right: 12px; font-size: 20px; color: #94a3b8; cursor: pointer; line-height: 1; }
 .prompt-clear:hover { color: #64748b; }
 
@@ -459,6 +596,14 @@ onMounted(() => {
 .popup-root { padding: 16px 20px; }
 .popup-scroll { overflow-y: auto; max-height: 100%; }
 .popup-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.day-stepper { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.day-stepper .step-btn { width: 30px; height: 30px; }
+.num-field { display: flex; align-items: center; gap: 3px; }
+.num-input { width: 62px; padding: 4px 6px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; font-size: 15px; font-weight: 600; color: #1e293b; background: #fff; }
+.num-input:focus { outline: none; border-color: #7C3AED; }
+.num-input::-webkit-outer-spin-button, .num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.num-input { -moz-appearance: textfield; }
+.num-unit { font-size: 12px; color: #94a3b8; }
 .popup-close { border: none; background: transparent; font-size: 24px; color: #94a3b8; cursor: pointer; padding: 0; }
 .popup-title { font-size: 18px; font-weight: 600; color: #1e293b; }
 .popup-tag { font-size: 12px; color: #8b5cf6; border-bottom: 2px solid #8b5cf6; padding-bottom: 2px; font-weight: 500; }

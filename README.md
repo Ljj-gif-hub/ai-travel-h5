@@ -101,6 +101,22 @@ mvn spring-boot:run   # → http://localhost:3200
 | 认证 | JWT (jjwt 0.12.5) + BCrypt |
 | 限流 | Redis 滑动窗口 |
 
+## 🆕 最近更新（v4.6 — 2026-08-30）
+
+### 💰 agent-map 真实价格（不再由 LLM 凭空生成）
+- 右侧价格改「真实价 + 诚实标注来源」：Agent 逐景点取高德 `biz_ext.cost` → 无则 Tavily 网络参考价 → 兜底 LLM 估价；`budget_detail.tickets` 重算 = Σ(真实价)×人数
+- Spring 兜底 `/api/map/attraction-prices`（Caffeine 缓存 + 限流）；前端 `spotPrice()` 覆盖 + 来源徽标（高德参考价/网络参考价/估价）
+- 局限：高德对景区票价几乎恒空，真实票价靠 Tavily；价格为参考价，UI 已标注
+
+### 🎛 agent-planner 输入框交互升级
+- 高亮只作用于「用户选的值」，固定提示文案不高亮（PUA 哨兵插值）
+- 天数/人数/预算抽屉右上角 ± 步进 + 直接输入
+- 预算抽屉新增「总预算」栏（人均调小、总预算调大，随生成传 `total_budget`）
+- 跳选择页/离开再返回不丢已选（sessionStorage 持久化）
+
+### 🖼 hero 大图清晰度
+- 首页/社区/我的 unsplash 全宽 hero `w=800→1920`、`q=85`
+
 ## 🆕 最近更新（v4.5 — 2026-08-30）
 
 ### 🗺️ agent-map 行程增强：周边游 + 坐标修复 + 景点多图

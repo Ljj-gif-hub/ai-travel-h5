@@ -28,6 +28,8 @@ export default {
   monthUnit: '月',
   // 预算弹窗
   perPersonBudget: '人均预算',
+  totalBudget: '总预算',
+  budgetTitle: '预算',
   unitWan: '万',
   budgetPerPerson: '{amount}元/人',
   budgetPerPersonWan: '{amount}万/人',
@@ -60,6 +62,7 @@ export default {
   sentenceTime: '旅行时间是{months}，{days}。',
   sentencePrefs: '旅行偏好是{prefs}。',
   sentenceBudget: '人均预算{amount}元。',
+  sentenceTotalBudget: '总预算{amount}元。',
   voiceHint: '按住说话',
   voiceComingSoon: '语音输入即将上线',
   // 生成进度

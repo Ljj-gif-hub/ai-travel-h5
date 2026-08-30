@@ -568,7 +568,7 @@ onBeforeUnmount(() => {
     <!-- 漂浮粒子 — 已禁用 -->
     <!-- ==================== 1. Hero Banner ==================== -->
     <div class="hero-banner entrance-item entrance-d1">
-      <img class="hero-bg-img" src="https://images.unsplash.com/photo-1530789253388-582c481c54b0?w=800&q=80" alt="" />
+      <img class="hero-bg-img" src="https://images.unsplash.com/photo-1530789253388-582c481c54b0?w=1920&q=85" alt="" />
       <div class="hero-overlay"></div>
       <div class="banner-content">
         <h1 class="banner-title">{{ t('community.bannerTitle') }}</h1>

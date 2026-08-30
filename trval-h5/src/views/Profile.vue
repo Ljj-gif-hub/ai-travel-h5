@@ -454,7 +454,7 @@ onDeactivated(() => {
 
       <!-- ======== 用户信息头图 ======== -->
       <div class="hero-card entrance-item entrance-d1">
-        <img class="hero-bg-img" src="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&q=80" alt="" />
+        <img class="hero-bg-img" src="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=85" alt="" />
         <div class="hero-overlay"></div>
 
         <!-- 登录态 -->

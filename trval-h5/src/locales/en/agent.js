@@ -28,6 +28,8 @@ export default {
   monthUnit: '',
   // Budget popup
   perPersonBudget: 'Budget per Person',
+  totalBudget: 'Total Budget',
+  budgetTitle: 'Budget',
   unitWan: 'w',
   budgetPerPerson: '{amount}/person',
   budgetPerPersonWan: '{amount}w/person',
@@ -60,6 +62,7 @@ export default {
   sentenceTime: 'Trip: {months}, {days}.',
   sentencePrefs: 'Preferences: {prefs}.',
   sentenceBudget: 'Budget: {amount}/person.',
+  sentenceTotalBudget: 'Total budget: {amount}.',
   voiceHint: 'Hold to talk',
   voiceComingSoon: 'Voice input coming soon',
   // Generation progress

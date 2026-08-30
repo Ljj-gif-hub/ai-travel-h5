@@ -115,6 +115,12 @@ function cleanSpotName(name) {
     .replace(/\s+/g, ' ')
     .trim()
 }
+// 金额规范化：LLM 可能输出 "0元"/"40元"/"约80"/"免费" 等字符串，只留数字（无数字视为 0），避免再拼「元」成 "0元元"
+function normCost(c) {
+  if (c == null || c === '') return '0'
+  const m = String(c).replace(/[¥￥\s,，]/g, '').match(/\d+(\.\d+)?/)
+  return m ? m[0] : '0'
+}
 function topHighlights() {
   const names = []
   for (const dp of planData.value?.dayPlans || []) {
@@ -849,6 +855,39 @@ function imagesOf(name) {
   return attractionImages.value[name] || []
 }
 
+// ====== 真实票价（v2.4）：Agent 已内置高德富化，前端再兜底覆盖（覆盖已保存行程/旧数据） ======
+const attractionPrices = ref({}) // 景点纯净名 → 高德真实价（元）
+
+/** 批量拉取高德真实票价（走 Spring /api/map/attraction-prices，30 分钟缓存） */
+async function fetchRealPrices(dayPlans) {
+  const names = new Set()
+  for (const dp of dayPlans) for (const s of (dp.timeSlots || [])) {
+    const n = cleanSpotName(s.attraction)
+    if (n) names.add(n)
+  }
+  if (!names.size) return
+  const city = planData.value?.destination || destCity.value || ''
+  try {
+    const qs = new URLSearchParams()
+    if (city) qs.set('city', city)
+    qs.set('names', [...names].join(','))
+    const r = await fetch(`/api/map/attraction-prices?${qs.toString()}`)
+    const body = await r.json()
+    if (body && body.code === 0) attractionPrices.value = body.data || {}
+  } catch { /* 后端不可达则保持 Agent 富化后的价格 */ }
+}
+
+const priceSrcLabel = (src) => ({ amap: t('map.priceAmap'), tavily: t('map.priceRef'), estimate: t('map.priceEstimate') }[src] || '')
+const budgetSrcLabel = (k) => ({ tickets: t('map.priceRef'), accommodation: t('map.priceRef'), transport: t('map.priceEstimate'), food: t('map.priceEstimate'), shopping: t('map.priceEstimate') }[k] || '')
+
+/** 单个槽位价格展示：真实价优先（前端兜底查询 > Agent 富化），否则原价 + 来源标注 */
+function spotPrice(slot) {
+  const real = attractionPrices.value[cleanSpotName(slot.attraction)]
+  if (real) return { text: `${real}${t('common.yuan')}`, src: 'amap' }
+  const src = (slot.price_source === 'amap' || slot.price_source === 'tavily') ? slot.price_source : 'estimate'
+  return { text: slot.cost || `0${t('common.yuan')}`, src }
+}
+
 // ====== 记忆层标识：长期偏好(user_id) + 会话上下文(session_id) ======
 function getUserShortId() {
   try {
@@ -973,7 +1012,8 @@ async function startGeneration(adjustment = '') {
           day: dp.day, dayTitle: dp.day_title || '',
           timeSlots: (dp.time_slots || []).map(s => ({
             timeOfDay: s.time_of_day || '', time: s.time || '', attraction: s.attraction || '',
-            activity: s.activity || '', duration: s.duration || '', cost: `${s.cost || 0}${t('common.yuan')}`,
+            activity: s.activity || '', duration: s.duration || '', cost: `${normCost(s.cost)}${t('common.yuan')}`,
+            price_source: s.price_source || 'estimate', price_note: s.price_note || '',
             transport: s.transport || '', tips: s.tips || '', hours: s.hours || '',
           })), meals: dp.meals || [],
         })), tips: d.tips || [],
@@ -981,10 +1021,11 @@ async function startGeneration(adjustment = '') {
       costBreakdown.value = d.budget_detail || null
       hotelList.value = (d.hotels || []).map(h => ({
         name: h.name, district: h.district, pricePerNight: h.price_per_night, rating: h.rating, highlights: h.highlights,
+        price_source: h.price_source || 'estimate',
       }))
       const markerNames = []
       ;(d.day_plans || []).forEach(dp => { (dp.time_slots || []).forEach(s => { if (s.attraction && !markerNames.includes(s.attraction)) markerNames.push(s.attraction) }) })
-      addMarkers(markerNames); loadImages(d.day_plans || [])
+      addMarkers(markerNames); loadImages(d.day_plans || []); fetchRealPrices(d.day_plans || [])
       phase.value = 'completed'; snapTo(MAX)
     },
     onError(msg) { showToast(msg || t('map.planFailed')); goBackToPrev() },
@@ -1028,7 +1069,8 @@ async function loadSavedPlan(planId) {
                 attraction: s.attraction || '',
                 activity: s.activity || '',
                 duration: s.duration || '',
-                cost: s.cost != null ? `${s.cost}${t('common.yuan')}` : `0${t('common.yuan')}`,
+                cost: `${normCost(s.cost)}${t('common.yuan')}`,
+                price_source: s.price_source || 'estimate', price_note: s.price_note || '',
                 transport: s.transport || '',
                 tips: s.tips || '',
                 hours: s.hours || '',
@@ -1039,7 +1081,10 @@ async function loadSavedPlan(planId) {
         }),
         tips: pd.tips || [],
       }
-      hotelList.value = Array.isArray(pd.hotels) ? pd.hotels : []
+      hotelList.value = Array.isArray(pd.hotels) ? pd.hotels.map(h => ({
+        name: h.name, district: h.district, pricePerNight: h.price_per_night ?? h.pricePerNight,
+        rating: h.rating, highlights: h.highlights, price_source: h.price_source || 'estimate',
+      })) : []
       costBreakdown.value = pd.budgetDetail || pd.budget_detail || null
       markdownContent.value = ''
     } else {
@@ -1063,6 +1108,7 @@ async function loadSavedPlan(planId) {
         ;(planData.value.dayPlans || []).forEach(dp => (dp.timeSlots || []).forEach(s => { if (s.attraction && !names.includes(s.attraction)) names.push(s.attraction) }))
         addMarkers(names)
         loadImages(planData.value.dayPlans || [])
+        fetchRealPrices(planData.value.dayPlans || [])
       }
     })
   } catch (e) {
@@ -1135,7 +1181,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
               <span>🕐 {{ noteSpot.hours || t('map.seeNotes') }}</span>
               <span>⏱ {{ t('map.suggestPlay', { duration: noteSpot.duration }) }}</span>
             </div>
-            <div class="snc-cost" v-if="noteSpot.cost">💰 {{ noteSpot.cost }}</div>
+            <div class="snc-cost" v-if="noteSpot.cost">💰 {{ spotPrice(noteSpot).text }}<i class="price-src" :class="spotPrice(noteSpot).src">{{ priceSrcLabel(spotPrice(noteSpot).src) }}</i></div>
           </div>
         </div>
       </div>
@@ -1308,7 +1354,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                   <div class="spot-transport">
                     <span v-if="slot.transport">🚗 {{slot.transport}}</span>
                     <span>⏱ {{slot.duration}}</span>
-                    <span class="spot-cost">💰 {{slot.cost}}</span>
+                    <span class="spot-cost">💰 {{ spotPrice(slot).text }}<i class="price-src" :class="spotPrice(slot).src">{{ priceSrcLabel(spotPrice(slot).src) }}</i></span>
                   </div>
                   </div>
                   <span class="tl-node"></span>
@@ -1342,6 +1388,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                   <div class="hotel-desc" v-if="h.highlights">{{h.highlights}}</div>
                   <div class="hotel-price-row">
                     <span class="hotel-price">¥{{h.pricePerNight?.toLocaleString()}}</span><span class="hotel-unit">/{{ t('common.night') }}</span>
+                    <i class="price-src" :class="h.price_source==='tavily'?'tavily':'estimate'">{{ h.price_source==='tavily' ? t('map.priceRef') : t('map.priceEstimate') }}</i>
                     <span class="hotel-total">{{ t('map.totalNights', { n: tripDays }) }} ¥{{Number(h.pricePerNight||0)>0 ? (h.pricePerNight*tripDays).toLocaleString() : '--'}}</span>
                   </div>
                 </div>
@@ -1350,7 +1397,7 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
                 <h3>💰 {{ t('map.costEstimate') }}</h3>
                 <div class="budget-rows">
                   <div v-for="(v,k) in costBreakdown" :key="k" class="budget-row" :class="{total:k==='total'}">
-                    <span>{{ budgetLabel(k) }}</span><b>¥{{v.toLocaleString?.()||v}}</b>
+                    <span>{{ budgetLabel(k) }}</span><b>¥{{v.toLocaleString?.()||v}}</b><i class="budget-src" v-if="budgetSrcLabel(k)">{{ budgetSrcLabel(k) }}</i>
                   </div>
                 </div>
               </div>
@@ -1595,6 +1642,10 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 
 .spot-transport { display:flex; gap:14px; padding:10px 14px 0; font-size:12px; color:#888; }
 .spot-cost { color:#10b981; font-weight:600; margin-left:auto; }
+.price-src { font-style:normal; font-size:10px; font-weight:500; padding:1px 5px; border-radius:8px; margin-left:4px; vertical-align:1px; white-space:nowrap; }
+.price-src.amap { color:#0e9f6e; background:rgba(16,185,129,.12); }
+.price-src.tavily { color:#6d28d9; background:rgba(139,92,246,.12); }
+.price-src.estimate { color:#b45309; background:rgba(245,158,11,.15); }
 
 /* 美食 */
 .meals-bar { padding:10px 14px; margin-bottom:12px; background:#fff; border-radius:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; animation:cardIn .45s ease both; }
@@ -1623,6 +1674,8 @@ function handleStop() { if (streamAbort) streamAbort(); goBackToPrev() }
 .budget-row.total { background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; }
 .budget-row.total span, .budget-row.total b { color:#fff; }
 .budget-row b { font-size:14px; color:#1a1a2e; }
+.budget-src { font-style:normal; font-size:10px; color:#9ca3af; margin-left:6px; white-space:nowrap; }
+.budget-row.total .budget-src { color:rgba(255,255,255,.75); }
 
 /* 悬浮保存按钮：地图上方（抽屉外），顶部栏下方右侧，紧凑醒目 */
 .save-float { position:absolute; top:calc(env(safe-area-inset-top) + 56px); right:16px; z-index:15; display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:16px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; font-size:12px; font-weight:600; line-height:1; box-shadow:0 3px 12px rgba(16,185,129,.4); cursor:pointer; animation:floatIn .4s ease; }

@@ -916,7 +916,7 @@ onUnmounted(() => {
       <!-- 全屏山水背景图 -->
       <img
         class="hero-bg-img"
-        src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80"
+        src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=85"
         alt=""
       />
       <!-- 底部渐变遮罩，保证白色文字可读 -->

@@ -375,6 +375,166 @@ def get_commute_info(origin: str, destination: str, mode: str = "驾车", city: 
         }, ensure_ascii=False)
 
 
+# ==================== 工具 4：真实票价查询（高德 biz_ext.cost） ====================
+
+# 高德 Web 服务免费配额约 3 QPS：模块级节流，保证两次调用间隔 ≥ 400ms（与 Spring 令牌桶同理）
+import threading
+_amap_price_lock = threading.Lock()
+_amap_price_last = 0.0
+_AMAP_CALL_INTERVAL_S = 0.4
+
+
+def _amap_throttle():
+    """高德调用节流：距上次调用不足间隔则 sleep 补齐（跨线程安全）"""
+    global _amap_price_last
+    with _amap_price_lock:
+        import time
+        now = time.monotonic()
+        wait = _AMAP_CALL_INTERVAL_S - (now - _amap_price_last)
+        _amap_price_last = time.monotonic() if wait <= 0 else now
+    if wait > 0:
+        time.sleep(wait)
+
+
+# 网络参考价缓存：景点名 → (price|None, ts)，12h 内不重复搜（Tavily 每次搜索耗额度）
+_PRICE_REF_CACHE: dict = {}
+_PRICE_REF_CACHE_TTL = 12 * 3600
+
+
+def _extract_price(text: str):
+    """从搜索结果文本中提取票价（元）：优先"门票/成人/票价"附近的数字，兜底任意 N 元"""
+    if not text:
+        return None
+    import re
+    # 优先：门票/成人/票价/参考价 后跟数字+元（区间格式取最小值，如 40-60元 → 40）
+    for m in re.finditer(r"(?:门票|成人|票价|参考价|价格)[^0-9]{0,12}(\d+(?:\.\d+)?)\s*[-~至到]\s*(\d+(?:\.\d+)?)\s*元", text):
+        p = float(m.group(1))
+        if 5 <= p <= 2000:
+            return int(round(p))
+    for m in re.finditer(r"(?:门票|成人|票价|参考价|价格)[^0-9]{0,12}(\d+(?:\.\d+)?)\s*元", text):
+        p = float(m.group(1))
+        if 5 <= p <= 2000:
+            return int(round(p))
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*元", text):
+        p = float(m.group(1))
+        if 5 <= p <= 2000:
+            return int(round(p))
+    return None
+
+
+def _search_reference_price(name: str):
+    """Tavily 搜索景点网络参考价；返回 (price|None, note)。失败/未检索到 → (None, 原因)。"""
+    import time as _time
+    now = _time.monotonic()
+    hit = _PRICE_REF_CACHE.get(name)
+    if hit is not None and (now - hit[1]) < _PRICE_REF_CACHE_TTL:
+        return hit[0], "网络参考价(缓存)" if hit[0] else hit[2]
+
+    api_key = _get_tavily_key()
+    if not api_key:
+        return None, "未配置 Tavily Key"
+
+    try:
+        resp = _HTTP_CLIENT.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": f"{name} 门票价格 官方 2026",
+                "search_depth": "basic",
+                "max_results": 4,
+                "include_answer": True,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        texts = []
+        if data.get("answer"):
+            texts.append(data["answer"])
+        for r in data.get("results", [])[:4]:
+            texts.append(r.get("content", ""))
+        price = _extract_price("\n".join(texts))
+        if price:
+            _PRICE_REF_CACHE[name] = (price, now, "网络参考价")
+            return price, "网络参考价"
+        _PRICE_REF_CACHE[name] = (None, now, "网络未检索到明确票价")
+        return None, "网络未检索到明确票价"
+    except Exception as e:
+        logger.warning(f"网络票价搜索失败: name={name}, error={e}")
+        return None, "网络票价搜索失败"
+
+
+@tool
+def get_attraction_price(name: str, city: str = "") -> str:
+    """
+    查询景点真实门票/人均消费价格。
+
+    数据来源（诚实标注，不编造）：
+    1. 高德 POI biz_ext.cost（部分 POI 有真实消费价）
+    2. Tavily 联网搜索网络参考价（高德无数据时兜底，如官方/OTA 公布票价）
+
+    适用场景：
+    - 规划时把景点 cost 字段填成真实票价
+    - 校验 LLM 生成的票价是否合理
+
+    :param name: 景点名，如 "故宫"、"成都大熊猫繁育研究基地"
+    :param city: 所在城市（用于消歧同名景点），如 "北京"
+    :return: JSON 格式的票价信息 {"name","price","source","note"}
+    """
+    # 第 1 路：高德实时票价（有 biz_ext.cost 才用）
+    amap_key = _get_amap_key()
+    if amap_key:
+        _amap_throttle()
+        try:
+            params = {
+                "key": amap_key,
+                "keywords": name,
+                "offset": 1,
+                "page": 1,
+                "extensions": "all",
+            }
+            if city and city != "全国":
+                params["city"] = city
+
+            resp = _HTTP_CLIENT.get("https://restapi.amap.com/v3/place/text", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+            if data.get("status") == "1":
+                pois = data.get("pois") or []
+                if pois:
+                    biz = (pois[0].get("biz_ext") or {})
+                    cost_text = str(biz.get("cost") or "").strip()
+                    if cost_text:
+                        price = int(round(float(cost_text)))
+                        if price > 0:
+                            return json.dumps({
+                                "name": name,
+                                "price": price,
+                                "source": "amap",
+                                "note": "高德实时票价",
+                            }, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"高德票价查询失败: name={name}, error={e}")
+
+    # 第 2 路：Tavily 网络参考价（高德无数据时兜底，诚实标注）
+    ref_price, ref_note = _search_reference_price(name)
+    if ref_price:
+        return json.dumps({
+            "name": name,
+            "price": ref_price,
+            "source": "tavily",
+            "note": "网络参考价",
+        }, ensure_ascii=False)
+
+    return json.dumps({
+        "name": name,
+        "price": None,
+        "source": "estimate",
+        "note": ref_note or "估价",
+    }, ensure_ascii=False)
+
+
 def _estimate_commute(origin: str, destination: str, mode: str, city: str) -> str:
     """
     无高德 Key 时的通勤估算（基于典型城市区域距离）
@@ -601,18 +761,21 @@ search_attractions_info = permission_manager.guard(search_attractions_info)
 search_hotels_info = permission_manager.guard(search_hotels_info)
 get_commute_info = permission_manager.guard(get_commute_info)
 calculate_budget = permission_manager.guard(calculate_budget)
+get_attraction_price = permission_manager.guard(get_attraction_price)
 
 # 指标打点包装（最外层）
 search_attractions_info = _wrap_metrics(search_attractions_info)
 search_hotels_info = _wrap_metrics(search_hotels_info)
 get_commute_info = _wrap_metrics(get_commute_info)
 calculate_budget = _wrap_metrics(calculate_budget)
+get_attraction_price = _wrap_metrics(get_attraction_price)
 
 ALL_TOOLS = [
     search_attractions_info,
     search_hotels_info,
     get_commute_info,
     calculate_budget,
+    get_attraction_price,
 ]
 
 TOOLS_BY_NAME = {t.name: t for t in ALL_TOOLS}

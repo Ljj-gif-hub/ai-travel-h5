@@ -114,6 +114,15 @@ public class BaiduMapService implements MapService {
         return new ArrayList<>();
     }
 
+    /**
+     * 百度 Place v2 详情接口的 price 字段在标准套餐下常为空（已废弃/需付费字段），
+     * 返回 null 让前端/Agent 标注"估价"，不冒充真实票价。
+     */
+    @Override
+    public Integer fetchAttractionPrice(String scenicName, String city) {
+        return null;
+    }
+
     /** 简单内存缓存条目，包含数据与过期时间戳 */
     private static class CacheEntry<T> {
         final T data;

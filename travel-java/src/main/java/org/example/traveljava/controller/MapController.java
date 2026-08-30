@@ -175,6 +175,45 @@ public class MapController {
         return Result.ok(result);
     }
 
+    /**
+     * 批量获取景点真实门票/人均消费价：key=景点名，value=高德 biz_ext.cost（30 分钟有界缓存）
+     * 供前端/Agent 用真实票价替换 LLM 估算价；未收录的景点不返回（前端标注"估价"）。
+     */
+    @GetMapping("/attraction-prices")
+    @RateLimit(max = 60, duration = 60, key = "map_attraction_prices")
+    public Result<Map<String, Integer>> getAttractionPrices(
+            @RequestParam(required = false) String city,
+            @RequestParam List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return Result.fail("请提供景点名称参数");
+        }
+        // 去重 + 限长，防超大请求
+        List<String> deduped = new ArrayList<>();
+        for (String n : names) {
+            if (n == null || n.isBlank() || n.length() > 50) continue;
+            if (!deduped.contains(n)) deduped.add(n.trim());
+        }
+        if (deduped.isEmpty()) {
+            return Result.ok(new LinkedHashMap<>());
+        }
+        String cacheKey = (city == null ? "" : city.trim()) + "@" + String.join("|", deduped);
+        Map<String, Integer> cached = attractionPriceCache.getIfPresent(cacheKey);
+        if (cached != null) {
+            return Result.ok(cached);
+        }
+        Map<String, Integer> result = new LinkedHashMap<>();
+        for (String name : deduped) {
+            try {
+                Integer price = mapService.fetchAttractionPrice(name, city);
+                if (price != null) result.put(name, price); // 未收录的景点不返回，前端标"估价"
+            } catch (Exception e) {
+                log.warn("获取景点票价失败: name={}, city={}", name, city);
+            }
+        }
+        attractionPriceCache.put(cacheKey, result);
+        return Result.ok(result);
+    }
+
     @GetMapping("/nearby-attractions")
     @RateLimit(max = 30, duration = 60, key = "map_nearby_attr")
     public Result<List<AttractionDTO>> getNearbyAttractions(
@@ -390,6 +429,10 @@ public class MapController {
             .expireAfterWrite(30, TimeUnit.MINUTES)
             .build();
     private final Cache<String, Map<String, List<String>>> attractionImageCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
+    private final Cache<String, Map<String, Integer>> attractionPriceCache = Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(30, TimeUnit.MINUTES)
             .build();

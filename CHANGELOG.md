@@ -1,6 +1,28 @@
 # 智能旅游助手 — 更新日志
 
-> 当前版本：**v2.3.0** · 周边游 + 坐标修复 + 景点多图 + agent-map 行程增强
+> 当前版本：**v2.4.0** · agent-map 真实价格 + agent-planner 交互升级 + 大图清晰度
+
+---
+
+## v2.4.0 (2026-08-30) — agent-map 真实价格 + agent-planner 交互升级 + 大图清晰度
+
+### 💰 agent-map 真实价格（不再由 LLM 凭空生成）
+- **三层价格富化**：Agent 源头 `_enrich_real_prices`（finalize + demo 两路都钩）逐景点调 `get_attraction_price`——优先高德 `biz_ext.cost`（source=amap）→ 无则 Tavily 网络参考价（source=tavily，note=网络参考价）→ 仍无则保留 LLM 估价（estimate）；`budget_detail.tickets` 重算 = Σ(真实价)×人数
+- **Spring 兜底**：`GET /api/map/attraction-prices?city=&names=`（MapController + Caffeine 30min 缓存 + 60/min 限流）批量查高德，前端 savedPlan / 旧数据时覆盖
+- **前端标注**：AgentMapView 透传 `price_source`/`price_note` + `spotPrice()` 覆盖 + 来源徽标（高德参考价 / 网络参考价 / 估价）+ 预算行 `budget-src` 标注
+- **已知局限**：高德 `biz_ext.cost` 对景区**几乎恒空**（实测 15 个知名景点 0/15），真实票价实际靠 Tavily；价格是**参考价**非实时可预订，UI 已诚实标注来源
+
+### 🎛 agent-planner 输入框交互升级
+- **高亮只作用于「用户选的值」**（如北京），固定提示文案（我准备前往）不高亮——用 PUA 哨兵 `` 包裹值再 `t()` 插值，避免先行插值后匹配不到占位符
+- 天数 / 人数 / 预算抽屉右上角均可 **± 步进 + 直接输入数字**（不再只能点预设）
+- 预算抽屉新增**总预算栏**：人均预算预设调小 [1000-8000]，总预算预设调大 [10000-100000]，总预算随生成请求传 `total_budget`
+- 跳选择页 / 离开再返回**不丢已选**：配置 sessionStorage 持久化（`agent_trip_config`）
+
+### 🖼 hero 大图清晰度
+- 首页 / 社区 / 我的三处 unsplash 全宽 hero 缩略参数 `w=800→1920`、`q=85`（仅外部 CDN 受益；本地图库无缩放服务）
+
+### 🛠 部署 / 冒烟脚本
+- 新增 `launch_deploy_20260830.sh`（setsid 后台部署 + 日志落盘）/ `smoke_20260830.sh`（健康 + 周边游 + 景点多图 + 高德坐标）/ `status_check.sh` / `fetch_amap_key_local.py`（从线上同步有效高德 key 回本地，不打印密钥）
 
 ---
 

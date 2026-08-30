@@ -69,6 +69,14 @@ public interface MapService {
     List<String> fetchAttractionPhotos(String scenicName, String city);
 
     /**
+     * 获取景点真实门票/人均消费价（POI biz_ext.cost 检索）
+     * @param scenicName 景点名
+     * @param city 城市限定（可空；用于消歧同名景点）
+     * @return 真实价格（元），无匹配/失败/未配置 Key 返回 null
+     */
+    Integer fetchAttractionPrice(String scenicName, String city);
+
+    /**
      * @return 当前地图提供商标识，如 "baidu" / "amap"
      */
     String getProviderName();

@@ -383,6 +383,9 @@ class TravelAgentPlanner:
             "配置 LLM/Tavily/Amap API Key 后可使用实时 Agent 模式",
         ])
 
+        # v2.4 真实价格富化（Demo 模式同样覆盖：有高德 Key 则用真实票价，无则标估价）
+        await self._enrich_real_prices(plan)
+
         plan["plan_versions"] = self._plan_version_summaries()
         yield AgentEvent(
             event_type="complete", phase="finalize",
@@ -1235,6 +1238,79 @@ class TravelAgentPlanner:
         if knowledge_src:
             plan["research_notes"].append(f"攻略参考：{knowledge_src}（{destination} 本地攻略）")
 
+        # v2.4 真实价格富化：高德真实票价覆盖 + 来源标注（所有产出路径统一收口到这里）
+        await self._enrich_real_prices(plan)
+        return plan
+
+    async def _enrich_real_prices(self, plan: dict) -> dict:
+        """真实价格富化（v2.4）：用真实票价覆盖 LLM 估算价，并如实标注价格来源。
+
+        - 景点 cost：优先高德 POI biz_ext.cost（price_source=amap，高德实时票价）；高德无票价数据时
+          用 Tavily 联网搜索网络参考价（price_source=tavily，网络参考价）；两者都无 → 保留 LLM 值并
+          标注 estimate（估价），不冒充真实。
+        - 酒店 price_per_night：来自 Tavily 网络搜索 → 标 tavily（网络参考价）；无 Tavily → estimate。
+        - budget_detail.tickets 重算为 Σ(真实票价)×人数，保持与卡片一致；transport/food/shopping
+          无免费实时源，保留 LLM 估算并在前端标注"估算"（预留接口供以后数据库对接）。
+        任何价格查询失败均 fail-open，仅该景点回落"估价"，不阻塞行程生成。
+        """
+        from .tools import get_attraction_price, _get_tavily_key
+
+        destination = plan.get("destination") or self.req.get("destination", "")
+        people = max(_to_int(plan.get("people", 2), 2), 1)
+
+        # 收集去重后的纯净景点名（剥【标签】/（备注）后缀），并建立 纯净名 → 槽位 映射
+        seen: Dict[str, List[dict]] = {}
+        for dp in plan.get("day_plans", []):
+            for slot in dp.get("time_slots", []):
+                raw = str(slot.get("attraction", "") or "")
+                clean = re.sub(r"[【】（）()].*$", "", raw).strip()
+                if clean:
+                    seen.setdefault(clean, []).append(slot)
+
+        # 逐个查高德真实票价（工具内置 400ms 节流，防撞免费配额）；无 Key 时工具快速返回"估价"分支
+        for clean in seen:
+            try:
+                res = await get_attraction_price.ainvoke({"name": clean, "city": destination})
+                data = json.loads(res) if isinstance(res, str) else (res or {})
+                price = data.get("price")
+                src = data.get("source", "estimate")
+                note = str(data.get("note", "") or ("高德实时票价" if src == "amap" else "估价"))
+                for slot in seen[clean]:
+                    if price is not None:
+                        slot["cost"] = int(price)
+                        slot["price_source"] = src if src in ("amap", "tavily") else "estimate"
+                        slot["price_note"] = note
+                    else:
+                        slot["price_source"] = src if src in ("amap", "tavily") else "estimate"
+                        slot["price_note"] = note
+            except Exception as e:
+                logger.warning(f"真实票价富化失败: {clean}, error={e}")
+                for slot in seen[clean]:
+                    slot["price_source"] = "estimate"
+                    slot["price_note"] = "估价"
+
+        # 统一把 cost 归一为数字：LLM 可能输出 "60元"/"免费"/"约80" 等字符串，
+        # 前端再拼「元」会变成 "0元元"。无数字一律 0（免费）。
+        for dp in plan.get("day_plans", []):
+            for slot in dp.get("time_slots", []):
+                slot["cost"] = _to_int(slot.get("cost", 0), 0)
+
+        # 酒店来源标注：有 Tavily 实时搜索则"网络参考价"，否则"估价"
+        hotel_src = "tavily" if _get_tavily_key() else "estimate"
+        hotel_note = "网络参考价" if hotel_src == "tavily" else "估价"
+        for h in plan.get("hotels", []):
+            h.setdefault("price_source", hotel_src)
+            h.setdefault("price_note", hotel_note)
+
+        # 重算门票预算 = Σ(每个景点真实价)×人数，与卡片显示保持一致
+        ticket_sum = 0
+        for dp in plan.get("day_plans", []):
+            for slot in dp.get("time_slots", []):
+                ticket_sum += _to_int(slot.get("cost", 0), 0)
+        bd = plan.get("budget_detail", {})
+        bd["tickets"] = ticket_sum * people
+        bd["total"] = sum(_to_int(bd.get(k, 0), 0) for k in ["transport", "accommodation", "food", "tickets", "shopping"])
+        plan["budget_detail"] = bd
         return plan
 
     # ==================== 辅助方法 ====================

@@ -113,6 +113,10 @@ public class AmapService implements MapService {
     private final ConcurrentHashMap<String, CacheEntry<List<String>>> attractionPhotoCache = new ConcurrentHashMap<>();
     private static final long ATTR_PHOTO_TTL_MS = 24 * 60 * 60 * 1000;
 
+    /** 景点真实票价缓存：key = city|scenicName，value = 高德 biz_ext.cost（TTL 24h）；null 不缓存（每个景点只查一次） */
+    private final ConcurrentHashMap<String, CacheEntry<Integer>> attractionPriceCache = new ConcurrentHashMap<>();
+    private static final long ATTR_PRICE_TTL_MS = 24 * 60 * 60 * 1000;
+
     public AmapService(RestTemplate restTemplate, ObjectMapper objectMapper, MapConfig mapConfig) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
@@ -972,6 +976,66 @@ public class AmapService implements MapService {
         } catch (Exception e) {
             log.warn("高德POI多图检索失败: keywords={}, city={}, error={}", keywords, city, e.getMessage());
             return result;
+        }
+    }
+
+    // ==================== 真实票价（biz_ext.cost） ====================
+
+    /**
+     * 获取景点真实门票/人均消费价：高德 POI 检索取第一个匹配 POI 的 biz_ext.cost。
+     * 带 24h 内存缓存；未命中/无 Key/无匹配返回 null（前端/Agent 据此标注"估价"）。
+     */
+    @Override
+    public Integer fetchAttractionPrice(String scenicName, String city) {
+        if (scenicName == null || scenicName.isBlank()) return null;
+        String cacheKey = (city == null ? "" : city.trim()) + "|" + scenicName.trim();
+        CacheEntry<Integer> entry = attractionPriceCache.get(cacheKey);
+        if (entry != null && !entry.isExpired()) return entry.data;
+        Integer price = searchPriceByKeywords(scenicName.trim(), city);
+        if (price != null) {
+            // 只缓存命中（未命中不缓存，避免冷门景点因一次失败被永久标记为无票价）
+            attractionPriceCache.put(cacheKey, new CacheEntry<>(price, System.currentTimeMillis() + ATTR_PRICE_TTL_MS));
+        }
+        return price;
+    }
+
+    /**
+     * 高德 POI 检索（extensions=all）：取第一个匹配 POI 的 biz_ext.cost 作为真实票价。
+     * 要求 extensions=all 才返回 biz_ext 扩展字段；未配置 Key 直接返回 null（不冒充数据）。
+     */
+    private Integer searchPriceByKeywords(String keywords, String city) {
+        if (key == null || key.isBlank()) return null;
+        rateLimit();
+        try {
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
+                    .queryParam("keywords", keywords)
+                    .queryParam("key", key)
+                    .queryParam("offset", 1)
+                    .queryParam("page", 1)
+                    .queryParam("extensions", "all");
+            if (city != null && !city.isBlank() && !"全国".equals(city)) {
+                builder.queryParam("city", city.trim());
+            }
+            URI uri = builder.build().encode().toUri();
+            String response = restTemplate.getForObject(uri, String.class);
+            if (response == null) return null;
+
+            JsonNode root = objectMapper.readTree(response);
+            if (!root.has("status") || !"1".equals(root.get("status").asText())) return null;
+            JsonNode pois = root.get("pois");
+            if (pois == null || !pois.isArray() || pois.size() == 0) return null;
+
+            JsonNode poi = pois.get(0);
+            JsonNode biz = poi.get("biz_ext");
+            if (biz == null || !biz.has("cost")) return null;
+            String costText = biz.get("cost").asText();
+            if (costText == null || costText.isBlank()) return null;
+            double cost = Double.parseDouble(costText);
+            if (cost <= 0) return null;  // 0 视为无票价（免费景点），不冒充
+            return (int) Math.round(cost);
+        } catch (Exception e) {
+            log.warn("高德票价检索失败: keywords={}, city={}, error={}", keywords, city, e.getMessage());
+            return null;
         }
     }
 
