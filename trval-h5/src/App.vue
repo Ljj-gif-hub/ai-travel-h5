@@ -174,6 +174,10 @@ const CACHED_VIEWS = ['HomeView', 'CommunityView', 'TripsView', 'ProfileView']
 
 /* ==================== 全局 Vant 组件玻璃化 ==================== */
 .van-nav-bar {
+  /* 【head-sticky】所有 van-nav-bar 顶栏吸顶不随滚动隐藏（用户要求：header 不因翻页隐藏） */
+  position: sticky !important;
+  top: 0;
+  z-index: 1000 !important;
   background:
     linear-gradient(160deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.35) 50%, rgba(255,255,255,0.55) 100%),
     rgba(255,255,255,0.6) !important;

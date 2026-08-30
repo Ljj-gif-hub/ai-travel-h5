@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { showToast, showConfirmDialog } from 'vant'
@@ -204,6 +204,7 @@ const loadAmapForNearby = () => new Promise((resolve) => {
 
 const openNearbyMap = async () => {
   showNearbyMap.value = true
+  activeTourTab.value = 'surround' // 【tour-immersive】确保地图容器可见，AMap 才能命中尺寸
   await nextTick()
   await loadSurroundTour()
   await nextTick()
@@ -329,6 +330,16 @@ const resetSurroundView = () => {
   if (nearbyMapProvider.value === 'amap') fitAmapView()
   else if (nearbyMapProvider.value === 'leaflet') fitLeafletView()
 }
+
+// 【tour-immersive】切回「周边游」Tab 时地图容器由 display:none 变可见，需让地图实例重新计算尺寸
+watch(activeTourTab, (v) => {
+  if (v !== 'surround') return
+  nextTick(() => {
+    const inst = nearbyMapInstance.value; if (!inst) return
+    if (nearbyMapProvider.value === 'amap') inst.resize()
+    else setTimeout(() => inst.invalidateSize && inst.invalidateSize(), 150)
+  })
+})
 
 /* 周边游空态入口卡片改版后不再需要迷你地图（附近景点半径POI功能已移除） */
 
@@ -533,7 +544,7 @@ onUnmounted(() => {
           <span class="hero-top-link" @click.stop="goMyRoutes">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
           <button class="hero-glass-btn" @click.stop="goToAgentPlanner">
             <span class="hero-btn-title">🤖 {{ t('agent.aiAgentPlanning') }}</span>
-            <span class="hero-btn-sub">{{ t('trips.agentSlogan') }}</span>
+            <van-icon name="arrow" size="14" color="#fff" />
           </button>
         </div>
 
@@ -551,20 +562,26 @@ onUnmounted(() => {
 
         <van-popup v-model:show="showNearbyMap" position="bottom" class="tour-fullscreen" @closed="closeNearbyMap">
           <div class="tour-page">
-            <div class="tour-topbar">
-              <van-icon name="arrow-left" size="20" @click="closeNearbyMap" />
-              <span class="tour-topbar-title">{{ t('trips.tourSurround') }}</span>
-              <van-icon name="cross" size="20" color="var(--text-secondary)" @click="closeNearbyMap" />
+            <!-- 地图铺满整个弹层（周边游 Tab 显示，v-show 保持容器在 DOM 以复用 AMap 实例） -->
+            <div v-show="activeTourTab === 'surround'" class="tour-map-wrap">
+              <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
+              <div id="tour-map-container" class="tour-map-box"></div>
             </div>
 
-            <div class="tour-tabs">
-              <span class="tour-tab" :class="{ active: activeTourTab === 'surround' }" @click="activeTourTab = 'surround'">{{ t('trips.tourSurround') }}</span>
-              <span class="tour-tab" :class="{ active: activeTourTab === 'routes' }" @click="activeTourTab = 'routes'">{{ t('trips.popularRoutes') }}</span>
+            <!-- 顶部浮动导航（不占文档流，悬浮于地图上） -->
+            <div class="tour-float-nav">
+              <van-icon name="arrow-left" size="18" @click="closeNearbyMap" />
+              <span class="tour-float-title">{{ activeTourTab === 'routes' ? t('trips.popularRoutes') : t('trips.tourSurround') }}</span>
+              <van-icon name="cross" size="18" color="var(--text-secondary)" @click="closeNearbyMap" />
             </div>
 
-            <!-- 周边游 Tab：筛选条 + 地图 + 底部查看目的地 -->
-            <template v-if="activeTourTab === 'surround'">
-              <div class="tour-filter-bar">
+            <!-- 顶部浮动：分段（周边游/热门路线）+ 筛选（铁路游/出发地/时长） -->
+            <div class="tour-pill-card">
+              <div class="tour-seg">
+                <span class="tour-seg-item" :class="{ active: activeTourTab === 'surround' }" @click="activeTourTab = 'surround'">{{ t('trips.tourSurround') }}</span>
+                <span class="tour-seg-item" :class="{ active: activeTourTab === 'routes' }" @click="activeTourTab = 'routes'">{{ t('trips.popularRoutes') }}</span>
+              </div>
+              <div v-if="activeTourTab === 'surround'" class="tour-filter-row">
                 <span class="filter-chip" @click="setTransitMode(transitMode === 'rail' ? 'driving' : 'rail')">
                   <van-icon name="success" v-if="transitMode === 'rail'" size="12" color="#8B5CF6" />{{ t('trips.filterRail') }}<van-icon name="arrow-down" size="10" />
                 </span>
@@ -573,45 +590,43 @@ onUnmounted(() => {
                   {{ durationFilter ? t('trips.hours', { n: durationFilter }) : t('trips.allDay') }}<van-icon name="arrow-down" size="10" />
                 </span>
               </div>
+            </div>
 
-              <div class="tour-map-wrap">
-                <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
-                <div id="tour-map-container" class="tour-map-box"></div>
-                <div class="tour-map-controls">
-                  <button class="tour-ctrl-btn" @click="resetSurroundView" :title="t('trips.locToDep')"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
-                  <button class="tour-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="var(--text-secondary)" /></button>
+            <!-- 周边游 Tab：右侧浮动控制 + 底部查看目的地 -->
+            <template v-if="activeTourTab === 'surround'">
+              <div class="tour-map-controls">
+                <button class="tour-ctrl-btn" @click="resetSurroundView" :title="t('trips.locToDep')"><van-icon name="aim" size="18" color="#8B5CF6" /></button>
+                <button class="tour-ctrl-btn" @click="closeNearbyMap"><van-icon name="cross" size="18" color="var(--text-secondary)" /></button>
+              </div>
+              <div class="tour-float-bottom">
+                <div class="tour-bottom-bar" @click="viewAllDestinations">
+                  <span>{{ t('trips.viewDestinations', { n: filteredCities.length }) }}</span>
+                  <van-icon name="arrow-up" size="14" color="#fff" />
                 </div>
               </div>
-
-              <div class="tour-bottom-bar" @click="viewAllDestinations">
-                <span>{{ t('trips.viewDestinations', { n: filteredCities.length }) }}</span>
-                <van-icon name="arrow-up" size="14" color="#fff" />
-              </div>
             </template>
 
-            <!-- 热门路线 Tab -->
-            <template v-else>
-              <div class="tour-routes-list">
-                <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
-                <template v-else>
-                  <div v-for="route in surroundData?.routes || []" :key="route.id" class="route-card">
-                    <van-swipe class="route-cover" :autoplay="0" :show-indicators="routeCoverImages(route).length > 1" indicator-color="#fff">
-                      <van-swipe-item v-for="(img, i) in routeCoverImages(route)" :key="i">
-                        <img :src="img" class="route-cover-img" loading="lazy" @error="onCoverErr" />
-                      </van-swipe-item>
-                      <van-swipe-item v-if="!routeCoverImages(route).length"><div class="route-cover-fallback"><van-icon name="photo-o" size="26" color="rgba(255,255,255,0.85)" /></div></van-swipe-item>
-                    </van-swipe>
-                    <div class="route-body">
-                      <div class="route-name">{{ route.name }}</div>
-                      <div class="route-meta">{{ route.km }} · {{ t('trips.totalDays', { days: route.days }) }} · {{ t('trips.routeCities', { n: route.cityCount }) }}</div>
-                      <div class="route-tags"><span v-for="c in route.cities" :key="c" class="route-tag">{{ c }}</span></div>
-                      <div class="route-tagline" v-if="route.tagline">{{ route.tagline }}</div>
-                    </div>
+            <!-- 热门路线 Tab：浮层列表（铺满弹层，留出顶部浮动控件空间） -->
+            <div v-else class="tour-routes-list">
+              <div v-if="tourLoading" class="tour-map-loading"><van-loading size="24" color="#8B5CF6" /><span>{{ t('trips.loadingMap') }}</span></div>
+              <template v-else>
+                <div v-for="route in surroundData?.routes || []" :key="route.id" class="route-card">
+                  <van-swipe class="route-cover" :autoplay="0" :show-indicators="routeCoverImages(route).length > 1" indicator-color="#fff">
+                    <van-swipe-item v-for="(img, i) in routeCoverImages(route)" :key="i">
+                      <img :src="img" class="route-cover-img" loading="lazy" @error="onCoverErr" />
+                    </van-swipe-item>
+                    <van-swipe-item v-if="!routeCoverImages(route).length"><div class="route-cover-fallback"><van-icon name="photo-o" size="26" color="rgba(255,255,255,0.85)" /></div></van-swipe-item>
+                  </van-swipe>
+                  <div class="route-body">
+                    <div class="route-name">{{ route.name }}</div>
+                    <div class="route-meta">{{ route.km }} · {{ t('trips.totalDays', { days: route.days }) }} · {{ t('trips.routeCities', { n: route.cityCount }) }}</div>
+                    <div class="route-tags"><span v-for="c in route.cities" :key="c" class="route-tag">{{ c }}</span></div>
+                    <div class="route-tagline" v-if="route.tagline">{{ route.tagline }}</div>
                   </div>
-                  <div v-if="!surroundData?.routes?.length" class="tour-empty"><van-icon name="location-o" size="30" color="#CBD5E1" /><span>{{ t('trips.emptyTour') }}</span></div>
-                </template>
-              </div>
-            </template>
+                </div>
+                <div v-if="!surroundData?.routes?.length" class="tour-empty"><van-icon name="location-o" size="30" color="#CBD5E1" /><span>{{ t('trips.emptyTour') }}</span></div>
+              </template>
+            </div>
           </div>
         </van-popup>
 
@@ -765,11 +780,10 @@ onUnmounted(() => {
 .hero-tag { position:absolute; top:16px; left:18px; z-index:3; font-size:12px; color:rgba(255,255,255,0.85); padding:4px 10px; border-radius:10px; background:rgba(255,255,255,0.12); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); font-weight:500; letter-spacing:0.5px; }
 .hero-top-link { position:absolute; top:16px; right:18px; z-index:3; font-size:12px; color:#fff; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:3px; padding:4px 10px; border-radius:10px; background:rgba(0,0,0,0.2); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); text-shadow:0 1px 3px rgba(0,0,0,0.3); }
 .hero-top-link:active { background:rgba(0,0,0,0.35); }
-.hero-glass-btn { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:3; display:flex; flex-direction:column; align-items:center; gap:1px; padding:10px 24px; border:1px solid rgba(255,255,255,0.3); border-radius:18px; background:rgba(139,92,246,0.20); backdrop-filter:blur(24px) saturate(180%); -webkit-backdrop-filter:blur(24px) saturate(180%); color:#fff; cursor:pointer; white-space:nowrap; box-shadow:0 4px 20px rgba(0,0,0,0.2); transition:all 0.3s; }
-.hero-glass-btn:hover { background:rgba(139,92,246,0.30); box-shadow:0 6px 28px rgba(0,0,0,0.35); }
+.hero-glass-btn { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:3; display:flex; flex-direction:row; align-items:center; gap:7px; padding:11px 26px; border:none; border-radius:26px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; cursor:pointer; white-space:nowrap; font-size:14px; font-weight:600; box-shadow:0 8px 22px rgba(99,102,241,0.40); transition:all 0.3s; }
+.hero-glass-btn:hover { box-shadow:0 10px 28px rgba(99,102,241,0.5); }
 .hero-glass-btn:active { transform:translateX(-50%) scale(0.96); }
-.hero-btn-title { font-size:15px; font-weight:700; text-shadow:0 1px 4px rgba(0,0,0,0.4); }
-.hero-btn-sub { font-size:10px; color:rgba(255,255,255,0.80); text-shadow:0 1px 3px rgba(0,0,0,0.3); }
+.hero-btn-title { display:flex; align-items:center; gap:5px; font-size:14px; font-weight:600; }
 
 .nearby-card { position:relative; z-index:1; overflow:hidden; height:200px; margin-bottom:14px; cursor:pointer; border-radius:20px; background:#e8e4f0; box-shadow:0 4px 18px rgba(0,0,0,0.06); transition:transform 0.25s, box-shadow 0.25s; }
 .nearby-card:active { transform:scale(0.985); box-shadow:0 2px 8px rgba(0,0,0,0.08); }
@@ -952,29 +966,42 @@ onUnmounted(() => {
 .fab-pop-leave-to   { opacity: 0; transform: scale(0.5) translateY(30px); }
 @keyframes pulseGlow { 0%,100% { box-shadow:0 8px 28px rgba(139,92,246,0.4); } 50% { box-shadow:0 12px 36px rgba(139,92,246,0.6); } }
 
-/* ==================== 周边游（tour） ==================== */
+/* ==================== 周边游（tour，沉浸式地图） ==================== */
 /* 底部抽屉：不是撑满整屏，留出顶部间隙；dvh 让顶栏不跑到地址栏后面 */
 .tour-fullscreen { width:100%; height:84vh; height:84dvh; max-height:84dvh; border-radius:20px 20px 0 0; overflow:hidden; box-shadow:0 -8px 30px rgba(0,0,0,0.14); }
-.tour-page { display:flex; flex-direction:column; height:100%; width:100%; max-height:100%; overflow:hidden; background:var(--bg-page,#f5f3fa); }
-.tour-topbar { flex-shrink:0; display:flex; align-items:center; gap:12px; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top, 0px)); background:#fff; border-bottom:1px solid #f0edf5; }
-.tour-topbar-title { font-size:17px; font-weight:700; color:var(--text-primary); flex:1; }
-.tour-tabs { flex-shrink:0; display:flex; gap:8px; padding:12px 16px 4px; background:#fff; }
-.tour-tab { flex:1; text-align:center; padding:9px 0; border-radius:20px; font-size:14px; font-weight:600; color:var(--text-secondary); background:#f4f2fb; cursor:pointer; transition:all 0.2s; }
-.tour-tab.active { color:#fff; background:linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow:0 4px 12px rgba(139,92,246,0.25); }
-.tour-filter-bar { flex-shrink:0; display:flex; gap:8px; padding:12px 16px; background:#fff; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-.filter-chip { display:flex; align-items:center; gap:4px; padding:7px 13px; border-radius:16px; font-size:12px; font-weight:500; color:#475569; background:#f4f2fb; border:1px solid #ECE9F5; white-space:nowrap; cursor:pointer; flex-shrink:0; }
-.filter-chip:active { background:#ECE9F5; }
-.tour-map-wrap { flex:1; position:relative; min-height:0; }
+.tour-page { position:relative; width:100%; height:100%; overflow:hidden; background:#e6e3ef; }
+
+/* 地图铺满弹层（周边游 Tab） */
+.tour-map-wrap { position:absolute; inset:0; z-index:0; }
 .tour-map-loading { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:var(--bg-card-solid,#fff); font-size:13px; color:var(--text-secondary); }
 .tour-map-box { width:100%; height:100%; }
-.tour-map-controls { position:absolute; right:12px; top:12px; z-index:20; display:flex; flex-direction:column; gap:8px; }
-.tour-ctrl-btn { width:38px; height:38px; border-radius:50%; border:none; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+
+/* 顶部浮动导航（悬浮于地图，不占文档流、不遮挡地图） */
+.tour-float-nav { position:absolute; top:12px; left:10px; right:10px; z-index:20; display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:16px; background:rgba(255,255,255,0.82); backdrop-filter:blur(18px) saturate(170%); -webkit-backdrop-filter:blur(18px) saturate(170%); box-shadow:0 4px 16px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.6); }
+.tour-float-title { flex:1; text-align:center; font-size:16px; font-weight:700; color:var(--text-primary); }
+.tour-float-nav .van-icon { color:var(--text-primary); }
+
+/* 顶部浮动 分段（周边游/热门路线）+ 筛选（铁路游/出发地/时长） */
+.tour-pill-card { position:absolute; top:62px; left:10px; right:10px; z-index:19; padding:8px; border-radius:18px; background:rgba(255,255,255,0.82); backdrop-filter:blur(18px) saturate(170%); -webkit-backdrop-filter:blur(18px) saturate(170%); box-shadow:0 4px 16px rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.6); }
+.tour-seg { display:flex; gap:6px; padding:3px; border-radius:14px; background:rgba(139,92,246,0.08); }
+.tour-seg-item { flex:1; text-align:center; padding:7px 0; border-radius:11px; font-size:14px; font-weight:600; color:var(--text-secondary); cursor:pointer; transition:all 0.2s; }
+.tour-seg-item.active { color:#fff; background:linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow:0 3px 10px rgba(139,92,246,0.25); }
+.tour-filter-row { display:flex; gap:8px; padding:8px 2px 0; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.filter-chip { display:flex; align-items:center; gap:4px; padding:6px 12px; border-radius:13px; font-size:12px; font-weight:500; color:#475569; background:#fff; border:1px solid #ECE9F5; white-space:nowrap; cursor:pointer; flex-shrink:0; }
+.filter-chip:active { background:#ECE9F5; }
+
+/* 右侧浮动控制按钮 */
+.tour-map-controls { position:absolute; right:12px; top:150px; z-index:20; display:flex; flex-direction:column; gap:8px; }
+.tour-ctrl-btn { width:40px; height:40px; border-radius:50%; border:none; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .tour-ctrl-btn:active { transform:scale(0.92); }
-.tour-bottom-bar { flex-shrink:0; margin:0 16px 16px; display:flex; align-items:center; justify-content:center; gap:6px; padding:13px 0; border-radius:22px; background:linear-gradient(135deg, #8B5CF6, #6366F1); color:#fff; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(139,92,246,0.35); }
+
+/* 底部浮动「查看 N 个目的地」 */
+.tour-float-bottom { position:absolute; left:0; right:0; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); z-index:20; display:flex; justify-content:center; padding:0 24px; }
+.tour-bottom-bar { display:flex; align-items:center; justify-content:center; gap:6px; padding:13px 26px; border-radius:24px; background:linear-gradient(135deg, #8B5CF6, #6366F1); color:#fff; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(139,92,246,0.35); }
 .tour-bottom-bar:active { transform:scale(0.98); }
 
 /* 热门路线 */
-.tour-routes-list { flex:1; overflow-y:auto; padding:12px 16px 24px; -webkit-overflow-scrolling:touch; }
+.tour-routes-list { position:absolute; inset:0; z-index:5; overflow-y:auto; background:var(--bg-page,#f5f3fa); padding:150px 16px 24px; -webkit-overflow-scrolling:touch; }
 .route-card { border-radius:16px; overflow:hidden; margin-bottom:14px; background:linear-gradient(160deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.6); border:1px solid rgba(255,255,255,0.65); box-shadow:inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 12px rgba(0,0,0,0.04); }
 .route-cover { position:relative; height:120px; }
 .route-cover-img { width:100%; height:120px; object-fit:cover; display:block; }
@@ -1020,11 +1047,16 @@ onUnmounted(() => {
 html[data-theme='dark'] .tour-page { background:var(--bg-page); }
 html[data-theme='dark'] .tour-topbar,
 html[data-theme='dark'] .tour-tabs,
-html[data-theme='dark'] .tour-filter-bar { background:var(--bg-card-solid); border-color:var(--glass-border); }
-html[data-theme='dark'] .tour-tab { background:var(--bg-card); color:var(--text-secondary); }
+html[data-theme='dark'] .tour-float-nav,
+html[data-theme='dark'] .tour-pill-card { background:rgba(30,33,47,0.82); border-color:rgba(255,255,255,0.10); box-shadow:0 4px 16px rgba(0,0,0,0.35); }
+html[data-theme='dark'] .tour-float-nav .van-icon { color:#E2E8F0; }
+html[data-theme='dark'] .tour-float-title { color:var(--text-primary); }
+html[data-theme='dark'] .tour-seg { background:rgba(139,92,246,0.16); }
+html[data-theme='dark'] .tour-seg-item { color:var(--text-secondary); }
 html[data-theme='dark'] .filter-chip { color:var(--text-secondary); background:var(--bg-card); border-color:var(--glass-border); }
 html[data-theme='dark'] .tour-map-loading,
 html[data-theme='dark'] .tour-ctrl-btn { background:var(--bg-card-solid); }
+html[data-theme='dark'] .tour-routes-list { background:var(--bg-page); }
 html[data-theme='dark'] .route-card { background:var(--bg-card-solid); border-color:var(--glass-border); }
 html[data-theme='dark'] .route-tag { color:var(--text-secondary); }
 

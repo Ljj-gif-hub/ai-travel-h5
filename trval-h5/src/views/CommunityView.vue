@@ -879,12 +879,17 @@ onBeforeUnmount(() => {
 
 /* ==================== 2. Navigation Filter Bar ==================== */
 .nav-filter {
+  /* 【head-sticky】社区筛选/城市选择栏吸顶，不随滚动隐藏 */
+  position: sticky;
+  top: 0;
+  z-index: 1000;
   display: flex;
   align-items: center;
   width: calc(100% - 32px);
   margin: 14px auto 0;
   padding: 8px 0;
   gap: 10px;
+  background: linear-gradient(180deg, var(--bg-page, #f5f3fa) 0%, var(--bg-page, #f5f3fa) 82%, transparent 100%);
 }
 
 .city-selector {
