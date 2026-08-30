@@ -561,11 +561,13 @@ onUnmounted(() => {
         <!-- 【hero 改版】截图2格局：左小（AI 开始规划）右大（我的线路），非对称 -->
         <div class="plan-grid">
           <div class="plan-card plan-card-ai entrance-item entrance-d1" @click="goToAgentPlanner">
-            <span class="plan-card-label">{{ t('trips.heroBadge') }}</span>
-            <div class="plan-ai-mid">
-              <span class="plan-ai-emoji">🤖</span>
-              <span class="plan-ai-title">{{ t('trips.aiPlanTitle') }}</span>
+            <!-- 背景轮播：复用 carouselImages 交叉淡入 -->
+            <div v-if="carouselImages.length" class="plan-ai-bg">
+              <div v-for="(img, i) in carouselImages" :key="i" class="plan-ai-bg-item" :class="{ active: i === currentCarouselIndex }" :style="{ backgroundImage: `url(${img})` }" />
             </div>
+            <div v-else class="plan-ai-bg plan-ai-bg-fallback" />
+            <div class="plan-ai-shade" />
+            <span class="plan-card-label plan-card-label-ai">{{ t('trips.heroBadge') }}</span>
             <button class="plan-ai-btn" @click.stop="goToAgentPlanner">{{ t('trips.startPlanning') }}</button>
           </div>
 
@@ -779,7 +781,7 @@ onUnmounted(() => {
 <style scoped>
 .trips-page { width:100%; min-height:100vh; background:transparent; position:relative; display:flex; flex-direction:column; padding-bottom:calc(10px + 48px + 12px + var(--safe-area-bottom, 0px)); }
 .trips-scroll { flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
-.trips-inner { max-width:480px; margin:0 auto; padding:0 20px; }
+.trips-inner { max-width:480px; margin:0 auto; padding:0 12px; }
 :deep(.nav-bar) { background:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.55) 100%),rgba(255,255,255,0.6) !important; backdrop-filter:blur(22px) saturate(180%); -webkit-backdrop-filter:blur(22px) saturate(180%); border-bottom:0.5px solid rgba(255,255,255,0.55) !important; box-shadow:inset 0 1px 0 rgba(255,255,255,0.65) !important; }
 :deep(.nav-bar .van-nav-bar__title) { color:var(--text-primary); font-weight:600; }
 .nav-title { font-size:17px; }
@@ -807,13 +809,16 @@ onUnmounted(() => {
 .plan-card { position:relative; overflow:hidden; border-radius:20px; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 16px rgba(0,0,0,0.05); transition:transform 0.25s, box-shadow 0.25s; }
 .plan-card:active { transform:scale(0.98); }
 
-.plan-card-ai { min-height:152px; padding:13px; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:6px; background:linear-gradient(160deg,#FAF8FF 0%,#EFEAFB 100%); border:1px solid #ECE9F5; }
+.plan-card-ai { min-height:152px; display:block; background:#1e1b2e; }
 .plan-card-label { display:inline-flex; align-items:center; padding:4px 9px; border-radius:9px; font-size:11px; font-weight:600; color:#7C3AED; background:rgba(139,92,246,0.10); }
-.plan-ai-mid { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
-.plan-ai-emoji { font-size:34px; line-height:1; filter:drop-shadow(0 3px 6px rgba(139,92,246,0.28)); }
-.plan-ai-title { font-size:13px; font-weight:700; color:var(--text-primary); }
-.plan-ai-btn { padding:7px 16px; border:none; border-radius:16px; background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(139,92,246,0.30); }
-.plan-ai-btn:active { transform:scale(0.96); }
+.plan-ai-bg { position:absolute; inset:0; }
+.plan-ai-bg-item { position:absolute; inset:0; background-size:cover; background-position:center; opacity:0; transition:opacity 1.2s ease-in-out; }
+.plan-ai-bg-item.active { opacity:1; }
+.plan-ai-bg-fallback { background:linear-gradient(135deg,#8B5CF6,#6366F1); }
+.plan-ai-shade { position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.08) 48%, rgba(0,0,0,0.46) 100%); }
+.plan-card-label-ai { position:absolute; top:12px; left:12px; z-index:2; color:#fff; background:rgba(0,0,0,0.28); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.plan-ai-btn { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:2; padding:8px 20px; border:none; border-radius:18px; background:rgba(255,255,255,0.20); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); color:#fff; font-size:12px; font-weight:600; cursor:pointer; border:1px solid rgba(255,255,255,0.42); box-shadow:0 4px 14px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35); }
+.plan-ai-btn:active { transform:translateX(-50%) scale(0.96); }
 
 .plan-card-route { min-height:172px; background:#1e1b2e; }
 .plan-route-bg { position:absolute; inset:0; background-size:cover; background-position:center; }
@@ -1143,8 +1148,6 @@ html[data-theme='dark'] .map-entry-row { background:var(--bg-card-solid); border
 .h-scroll {
   display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
   -webkit-overflow-scrolling: touch; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 85%, transparent 100%);
-  mask-image: linear-gradient(90deg, #000 0%, #000 85%, transparent 100%);
 }
 .h-scroll::-webkit-scrollbar { display: none; }
 
