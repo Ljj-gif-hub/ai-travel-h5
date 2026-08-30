@@ -12,6 +12,8 @@ export default {
   saved: 'Saved',
 
   // ===== TripsView =====
+  navTitle: 'Trips',
+  heroBadge: 'Smart route recommendations',
   myAllTrips: 'All My Trips',
   importTrips: 'Import Trips',
   batchDelete: 'Batch Delete',
@@ -99,8 +101,13 @@ export default {
 
   // ===== SavedPlansView =====
   myPlans: 'My Plans',
-  noSavedPlans: 'No saved plans',
-  noSavedPlansHint: 'Generate a trip and tap Save to see it here',
-  goCreatePlan: 'Create a Plan',
+  noSavedPlans: 'No saved routes yet',
+  noSavedPlansHint: 'Generate a trip and tap Save to find it in My Routes',
+  goCreatePlan: 'Create a Route',
   view: 'View',
+
+  // ===== MyRoutesView (My Routes) =====
+  routesAll: 'All Routes',
+  createRoute: 'New Route',
+  autoSaved: 'Auto-saved {date}',
 }

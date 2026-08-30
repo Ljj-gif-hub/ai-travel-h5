@@ -81,8 +81,14 @@ const routes = [
     meta: { transition: 'slide-left', hideTabBar: true },
   },
   {
+    path: '/my-routes',
+    name: 'MyRoutes',
+    component: () => import('../views/MyRoutesView.vue'),
+    meta: { transition: 'slide-left', hideTabBar: true },
+  },
+  {
     path: '/saved-plans',
-    redirect: '/trips',
+    redirect: '/my-routes',
   },
 
   /* ==================== 社区子页面（slide-left） ==================== */

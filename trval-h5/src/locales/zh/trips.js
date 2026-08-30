@@ -12,6 +12,8 @@ export default {
   saved: '已保存',
 
   // ===== TripsView =====
+  navTitle: '行程',
+  heroBadge: '支持智能推荐线路',
   myAllTrips: '我的全部行程',
   importTrips: '导入行程',
   batchDelete: '批量删除',
@@ -99,8 +101,13 @@ export default {
 
   // ===== SavedPlansView =====
   myPlans: '我的规划',
-  noSavedPlans: '暂无保存的规划',
-  noSavedPlansHint: '生成行程后点击保存按钮即可在这里查看',
-  goCreatePlan: '去生成规划',
+  noSavedPlans: '暂无保存的线路',
+  noSavedPlansHint: '生成行程后点击保存，即可在「我的线路」中查看',
+  goCreatePlan: '去生成线路',
   view: '查看',
+
+  // ===== MyRoutesView（我的线路） =====
+  routesAll: '全部线路',
+  createRoute: '新建线路',
+  autoSaved: '{date} 自动保存',
 }

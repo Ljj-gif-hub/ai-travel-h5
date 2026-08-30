@@ -384,7 +384,8 @@ const loadTrips = async () => { isLoading.value = true; loadError.value = false;
 const viewTrip = (plan) => { if (!plan?.destination) { showToast(t('trips.planDataError')); return }; router.push({ path: '/agent-map', query: { savedPlanId: plan.id } }) }
 const openAIChat = (ctx = {}) => { aiContext.value = ctx; showAIChat.value = true }
 const goToAgentPlanner = () => { router.push('/agent-planner') }
-const onPlanSaved = () => { showAIChat.value = false; showToast(t('trips.planSaved')); loadTrips() }
+const goMyRoutes = () => { router.push('/my-routes') }
+const onPlanSaved = () => { showAIChat.value = false; showToast(t('trips.planSaved')); router.push('/my-routes') }
 const confirmDelete = async (plan) => { try { await showConfirmDialog({ title: t('trips.deleteTrip'), message: t('trips.confirmDeleteMsg', { name: plan?.destination || t('trips.unknown') }) }); if (!plan?.id) return; const res = await planApi.deletePlan(plan.id); if (res.code===0) { showToast(t('trips.deleted')); trips.value = trips.value.filter(t => t.id !== plan.id) } } catch (e) {} }
 /** 城市名规范化：去掉后缀"市"，与热门目的地/本地图库短名一致（三亚市→三亚），保证天气/图片/景点都能命中 */
 const toShortCity = (name) => (name || '').replace(/市$/, '')
@@ -463,7 +464,7 @@ let dataLoaded = false
 onMounted(() => {
   loadCityImageMap(); loadTemplates()
   if (getToken()) {
-    loadTrips(); loadCityGuides(); loadHotDestinations(); loadCarouselImages()
+    loadCityGuides(); loadHotDestinations(); loadCarouselImages()
     dataLoaded = true
   }
 })
@@ -473,7 +474,7 @@ onActivated(() => {
   if (!getToken()) return
   if (!dataLoaded) {
     // 首次未加载（含游客先开页→别处登录→返回）→ 补全首次加载，保证轮播图可用
-    loadTrips(); loadCityGuides(); loadHotDestinations(); loadCarouselImages()
+    loadCityGuides(); loadHotDestinations(); loadCarouselImages()
     dataLoaded = true
   } else if (carouselImages.value.length === 0) {
     // 数据已加载但轮播图缺失（首屏请求失败）→ 补加载，避免 startCarousel 对空数组取模
@@ -503,7 +504,7 @@ onUnmounted(() => {
   <div class="trips-page">
     <!-- 漂浮粒子 — 已禁用 -->
     <van-nav-bar safe-area-inset-top class="nav-bar">
-      <template #title><span class="nav-title">{{ hasTrips ? t('trips.myAllTrips') : t('trips.noTrips') }}</span></template>
+      <template #title><span class="nav-title">{{ t('trips.navTitle') }}</span></template>
       <template #right>
         <div class="nav-actions">
           <div class="nav-btn" @click="goToAgentPlanner"><van-icon name="add" size="20" color="#7C3AED" /></div>
@@ -519,64 +520,32 @@ onUnmounted(() => {
 
     <div class="trips-scroll">
       <div class="trips-inner">
-        <div v-if="hasTrips" class="trips-list-section">
-          <div class="page-content">
-            <div v-if="isLoading" class="skeleton-list"><div v-for="i in 2" :key="i" class="trip-card-skeleton"><div class="sk-row sk-row-title" /><div class="sk-row sk-row-info" /><div class="sk-row sk-row-attract" /></div></div>
-            <div v-else-if="loadError" class="error-state"><van-icon name="warn-o" size="40" color="var(--text-hint)" /><p class="error-text">{{ t('trips.loadFailed') }}</p><van-button round plain size="small" class="retry-btn" @click="loadTrips">{{ t('common.tryAgain') }}</van-button></div>
-            <template v-else>
-              <div class="guide-zone">
-                <div class="guide-line" />
-              <div class="section-block">
-                <div class="section-head"><span class="section-head-title">📋 {{ t('trips.tripPlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: tripPlans.length }) }}</span></div>
-                <div v-if="tripPlans.length === 0" class="empty-hint-row">{{ t('trips.noAiPlans') }}<span class="link" @click="goToAgentPlanner">{{ t('trips.goCreate') }}</span></div>
-                <div v-for="trip in tripPlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span><span class="trip-status-tag" :style="{ color: statusColor(trip._status), background: `${statusColor(trip._status)}15` }">{{ statusLabel(trip._status) }}</span></div>
-                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
-                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
-                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
-                </div>
-              </div>
-              <div class="section-block">
-                <div class="section-head"><span class="section-head-title">🏠 {{ t('trips.homePlanning') }}</span><span class="section-head-count">{{ t('trips.planCount', { count: homePlans.length }) }}</span></div>
-                <div v-if="homePlans.length === 0" class="empty-hint-row">{{ t('trips.noHomePlans') }}</div>
-                <div v-for="trip in homePlans" :key="trip.id" class="trip-card" @click="viewTrip(trip)">
-                  <div class="trip-card-top"><div class="trip-s-badge trip-s-badge--home"><span class="trip-s-letter">S</span></div><span class="trip-card-label">{{ t('trips.myRoutes') }}</span></div>
-                  <div class="trip-card-title">{{ cardTitle(trip) }}</div>
-                  <div v-if="cardRoute(trip)" class="trip-card-route">{{ cardRoute(trip) }}</div>
-                  <div class="trip-card-meta">{{ cardMeta(trip) }}</div>
-                  <div class="trip-card-footer"><span class="trip-detail-link">{{ t('trips.routeDetail') }}</span></div>
-                </div>
-              </div>
-              </div>
-            </template>
-          </div>
+        <div class="plan-sec-head">
+          <span class="plan-sec-title">{{ t('trips.routePlanning') }}</span>
+          <span class="plan-sec-link" @click="goMyRoutes">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
         </div>
 
-        <div v-if="!hasTrips" class="guide-zone">
-          <div class="guide-line" />
-          <div class="hero-plan-card entrance-item entrance-d1">
-            <div v-if="carouselImages.length === 0" class="hero-placeholder" />
-            <div v-for="(img, idx) in carouselImages" :key="idx" class="hero-carousel-img" :class="{ active: idx === currentCarouselIndex }" :style="{ backgroundImage: `url(${img})` }" />
-            <div class="hero-mask" />
-            <span class="hero-tag">{{ t('trips.routePlanning') }}</span>
-            <span v-if="hasTrips" class="hero-top-link" @click.stop="activeTab = 'all'">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
-            <button class="hero-glass-btn" @click="goToAgentPlanner">
-              <span class="hero-btn-title">🤖 {{ t('agent.aiAgentPlanning') }}</span>
-              <span class="hero-btn-sub">{{ t('trips.agentSlogan') }}</span>
-            </button>
-          </div>
+        <div class="hero-plan-card entrance-item entrance-d1" @click="goToAgentPlanner">
+          <div v-if="carouselImages.length === 0" class="hero-placeholder" />
+          <div v-for="(img, idx) in carouselImages" :key="idx" class="hero-carousel-img" :class="{ active: idx === currentCarouselIndex }" :style="{ backgroundImage: `url(${img})` }" />
+          <div class="hero-mask" />
+          <span class="hero-tag">{{ t('trips.heroBadge') }}</span>
+          <span class="hero-top-link" @click.stop="goMyRoutes">{{ t('trips.myRoutes') }} <van-icon name="arrow" size="12" /></span>
+          <button class="hero-glass-btn" @click.stop="goToAgentPlanner">
+            <span class="hero-btn-title">🤖 {{ t('agent.aiAgentPlanning') }}</span>
+            <span class="hero-btn-sub">{{ t('trips.agentSlogan') }}</span>
+          </button>
+        </div>
 
-          <div class="nearby-card card-macaron" @click="goMap">
-            <div v-if="carouselImages.length" class="nearby-card-bg">
-              <div v-for="(img, idx) in carouselImages.slice(0, 4)" :key="idx" class="nearby-card-img" :class="{ active: (currentCarouselIndex % 4) === idx }" :style="{ backgroundImage: `url(${img})` }" />
-            </div>
-            <div class="nearby-card-mask" />
-            <div class="nearby-card-body">
-              <div class="nearby-card-tag"><van-icon name="location-o" size="16" color="#fff" />{{ t('trips.tourSurround') }}</div>
-              <div class="nearby-card-desc">{{ t('trips.tourSurroundDesc') }}</div>
-              <span class="nearby-card-go">{{ t('trips.exploreNearby') }}</span>
-            </div>
+        <div class="nearby-card card-macaron" @click="goMap">
+          <div v-if="carouselImages.length" class="nearby-card-bg">
+            <div v-for="(img, idx) in carouselImages.slice(0, 4)" :key="idx" class="nearby-card-img" :class="{ active: (currentCarouselIndex % 4) === idx }" :style="{ backgroundImage: `url(${img})` }" />
+          </div>
+          <div class="nearby-card-mask" />
+          <div class="nearby-card-body">
+            <div class="nearby-card-tag"><van-icon name="location-o" size="16" color="#fff" />{{ t('trips.tourSurround') }}</div>
+            <div class="nearby-card-desc">{{ t('trips.tourSurroundDesc') }}</div>
+            <span class="nearby-card-go">{{ t('trips.exploreNearby') }}</span>
           </div>
         </div>
 
@@ -696,8 +665,12 @@ onUnmounted(() => {
               <div class="guide-card-img-wrap">
                 <img :src="getAttractionImage(guide.city, attr)" class="guide-card-img" loading="lazy" @error="e => onGuideImgError(e, guide.city)" />
                 <div class="guide-card-img-placeholder"><van-icon name="photo-o" size="24" color="rgba(139,92,246,0.3)" /></div>
+                <span class="guide-card-tag">{{ guide.label }}</span>
               </div>
-              <div class="guide-card-body"><div class="guide-card-name">{{ attr.name }}</div><div class="guide-card-meta" v-if="attr.rating">⭐ {{ Number(attr.rating).toFixed(1) }}</div></div>
+              <div class="guide-card-body">
+                <div class="guide-card-name">{{ attr.name }}</div>
+                <div class="guide-card-meta" v-if="attr.rating"><span class="meta-star">⭐ {{ Number(attr.rating).toFixed(1) }}</span><span class="meta-go">{{ t('trips.routeDetail') }}</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -778,6 +751,11 @@ onUnmounted(() => {
 .guide-line::before { content:''; position:absolute; top:-4px; left:-5px; width:12px; height:12px; border-radius:50%; background:#8B5CF6; box-shadow:0 0 10px rgba(139,92,246,0.5), 0 0 20px rgba(139,92,246,0.2); animation:nodePulse 2.5s ease-in-out infinite; }
 @keyframes nodePulse { 0%,100% { box-shadow:0 0 8px rgba(139,92,246,0.4), 0 0 16px rgba(139,92,246,0.15); } 50% { box-shadow:0 0 14px rgba(139,92,246,0.65), 0 0 28px rgba(139,92,246,0.3); } }
 
+.plan-sec-head { display:flex; align-items:center; justify-content:space-between; padding:0 2px 6px; margin-top:14px; }
+.plan-sec-title { font-size:16px; font-weight:700; color:var(--text-primary); }
+.plan-sec-link { display:flex; align-items:center; gap:3px; font-size:13px; color:var(--text-secondary); font-weight:500; cursor:pointer; padding:4px 10px; border-radius:10px; background:rgba(139,92,246,0.06); transition:background 0.15s; }
+.plan-sec-link:active { background:rgba(139,92,246,0.14); }
+
 .hero-plan-card { position:relative; z-index:1; overflow:hidden; height:220px; margin:14px 0; cursor:pointer; border-radius:20px; background:#1e1b2e; box-shadow:0 4px 20px rgba(0,0,0,0.1); transition:transform 0.25s, box-shadow 0.25s; }
 .hero-plan-card:active { transform:scale(0.985); box-shadow:0 2px 10px rgba(0,0,0,0.15); }
 .hero-placeholder { position:absolute; inset:0; z-index:0; background:linear-gradient(135deg, #667eea 0%, #764ba2 50%, #5b2d8e 100%); }
@@ -853,14 +831,17 @@ onUnmounted(() => {
 .sec-guide-label { font-size:10px; color:#8B5CF6; background:rgba(139,92,246,0.08); padding:2px 8px; border-radius:8px; font-weight:500; margin-left:auto; margin-right:8px; }
 
 .guide-section { margin-bottom:18px; }
-.guide-card { flex-shrink:0; width:120px; background:linear-gradient(160deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.3) 100%),rgba(255,255,255,0.55); backdrop-filter:blur(10px) saturate(150%); -webkit-backdrop-filter:blur(10px) saturate(150%); border-radius:14px; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,0.55),0 2px 10px rgba(0,0,0,0.03); border:1px solid rgba(255,255,255,0.6); cursor:pointer; transition:transform 0.2s; }
-.guide-card:hover { transform:translateY(-3px); }
-.guide-card-img-wrap { height:70px; position:relative; overflow:hidden; }
+.guide-card { flex-shrink:0; width:236px; background:linear-gradient(160deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.14) 40%, rgba(255,255,255,0.32) 100%),rgba(255,255,255,0.6); backdrop-filter:blur(12px) saturate(150%); -webkit-backdrop-filter:blur(12px) saturate(150%); border-radius:16px; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 4px 16px rgba(0,0,0,0.05); border:1px solid rgba(255,255,255,0.65); cursor:pointer; transition:transform 0.2s; }
+.guide-card:hover { transform:translateY(-5px); }
+.guide-card-img-wrap { height:190px; position:relative; overflow:hidden; }
 .guide-card-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
 .guide-card-img-placeholder { position:absolute; inset:0; z-index:0; display:flex; align-items:center; justify-content:center; background:rgba(139,92,246,0.04); }
-.guide-card-body { padding:10px; }
-.guide-card-name { font-size:13px; font-weight:600; color:var(--text-primary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.guide-card-meta { font-size:11px; color:#F59E0B; margin-top:2px; }
+.guide-card-tag { position:absolute; top:12px; left:12px; z-index:2; font-size:11px; font-weight:600; color:#fff; padding:4px 10px; border-radius:10px; background:rgba(0,0,0,0.35); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); letter-spacing:0.5px; }
+.guide-card-body { padding:12px 13px 14px; }
+.guide-card-name { font-size:15px; font-weight:700; color:var(--text-primary); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.guide-card-meta { font-size:12px; margin-top:8px; display:flex; align-items:center; justify-content:space-between; }
+.meta-star { color:#F59E0B; font-weight:600; }
+.meta-go { color:#8B5CF6; font-weight:500; font-size:12px; }
 
 .templates-section { margin-bottom:18px; }
 
@@ -1049,7 +1030,8 @@ html[data-theme='dark'] .route-tag { color:var(--text-secondary); }
 
 @media screen and (max-width:360px) {
   .hero-glass-btn { padding:9px 18px; bottom:16px; }
-  .guide-card { width:105px; }
+  .guide-card { width:210px; }
+  .guide-card-img-wrap { height:168px; }
 }
 </style>
 
