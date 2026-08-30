@@ -76,21 +76,21 @@ const travelerBadge = computed(() => hasTravelers.value ? `${totalPeople.value}$
 const budget = ref(0)            // 人均预算
 const totalBudget = ref(0)       // 总预算
 const showBudgetPopup = ref(false)
-const personBudgetOptions = [1000, 2000, 3000, 5000, 8000]         // 人均：较小预设
-const totalBudgetOptions = [10000, 20000, 30000, 50000, 100000]    // 总预算：较大预设
-const personBudgetMax = 10000
-const totalBudgetMax = 500000
+const personBudgetOptions = [500, 1000, 2000, 3000, 5000]         // 人均：贴近现实（穷游→小资）
+const totalBudgetOptions = [3000, 5000, 8000, 12000, 20000]       // 总预算：贴近现实（家庭/团队）
+const personBudgetMax = 8000
+const totalBudgetMax = 30000
 const fmtBudget = (v) => v >= 10000 ? (v / 10000).toFixed(1) + t('agent.unitWan') : v.toLocaleString()
 const selectBudget = (b) => { budget.value = budget.value === b ? 0 : b }
-const incBudget = () => { budget.value = Math.min((budget.value || 0) + 500, personBudgetMax) }
-const decBudget = () => { budget.value = Math.max(budget.value - 500, 0) }
+const incBudget = () => { budget.value = Math.min((budget.value || 0) + 100, personBudgetMax) }
+const decBudget = () => { budget.value = Math.max(budget.value - 100, 0) }
 const budgetInput = computed({
   get: () => budget.value || '',
   set: (v) => { const n = parseInt(v, 10); budget.value = Number.isNaN(n) ? 0 : Math.max(0, Math.min(n, personBudgetMax)) }
 })
 const selectTotalBudget = (b) => { totalBudget.value = totalBudget.value === b ? 0 : b }
-const incTotalBudget = () => { totalBudget.value = Math.min((totalBudget.value || 0) + 1000, totalBudgetMax) }
-const decTotalBudget = () => { totalBudget.value = Math.max(totalBudget.value - 1000, 0) }
+const incTotalBudget = () => { totalBudget.value = Math.min((totalBudget.value || 0) + 500, totalBudgetMax) }
+const decTotalBudget = () => { totalBudget.value = Math.max(totalBudget.value - 500, 0) }
 const totalBudgetInput = computed({
   get: () => totalBudget.value || '',
   set: (v) => { const n = parseInt(v, 10); totalBudget.value = Number.isNaN(n) ? 0 : Math.max(0, Math.min(n, totalBudgetMax)) }
